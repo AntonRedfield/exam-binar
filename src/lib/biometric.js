@@ -1,24 +1,17 @@
 /**
- * Biometric Authentication Service
+ * Biometric Authentication Service — MULTI-USER
+ * Supports multiple users registering biometrics on the same device.
  * Uses Web Authentication API (WebAuthn) for fingerprint, Face ID, and PIN/pattern.
- * The OS/browser decides which method to offer based on device capabilities.
  */
 
-const CREDENTIAL_KEY = 'binar_biometric_credential'
-const BIOMETRIC_USER_KEY = 'binar_biometric_user'
+const CREDENTIALS_KEY = 'binar_biometric_credentials' // Array of { credentialId, user }
 const BIOMETRIC_DISMISSED_KEY = 'binar_biometric_dismissed'
 
 // ─── PWA Detection ──────────────────────────────────────────────────────────
 
-/**
- * Check if the app is running as an installed PWA (standalone mode)
- */
 export function isPWA() {
-  // iOS Safari standalone
   if (window.navigator.standalone === true) return true
-  // Standard media query for standalone display
   if (window.matchMedia('(display-mode: standalone)').matches) return true
-  // Chrome on Android sometimes uses 'minimal-ui' or 'fullscreen'
   if (window.matchMedia('(display-mode: fullscreen)').matches) return true
   if (window.matchMedia('(display-mode: minimal-ui)').matches) return true
   return false
@@ -26,66 +19,97 @@ export function isPWA() {
 
 // ─── Capability Detection ───────────────────────────────────────────────────
 
-/**
- * Check if the device supports WebAuthn platform authenticator
- * (fingerprint, Face ID, Windows Hello, PIN, pattern, etc.)
- */
 export async function isBiometricAvailable() {
-  // Check basic WebAuthn support
   if (!window.PublicKeyCredential) return false
-
   try {
-    // Check if platform authenticator (built-in biometric/PIN) is available
-    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-    return available
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
   } catch {
     return false
   }
 }
 
-// ─── Credential Storage ─────────────────────────────────────────────────────
+// ─── Multi-User Credential Storage ──────────────────────────────────────────
 
 /**
- * Check if a biometric credential is registered on this device
+ * Get all stored credentials (array of { credentialId, user })
  */
-export function hasStoredCredential() {
-  return localStorage.getItem(CREDENTIAL_KEY) !== null
-}
-
-/**
- * Get the user data associated with the stored biometric credential
- */
-export function getStoredBiometricUser() {
-  const stored = localStorage.getItem(BIOMETRIC_USER_KEY)
-  if (!stored) return null
+function getAllCredentials() {
+  const stored = localStorage.getItem(CREDENTIALS_KEY)
+  if (!stored) return []
   try {
-    return JSON.parse(stored)
+    const parsed = JSON.parse(stored)
+    return Array.isArray(parsed) ? parsed : []
   } catch {
-    return null
+    return []
   }
 }
 
 /**
- * Clear biometric credential from this device
+ * Save the credentials array
+ */
+function saveAllCredentials(credentials) {
+  localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(credentials))
+}
+
+/**
+ * Check if ANY biometric credentials are stored on this device
+ */
+export function hasStoredCredential() {
+  return getAllCredentials().length > 0
+}
+
+/**
+ * Check if a specific user has a stored credential
+ */
+export function hasCredentialForUser(userId) {
+  return getAllCredentials().some(c => c.user.id === userId)
+}
+
+/**
+ * Get all users who have registered biometrics on this device
+ * @returns {Array<{id, name, kelas, role}>}
+ */
+export function getStoredBiometricUsers() {
+  return getAllCredentials().map(c => c.user)
+}
+
+/**
+ * Get the credential entry for a specific user
+ */
+function getCredentialForUser(userId) {
+  return getAllCredentials().find(c => c.user.id === userId) || null
+}
+
+/**
+ * Clear ALL biometric credentials from this device
  */
 export function clearBiometric() {
-  localStorage.removeItem(CREDENTIAL_KEY)
-  localStorage.removeItem(BIOMETRIC_USER_KEY)
+  localStorage.removeItem(CREDENTIALS_KEY)
   localStorage.removeItem(BIOMETRIC_DISMISSED_KEY)
 }
 
 /**
- * Mark the biometric prompt as dismissed for this session
+ * Remove biometric credential for a specific user
  */
-export function dismissBiometricPrompt() {
-  sessionStorage.setItem(BIOMETRIC_DISMISSED_KEY, 'true')
+export function clearBiometricForUser(userId) {
+  const credentials = getAllCredentials().filter(c => c.user.id !== userId)
+  saveAllCredentials(credentials)
+}
+
+/**
+ * Mark the biometric prompt as dismissed for this session (per user)
+ */
+export function dismissBiometricPrompt(userId) {
+  const key = `${BIOMETRIC_DISMISSED_KEY}_${userId || 'global'}`
+  sessionStorage.setItem(key, 'true')
 }
 
 /**
  * Check if user has dismissed the prompt this session
  */
-export function isBiometricPromptDismissed() {
-  return sessionStorage.getItem(BIOMETRIC_DISMISSED_KEY) === 'true'
+export function isBiometricPromptDismissed(userId) {
+  const key = `${BIOMETRIC_DISMISSED_KEY}_${userId || 'global'}`
+  return sessionStorage.getItem(key) === 'true'
 }
 
 // ─── Helper: ArrayBuffer <-> Base64 ────────────────────────────────────────
@@ -112,44 +136,57 @@ function base64ToBuffer(base64) {
 
 /**
  * Register a biometric credential for the given user.
- * This triggers the OS's biometric/Face ID/PIN prompt.
- * 
- * @param {Object} user - { id, name, role, kelas }
- * @returns {Promise<boolean>} true if registration succeeded
+ * Each user gets their own credential on the same device.
  */
 export async function registerBiometric(user) {
   if (!window.PublicKeyCredential) {
     throw new Error('Browser tidak mendukung autentikasi biometrik.')
   }
 
+  // If user already has a credential, update their info
+  if (hasCredentialForUser(user.id)) {
+    const credentials = getAllCredentials()
+    const updated = credentials.map(c =>
+      c.user.id === user.id
+        ? { ...c, user: { id: user.id, name: user.name, kelas: user.kelas, role: user.role } }
+        : c
+    )
+    saveAllCredentials(updated)
+    return true
+  }
+
   const rpId = window.location.hostname
   const rpName = 'BINAR Exam App'
-
-  // Create a unique user handle from the user ID
   const userIdBytes = new TextEncoder().encode(user.id)
+
+  // Collect existing credential IDs to exclude (prevent duplicate registration)
+  const existingCreds = getAllCredentials()
+  const excludeCredentials = existingCreds.map(c => ({
+    id: base64ToBuffer(c.credentialId),
+    type: 'public-key',
+    transports: ['internal']
+  }))
 
   const publicKeyOptions = {
     challenge: crypto.getRandomValues(new Uint8Array(32)),
-    rp: {
-      name: rpName,
-      id: rpId
-    },
+    rp: { name: rpName, id: rpId },
     user: {
       id: userIdBytes,
       name: user.id,
       displayName: user.name
     },
     pubKeyCredParams: [
-      { alg: -7, type: 'public-key' },   // ES256
-      { alg: -257, type: 'public-key' }  // RS256
+      { alg: -7, type: 'public-key' },
+      { alg: -257, type: 'public-key' }
     ],
+    excludeCredentials,
     authenticatorSelection: {
-      authenticatorAttachment: 'platform',   // Built-in only (fingerprint, Face ID, PIN)
-      userVerification: 'required',          // Must verify identity (biometric, PIN, pattern)
+      authenticatorAttachment: 'platform',
+      userVerification: 'required',
       residentKey: 'preferred'
     },
     timeout: 60000,
-    attestation: 'none'   // We don't need attestation for our use case
+    attestation: 'none'
   }
 
   try {
@@ -157,24 +194,25 @@ export async function registerBiometric(user) {
       publicKey: publicKeyOptions
     })
 
-    // Store the credential ID so we can reference it during authentication
     const credentialId = bufferToBase64(credential.rawId)
-    localStorage.setItem(CREDENTIAL_KEY, credentialId)
-
-    // Store the user info associated with this credential
     const userData = { id: user.id, name: user.name, kelas: user.kelas, role: user.role }
-    localStorage.setItem(BIOMETRIC_USER_KEY, JSON.stringify(userData))
+
+    // Add to the credentials array
+    const credentials = getAllCredentials()
+    credentials.push({ credentialId, user: userData })
+    saveAllCredentials(credentials)
 
     return true
   } catch (err) {
-    // User cancelled or error
     if (err.name === 'NotAllowedError') {
       throw new Error('Pendaftaran dibatalkan. Silakan coba lagi.')
     }
     if (err.name === 'InvalidStateError') {
-      // Credential already exists — that's fine, update user data
+      // Credential already exists on the authenticator — save user mapping
       const userData = { id: user.id, name: user.name, kelas: user.kelas, role: user.role }
-      localStorage.setItem(BIOMETRIC_USER_KEY, JSON.stringify(userData))
+      const credentials = getAllCredentials()
+      credentials.push({ credentialId: 'existing_' + user.id, user: userData })
+      saveAllCredentials(credentials)
       return true
     }
     throw new Error('Gagal mendaftarkan biometrik: ' + err.message)
@@ -184,44 +222,33 @@ export async function registerBiometric(user) {
 // ─── Authentication (Verification) ─────────────────────────────────────────
 
 /**
- * Authenticate using the stored biometric credential.
- * This triggers the OS's biometric/Face ID/PIN prompt.
- * 
+ * Authenticate a specific user using their stored biometric credential.
+ * @param {string} userId — the user ID to authenticate
  * @returns {Promise<Object>} The stored user data { id, name, role, kelas }
  */
-export async function authenticateWithBiometric() {
-  const credentialIdBase64 = localStorage.getItem(CREDENTIAL_KEY)
-  if (!credentialIdBase64) {
-    throw new Error('Tidak ada kredensial biometrik tersimpan di perangkat ini.')
+export async function authenticateWithBiometric(userId) {
+  const entry = getCredentialForUser(userId)
+  if (!entry) {
+    throw new Error('Tidak ada kredensial biometrik untuk pengguna ini.')
   }
 
-  const credentialId = base64ToBuffer(credentialIdBase64)
   const rpId = window.location.hostname
 
   const publicKeyOptions = {
     challenge: crypto.getRandomValues(new Uint8Array(32)),
-    rpId: rpId,
+    rpId,
     allowCredentials: [{
-      id: credentialId,
+      id: base64ToBuffer(entry.credentialId),
       type: 'public-key',
       transports: ['internal']
     }],
-    userVerification: 'required',   // Require biometric/PIN/pattern verification
+    userVerification: 'required',
     timeout: 60000
   }
 
   try {
-    await navigator.credentials.get({
-      publicKey: publicKeyOptions
-    })
-
-    // If we got here, biometric/PIN verification succeeded
-    const userData = getStoredBiometricUser()
-    if (!userData) {
-      throw new Error('Data pengguna tidak ditemukan. Silakan login ulang.')
-    }
-
-    return userData
+    await navigator.credentials.get({ publicKey: publicKeyOptions })
+    return entry.user
   } catch (err) {
     if (err.name === 'NotAllowedError') {
       throw new Error('Verifikasi dibatalkan atau gagal. Silakan coba lagi.')
@@ -231,14 +258,11 @@ export async function authenticateWithBiometric() {
 }
 
 /**
- * Check if biometric enrollment should be offered
- * (device supports it + no existing credential + not dismissed)
- * Works in any secure context (HTTPS or localhost), not just PWA mode.
+ * Check if biometric enrollment should be offered for a specific user
  */
-export async function shouldOfferBiometric() {
-  if (hasStoredCredential()) return false
-  if (isBiometricPromptDismissed()) return false
-  
+export async function shouldOfferBiometric(userId) {
+  if (hasCredentialForUser(userId)) return false
+  if (isBiometricPromptDismissed(userId)) return false
   const available = await isBiometricAvailable()
   return available
 }

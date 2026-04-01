@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { authenticateWithBiometric, clearBiometric } from './biometric'
+import { authenticateWithBiometric, clearBiometricForUser } from './biometric'
 
 const SESSION_KEY = 'binar_user'
 
@@ -58,12 +58,12 @@ export async function login(id, password) {
 }
 
 /**
- * Login using device biometric / Face ID / PIN.
- * Verifies the stored credential via WebAuthn, then re-validates the user in Supabase.
+ * Login using device biometric / Face ID / PIN for a specific user.
+ * @param {string} userId — the user ID to authenticate
  */
-export async function loginWithBiometric() {
-  // Step 1: Verify biometric (triggers fingerprint/Face ID/PIN prompt)
-  const storedUser = await authenticateWithBiometric()
+export async function loginWithBiometric(userId) {
+  // Step 1: Verify biometric for this specific user
+  const storedUser = await authenticateWithBiometric(userId)
 
   // Step 2: Re-validate that this user still exists in the database
   const { data: dbUser, error } = await supabase
@@ -73,12 +73,11 @@ export async function loginWithBiometric() {
     .single()
 
   if (error || !dbUser) {
-    // User no longer exists — clear biometric data
-    clearBiometric()
+    clearBiometricForUser(storedUser.id)
     throw new Error('Akun tidak ditemukan. Kredensial biometrik telah dihapus.')
   }
 
-  // Step 3: Create session (same as normal login)
+  // Step 3: Create session
   const sessionData = { id: dbUser.id, name: dbUser.name, kelas: dbUser.kelas, role: dbUser.role }
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionData))
   return sessionData

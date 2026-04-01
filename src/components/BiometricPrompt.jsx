@@ -7,20 +7,20 @@ export default function BiometricPrompt() {
   const [show, setShow] = useState(false)
   const [step, setStep] = useState('offer') // 'offer' | 'registering' | 'success' | 'error'
   const [errorMsg, setErrorMsg] = useState('')
+  const user = getCurrentUser()
 
   useEffect(() => {
     async function check() {
-      const shouldShow = await shouldOfferBiometric()
+      if (!user) return
+      const shouldShow = await shouldOfferBiometric(user.id)
       if (shouldShow) {
-        // Small delay so it doesn't flash immediately on page load
         setTimeout(() => setShow(true), 1200)
       }
     }
     check()
-  }, [])
+  }, [user?.id])
 
   async function handleEnable() {
-    const user = getCurrentUser()
     if (!user) return
     
     setStep('registering')
@@ -29,7 +29,6 @@ export default function BiometricPrompt() {
     try {
       await registerBiometric(user)
       setStep('success')
-      // Auto-dismiss after 2.5 seconds
       setTimeout(() => setShow(false), 2500)
     } catch (err) {
       setErrorMsg(err.message)
@@ -38,7 +37,7 @@ export default function BiometricPrompt() {
   }
 
   function handleDismiss() {
-    dismissBiometricPrompt()
+    dismissBiometricPrompt(user?.id)
     setShow(false)
   }
 
@@ -47,7 +46,6 @@ export default function BiometricPrompt() {
   return (
     <div className="biometric-overlay">
       <div className="biometric-modal">
-        {/* Close button */}
         <button 
           className="biometric-close" 
           onClick={handleDismiss}
@@ -58,7 +56,6 @@ export default function BiometricPrompt() {
 
         {step === 'offer' && (
           <>
-            {/* Icon group */}
             <div className="biometric-icon-group">
               <div className="biometric-icon-circle">
                 <Fingerprint size={32} strokeWidth={1.5} />
@@ -73,7 +70,7 @@ export default function BiometricPrompt() {
 
             <h3 className="biometric-title">Login Lebih Cepat</h3>
             <p className="biometric-desc">
-              Aktifkan login cepat menggunakan sidik jari, Face ID, atau PIN perangkat Anda. 
+              Hai <strong>{user?.name}</strong>, aktifkan login cepat menggunakan sidik jari, Face ID, atau PIN perangkat Anda. 
               Login berikutnya cukup satu sentuhan!
             </p>
 
@@ -123,7 +120,7 @@ export default function BiometricPrompt() {
             </div>
             <h3 className="biometric-title" style={{ color: 'var(--success)' }}>Berhasil!</h3>
             <p className="biometric-desc">
-              Login biometrik telah diaktifkan. Selanjutnya Anda bisa login cukup dengan satu sentuhan.
+              Login biometrik untuk <strong>{user?.name}</strong> telah diaktifkan. Selanjutnya cukup satu sentuhan!
             </p>
           </div>
         )}
