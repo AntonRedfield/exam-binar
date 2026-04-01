@@ -33,7 +33,7 @@ export default function Login() {
     <div className="login-bg">
       <div className="login-card">
         <div className="login-logo">
-          <img src="/binar-logo.png" alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', marginBottom: '1rem' }} />
+          <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', marginBottom: '1rem' }} />
           <h2 style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>BINAR Junior High School</h2>
           <p className="text-muted">Aplikasi Ujian Berbasis Komputer</p>
         </div>
