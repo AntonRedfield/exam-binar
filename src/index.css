@@ -504,3 +504,178 @@ tbody tr:hover { background: var(--glass-light); }
   color: var(--text-muted);
 }
 .empty-state svg { width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.4; }
+
+/* ─── MOBILE SIDEBAR TOGGLE ──────────────────────────────────────────────── */
+.sidebar-toggle {
+  display: none;
+  position: fixed; top: 0.75rem; left: 0.75rem; z-index: 1100;
+  width: 40px; height: 40px; border-radius: var(--radius-sm);
+  background: var(--glass); backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: var(--transition);
+}
+.sidebar-toggle:hover { background: var(--navy-light); }
+.sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(2px);
+}
+
+/* ─── MOBILE EXAM TABS (for switching PDF/Answer in exam room) ────────────── */
+.exam-mobile-tabs {
+  display: none;
+  background: var(--glass);
+  border-bottom: 1px solid var(--border);
+}
+.exam-mobile-tabs button {
+  flex: 1; padding: 0.625rem; border: none;
+  background: transparent; font-size: 0.82rem;
+  font-weight: 600; color: var(--text-muted);
+  cursor: pointer; transition: var(--transition);
+  border-bottom: 2px solid transparent;
+}
+.exam-mobile-tabs button.active {
+  color: var(--accent); border-bottom-color: var(--accent);
+  background: rgba(79,142,247,0.06);
+}
+
+/* ─── RESPONSIVE: TABLET (≤ 900px) ───────────────────────────────────────── */
+@media (max-width: 900px) {
+  /* Sidebar becomes overlay */
+  .sidebar-toggle { display: flex; }
+  .sidebar-overlay.active { display: block; }
+
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    z-index: 1050;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .dashboard-layout { flex-direction: column; }
+  .main-content { padding-top: 52px; /* space for hamburger */ }
+
+  /* Page padding */
+  .page-header { padding: 1.25rem 1rem 1rem; }
+  .page-body { padding: 0 1rem 1rem; }
+
+  /* Stat cards grid */
+  .stat-grid-3 { grid-template-columns: 1fr 1fr !important; }
+
+  /* Answer pane narrower */
+  .answer-pane { width: 320px; }
+
+  /* Exam header wraps */
+  .exam-header { padding: 0.625rem 0.75rem; flex-wrap: wrap; gap: 0.5rem; }
+}
+
+/* ─── RESPONSIVE: MOBILE (≤ 640px) ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Typography */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; }
+  h3 { font-size: 1.05rem; }
+
+  /* Page layout */
+  .page-header { padding: 1rem; margin-bottom: 1rem; }
+  .page-body { padding: 0 0.75rem 1rem; }
+
+  /* Page header flex wrapping */
+  .page-header > div { flex-wrap: wrap; gap: 0.75rem; }
+  .page-header .btn { font-size: 0.78rem; padding: 0.4rem 0.75rem; }
+
+  /* Cards */
+  .card { padding: 1rem; border-radius: var(--radius-sm); }
+
+  /* Stat cards stack */
+  .stat-grid-3 { grid-template-columns: 1fr !important; }
+  .stat-card { padding: 1rem; }
+  .stat-value { font-size: 1.4rem; }
+
+  /* Buttons */
+  .btn-lg { padding: 0.75rem 1.5rem; font-size: 0.9rem; }
+
+  /* Table font */
+  td, th { font-size: 0.78rem; padding: 0.6rem 0.5rem; }
+
+  /* Modal */
+  .modal { padding: 1.25rem; border-radius: var(--radius); max-width: calc(100vw - 1rem); }
+
+  /* Login */
+  .login-card { padding: 1.5rem; }
+  .login-card img { height: 100px !important; }
+
+  /* Student home header */
+  .student-header { flex-direction: column; gap: 0.75rem; align-items: flex-start !important; padding: 0.75rem 1rem !important; }
+  .student-header-right { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+
+  /* Exam lobby */
+  .exam-lobby-logo img { height: 100px !important; }
+
+  /* Exam room: stack panes */
+  .exam-body { flex-direction: column; }
+  .exam-mobile-tabs { display: flex; }
+  .pdf-pane { border-right: none; border-bottom: 1px solid var(--border); min-height: 0; }
+  .pdf-pane.mobile-hidden { display: none; }
+  .answer-pane { width: 100%; }
+  .answer-pane.mobile-hidden { display: none; }
+
+  /* Question navigator: horizontal on mobile */
+  .q-navigator {
+    flex-direction: row; min-width: unset; max-width: unset;
+    padding: 0.5rem; border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto; overflow-y: hidden;
+  }
+  .q-nav-grid { flex-direction: row; flex-wrap: nowrap; }
+  .q-nav-btn { width: 34px; height: 34px; font-size: 0.7rem; flex-shrink: 0; }
+
+  /* Exam header mobile */
+  .exam-header {
+    padding: 0.5rem 0.75rem;
+    flex-wrap: wrap; gap: 0.5rem;
+  }
+  .exam-header > div { flex-wrap: wrap; }
+  .timer { font-size: 1.1rem; padding: 0.3rem 0.75rem; }
+
+  /* Violation overlay */
+  .violation-overlay { max-width: calc(100vw - 2rem); font-size: 0.82rem; padding: 0.625rem 1rem; }
+
+  /* Form grid: stack on mobile */
+  .form-grid-2 { grid-template-columns: 1fr !important; }
+
+  /* Results page */
+  .results-score h1 { font-size: 2.5rem !important; }
+  .results-stats { flex-direction: column; gap: 0.5rem !important; }
+
+  /* Alert */
+  .alert { font-size: 0.8rem; padding: 0.625rem 0.875rem; }
+
+  /* Sidebar logo smaller in drawer */
+  .sidebar-logo img { height: 50px !important; }
+  .sidebar-logo h2 { font-size: 1.1rem; }
+}
+
+/* ─── RESPONSIVE: VERY SMALL (≤ 380px) ───────────────────────────────────── */
+@media (max-width: 380px) {
+  .login-card { padding: 1.25rem; }
+  .login-card img { height: 80px !important; }
+  .btn { font-size: 0.82rem; padding: 0.5rem 0.875rem; }
+  .badge { font-size: 0.65rem; padding: 0.15rem 0.45rem; }
+  td, th { font-size: 0.72rem; padding: 0.45rem 0.35rem; }
+}
+
+/* ─── TOUCH IMPROVEMENTS ─────────────────────────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  .card:hover { transform: none; box-shadow: none; }
+  .stat-card:hover { transform: none; box-shadow: none; }
+  .nav-item:hover svg { transform: none; }
+  .option-btn { padding: 1rem; }
+  .tf-btn { padding: 1.25rem; }
+  .q-nav-btn { width: 42px; height: 42px; }
+}

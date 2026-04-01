@@ -304,7 +304,7 @@ export default function UserManagement() {
                 <label className="form-label">Nama Lengkap</label>
                 <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nama Lengkap" />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
                   <label className="form-label">Kelas</label>
                   <input className="form-input" value={form.kelas} onChange={e => setForm(f => ({ ...f, kelas: e.target.value }))} placeholder="cth: 9A" />

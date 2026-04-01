@@ -28,6 +28,7 @@ export default function ExamRoom() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [mobileTab, setMobileTab] = useState('answer')
 
   const sessionRef = useRef(null)
   const answersRef = useRef({})
@@ -183,6 +184,12 @@ export default function ExamRoom() {
       </div>
 
       {/* Body */}
+      {/* Mobile tab switcher */}
+      <div className="exam-mobile-tabs">
+        <button className={mobileTab === 'pdf' ? 'active' : ''} onClick={() => setMobileTab('pdf')}>📄 Soal PDF</button>
+        <button className={mobileTab === 'answer' ? 'active' : ''} onClick={() => setMobileTab('answer')}>✏️ Jawaban</button>
+      </div>
+
       <div className="exam-body">
         {/* Navigator */}
         <QuestionNavigator
@@ -193,7 +200,7 @@ export default function ExamRoom() {
         />
 
         {/* PDF Pane */}
-        <div className="pdf-pane">
+        <div className={`pdf-pane ${mobileTab !== 'pdf' ? 'mobile-hidden' : ''}`}>
           {exam?.pdf_url ? (
             <iframe
               src={getDriveEmbedUrl(exam.pdf_url)}
@@ -208,7 +215,7 @@ export default function ExamRoom() {
         </div>
 
         {/* Answer Pane */}
-        <div className="answer-pane">
+        <div className={`answer-pane ${mobileTab !== 'answer' ? 'mobile-hidden' : ''}`}>
           <div className="answer-scroll">
             {q && (
               <div>

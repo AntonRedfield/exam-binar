@@ -53,7 +53,7 @@ export default function Analytics() {
       </div>
       <div className="page-body">
         {/* Stats grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+        <div className="stat-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
           {[
             { label: 'Total Siswa', value: stats.totalUsers, color: 'var(--accent)', icon: '🎓' },
             { label: 'Total Guru', value: stats.totalTeachers, color: 'var(--gold-darker)', icon: '👨‍🏫' },

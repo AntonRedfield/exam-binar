@@ -146,7 +146,7 @@ export default function CreateExam() {
               <input className="form-input" value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
               <span className="text-xs text-muted">Pastikan file dapat diakses publik (Anyone with the link → Viewer)</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
                 <label className="form-label">Durasi (menit)</label>
                 <input type="number" className="form-input" value={duration} onChange={e => setDuration(e.target.value)} min="1" max="300" />

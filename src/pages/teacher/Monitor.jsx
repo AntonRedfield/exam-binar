@@ -90,7 +90,7 @@ export default function Monitor() {
         </div>
       </div>
       <div className="page-body">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+        <div className="stat-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'var(--warning-bg)' }}><Activity size={22} color="var(--warning)" /></div>
             <div><div className="stat-value">{active}</div><div className="stat-label">Sedang Ujian</div></div>
