@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
 import { users } from '../../lib/db'
 import { BookOpen, Plus, Activity, BarChart2, LogOut, KeyRound, X, Save, Users, Menu } from 'lucide-react'
+import BiometricPrompt from '../../components/BiometricPrompt'
 
 export default function TeacherLayout() {
   const user = getCurrentUser()
@@ -95,6 +96,8 @@ export default function TeacherLayout() {
       <div className="main-content">
         <Outlet />
       </div>
+
+      <BiometricPrompt />
 
       {showModal && (
         <div className="modal-overlay">

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../lib/auth'
 import { exams, sessions, results } from '../lib/db'
 import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff } from 'lucide-react'
+import BiometricPrompt from '../components/BiometricPrompt'
 
 function getStatusBadge(status) {
   if (status === 'active') return <span className="badge badge-pending">Sedang Berlangsung</span>
@@ -166,6 +167,7 @@ export default function StudentHome() {
           </div>
         )}
       </main>
+      <BiometricPrompt />
     </div>
   )
 }

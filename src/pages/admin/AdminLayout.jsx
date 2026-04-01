@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
 import { Shield, Users, BookOpen, BarChart2, LogOut, Menu } from 'lucide-react'
+import BiometricPrompt from '../../components/BiometricPrompt'
 
 export default function AdminLayout() {
   const user = getCurrentUser()
@@ -50,6 +51,7 @@ export default function AdminLayout() {
       <div className="main-content">
         <Outlet />
       </div>
+      <BiometricPrompt />
     </div>
   )
 }
