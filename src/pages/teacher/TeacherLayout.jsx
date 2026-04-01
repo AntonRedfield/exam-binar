@@ -45,7 +45,7 @@ export default function TeacherLayout() {
       <nav className="sidebar">
         <div className="sidebar-logo">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <img src="/binar-logo.png" alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
+            <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
             <h2>BINAR <span className="logo-accent">Guru</span></h2>
           </div>
         </div>

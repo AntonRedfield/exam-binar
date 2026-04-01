@@ -91,7 +91,7 @@ export default function StudentHome() {
       {/* Header */}
       <header style={{ background: 'var(--glass)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <img src="/binar-logo.png" alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
+          <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
           <span style={{ fontFamily: 'Cambria, "Times New Roman", serif', fontWeight: 700, fontSize: '1.25rem' }}>
             BINAR JHS <span className="text-gold">Exam App</span>
           </span>

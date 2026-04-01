@@ -88,7 +88,7 @@ export default function ExamLobby() {
       <div style={{ maxWidth: 520, width: '100%' }}>
         {/* Header icon */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <img src="/binar-logo.png" alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', margin: '0 auto 1rem' }} />
+          <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', margin: '0 auto 1rem' }} />
           <h1 style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>{exam.title}</h1>
           <p className="text-muted text-sm">Baca ketentuan sebelum memulai ujian</p>
         </div>
