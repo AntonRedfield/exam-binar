@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login, loginWithBiometric, isStudentId } from '../lib/auth'
-import { isBiometricAvailable, hasStoredCredential, getStoredBiometricUser } from '../lib/biometric'
-import { Eye, EyeOff, AlertCircle, Fingerprint, ScanFace, KeyRound } from 'lucide-react'
+import { isBiometricAvailable, hasStoredCredential, getStoredBiometricUsers } from '../lib/biometric'
+import { Eye, EyeOff, AlertCircle, Fingerprint, ScanFace, KeyRound, User, ChevronRight } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -12,8 +12,8 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [biometricAvailable, setBiometricAvailable] = useState(false)
-  const [biometricUser, setBiometricUser] = useState(null)
-  const [biometricLoading, setBiometricLoading] = useState(false)
+  const [biometricUsers, setBiometricUsers] = useState([])
+  const [biometricLoading, setBiometricLoading] = useState(null) // userId being verified
 
   const needsPassword = id.trim() !== '' && !isStudentId(id.trim())
 
@@ -21,11 +21,10 @@ export default function Login() {
   useEffect(() => {
     async function checkBiometric() {
       if (hasStoredCredential()) {
-        // We have a stored credential — check if device still supports it
         const available = await isBiometricAvailable()
         if (available) {
           setBiometricAvailable(true)
-          setBiometricUser(getStoredBiometricUser())
+          setBiometricUsers(getStoredBiometricUsers())
         }
       }
     }
@@ -46,16 +45,16 @@ export default function Login() {
     }
   }
 
-  async function handleBiometricLogin() {
+  async function handleBiometricLogin(userId) {
     setError('')
-    setBiometricLoading(true)
+    setBiometricLoading(userId)
     try {
-      const user = await loginWithBiometric()
+      const user = await loginWithBiometric(userId)
       navigateByRole(user)
     } catch (err) {
       setError(err.message)
     } finally {
-      setBiometricLoading(false)
+      setBiometricLoading(null)
     }
   }
 
@@ -63,6 +62,12 @@ export default function Login() {
     if (user.role === 'SUPERADMIN') navigate('/admin/users')
     else if (user.role === 'TEACHER') navigate('/teacher/exams')
     else navigate('/home')
+  }
+
+  const roleLabel = (role) => {
+    if (role === 'SUPERADMIN') return 'Admin'
+    if (role === 'TEACHER') return 'Guru'
+    return 'Siswa'
   }
 
   return (
@@ -74,31 +79,44 @@ export default function Login() {
           <p className="text-muted">Aplikasi Ujian Berbasis Komputer</p>
         </div>
 
-        {/* ─── Biometric Login Section ─── */}
-        {biometricAvailable && (
+        {/* ─── Biometric Login Section (Multi-User) ─── */}
+        {biometricAvailable && biometricUsers.length > 0 && (
           <>
             <div className="biometric-login-section">
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center', marginBottom: '0.75rem' }}>
-                Selamat datang kembali, <strong>{biometricUser?.name || 'User'}</strong>
+                Login cepat dengan biometrik
               </p>
-              <button 
-                className="btn biometric-login-btn" 
-                onClick={handleBiometricLogin} 
-                disabled={biometricLoading}
-              >
-                {biometricLoading ? (
-                  <><div className="spinner" style={{ width: 20, height: 20 }} /> Memverifikasi...</>
-                ) : (
-                  <>
-                    <div className="biometric-login-icons">
-                      <Fingerprint size={20} />
-                      <ScanFace size={18} />
-                      <KeyRound size={16} />
+
+              <div className="biometric-user-list">
+                {biometricUsers.map(u => (
+                  <button
+                    key={u.id}
+                    className="biometric-user-item"
+                    onClick={() => handleBiometricLogin(u.id)}
+                    disabled={biometricLoading !== null}
+                  >
+                    <div className="biometric-user-avatar">
+                      {biometricLoading === u.id 
+                        ? <div className="spinner" style={{ width: 18, height: 18 }} />
+                        : <User size={18} />
+                      }
                     </div>
-                    Login dengan Biometrik
-                  </>
-                )}
-              </button>
+                    <div className="biometric-user-info">
+                      <span className="biometric-user-name">{u.name}</span>
+                      <span className="biometric-user-role">
+                        {roleLabel(u.role)}{u.kelas ? ` · Kelas ${u.kelas}` : ''}
+                      </span>
+                    </div>
+                    <div className="biometric-user-icons">
+                      <Fingerprint size={14} />
+                      <ScanFace size={13} />
+                      <KeyRound size={12} />
+                    </div>
+                    <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  </button>
+                ))}
+              </div>
+
               <p className="text-muted text-xs" style={{ textAlign: 'center', marginTop: '0.5rem' }}>
                 Sidik jari, Face ID, atau PIN perangkat
               </p>
