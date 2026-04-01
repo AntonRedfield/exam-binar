@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Detect deploy target: Vercel sets VERCEL=1, GitHub Actions sets GITHUB_ACTIONS=true
+const isGitHubPages = process.env.GITHUB_ACTIONS === 'true'
+const base = isGitHubPages ? '/exam-binar/' : '/'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -17,8 +21,8 @@ export default defineConfig({
         background_color: '#0a1628',
         display: 'standalone',
         orientation: 'any',
-        scope: '/exam-binar/',
-        start_url: '/exam-binar/',
+        scope: base,
+        start_url: base,
         icons: [
           {
             src: 'binar-logo.png',
@@ -65,5 +69,5 @@ export default defineConfig({
       }
     })
   ],
-  base: '/exam-binar/',
+  base,
 })
