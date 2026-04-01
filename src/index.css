@@ -460,6 +460,191 @@ tbody tr:hover { background: var(--glass-light); }
   box-shadow: 0 8px 24px rgba(245,166,35,0.35);
 }
 
+/* ─── BIOMETRIC AUTH UI ──────────────────────────────────────────────────── */
+
+/* Overlay for the enrollment prompt */
+.biometric-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000; padding: 1rem;
+  animation: fade-in-up 0.3s ease;
+}
+
+/* Glassmorphism modal */
+.biometric-modal {
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem 2rem 2rem;
+  max-width: 380px; width: 100%;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.35);
+  animation: modal-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.biometric-close {
+  position: absolute; top: 0.875rem; right: 0.875rem;
+  width: 32px; height: 32px; border-radius: 8px;
+  background: rgba(0,0,0,0.05); border: none;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); cursor: pointer;
+  transition: var(--transition);
+}
+.biometric-close:hover { background: rgba(0,0,0,0.1); color: var(--text-primary); }
+
+/* Icon group (3 circles) */
+.biometric-icon-group {
+  display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.biometric-icon-circle {
+  width: 56px; height: 56px; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.05));
+  border: 1px solid rgba(34,197,94,0.2);
+  color: var(--accent);
+  transition: var(--transition);
+}
+.biometric-icon-face {
+  background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(99,102,241,0.05));
+  border-color: rgba(99,102,241,0.2);
+  color: #6366f1;
+}
+.biometric-icon-pin {
+  background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05));
+  border-color: rgba(245,158,11,0.2);
+  color: var(--warning);
+}
+
+.biometric-title {
+  font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem;
+  font-family: Cambria, 'Times New Roman', serif;
+}
+.biometric-desc {
+  color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+
+/* Methods row */
+.biometric-methods {
+  display: flex; justify-content: center; gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.biometric-method {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.75rem; font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.3rem 0.625rem;
+  background: rgba(0,0,0,0.04);
+  border-radius: 99px;
+  border: 1px solid var(--border);
+}
+
+/* Enable button */
+.biometric-enable-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: white;
+  font-size: 0.95rem; font-weight: 700;
+  padding: 0.875rem 1.5rem;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(34,197,94,0.35);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.biometric-enable-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(34,197,94,0.45);
+}
+
+.biometric-skip {
+  background: none; border: none;
+  color: var(--text-muted); font-size: 0.85rem; font-weight: 500;
+  cursor: pointer; margin-top: 0.875rem;
+  padding: 0.5rem; transition: color 0.2s;
+}
+.biometric-skip:hover { color: var(--text-primary); }
+
+/* Status screens (registering, success, error) */
+.biometric-status {
+  display: flex; flex-direction: column; align-items: center;
+}
+
+/* Pulsing icon during registration */
+.biometric-icon-pulse {
+  animation: biometric-pulse 1.5s ease-in-out infinite;
+}
+@keyframes biometric-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.7; }
+}
+
+/* Success icon */
+.biometric-icon-success {
+  background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.1));
+  border-color: rgba(16,185,129,0.3);
+  color: var(--success);
+}
+
+/* Error icon */
+.biometric-icon-error {
+  background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05));
+  border-color: rgba(239,68,68,0.25);
+  color: var(--danger);
+}
+
+/* ─── Login Page: Biometric Button ────────────────────────────────────────── */
+.biometric-login-section {
+  margin-bottom: 0.5rem;
+}
+
+.biometric-login-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #22c55e 0%, #059669 100%);
+  color: white;
+  font-size: 1rem; font-weight: 700;
+  padding: 1rem 1.5rem;
+  border-radius: var(--radius);
+  border: none;
+  box-shadow: 0 4px 20px rgba(34,197,94,0.3), 0 0 0 1px rgba(255,255,255,0.1) inset;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.biometric-login-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent, rgba(255,255,255,0.1));
+  pointer-events: none;
+}
+.biometric-login-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(34,197,94,0.4), 0 0 0 1px rgba(255,255,255,0.15) inset;
+}
+.biometric-login-btn:active:not(:disabled) { transform: scale(0.98); }
+
+.biometric-login-icons {
+  display: flex; align-items: center; gap: 0.375rem;
+  opacity: 0.9;
+}
+
+/* Divider */
+.biometric-divider {
+  display: flex; align-items: center; gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+.biometric-divider::before,
+.biometric-divider::after {
+  content: ''; flex: 1; height: 1px;
+  background: var(--border);
+}
+.biometric-divider span {
+  font-size: 0.78rem; color: var(--text-muted); font-weight: 500;
+  white-space: nowrap;
+}
+
 /* ─── PRINT ──────────────────────────────────────────────────────────────── */
 .print-only { display: none !important; }
 

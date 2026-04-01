@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login, isStudentId } from '../lib/auth'
-import { Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { login, loginWithBiometric, isStudentId } from '../lib/auth'
+import { isBiometricAvailable, hasStoredCredential, getStoredBiometricUser } from '../lib/biometric'
+import { Eye, EyeOff, AlertCircle, Fingerprint, ScanFace, KeyRound } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -10,8 +11,26 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [biometricAvailable, setBiometricAvailable] = useState(false)
+  const [biometricUser, setBiometricUser] = useState(null)
+  const [biometricLoading, setBiometricLoading] = useState(false)
 
   const needsPassword = id.trim() !== '' && !isStudentId(id.trim())
+
+  // Check if biometric login is available on mount
+  useEffect(() => {
+    async function checkBiometric() {
+      if (hasStoredCredential()) {
+        // We have a stored credential — check if device still supports it
+        const available = await isBiometricAvailable()
+        if (available) {
+          setBiometricAvailable(true)
+          setBiometricUser(getStoredBiometricUser())
+        }
+      }
+    }
+    checkBiometric()
+  }, [])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -19,14 +38,31 @@ export default function Login() {
     setLoading(true)
     try {
       const user = await login(id, needsPassword ? password : undefined)
-      if (user.role === 'SUPERADMIN') navigate('/admin/users')
-      else if (user.role === 'TEACHER') navigate('/teacher/exams')
-      else navigate('/home')
+      navigateByRole(user)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleBiometricLogin() {
+    setError('')
+    setBiometricLoading(true)
+    try {
+      const user = await loginWithBiometric()
+      navigateByRole(user)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBiometricLoading(false)
+    }
+  }
+
+  function navigateByRole(user) {
+    if (user.role === 'SUPERADMIN') navigate('/admin/users')
+    else if (user.role === 'TEACHER') navigate('/teacher/exams')
+    else navigate('/home')
   }
 
   return (
@@ -37,9 +73,48 @@ export default function Login() {
           <h2 style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>BINAR Junior High School</h2>
           <p className="text-muted">Aplikasi Ujian Berbasis Komputer</p>
         </div>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          Masukkan ID Anda untuk melanjutkan
-        </p>
+
+        {/* ─── Biometric Login Section ─── */}
+        {biometricAvailable && (
+          <>
+            <div className="biometric-login-section">
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center', marginBottom: '0.75rem' }}>
+                Selamat datang kembali, <strong>{biometricUser?.name || 'User'}</strong>
+              </p>
+              <button 
+                className="btn biometric-login-btn" 
+                onClick={handleBiometricLogin} 
+                disabled={biometricLoading}
+              >
+                {biometricLoading ? (
+                  <><div className="spinner" style={{ width: 20, height: 20 }} /> Memverifikasi...</>
+                ) : (
+                  <>
+                    <div className="biometric-login-icons">
+                      <Fingerprint size={20} />
+                      <ScanFace size={18} />
+                      <KeyRound size={16} />
+                    </div>
+                    Login dengan Biometrik
+                  </>
+                )}
+              </button>
+              <p className="text-muted text-xs" style={{ textAlign: 'center', marginTop: '0.5rem' }}>
+                Sidik jari, Face ID, atau PIN perangkat
+              </p>
+            </div>
+
+            <div className="biometric-divider">
+              <span>atau login manual</span>
+            </div>
+          </>
+        )}
+
+        {!biometricAvailable && (
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            Masukkan ID Anda untuk melanjutkan
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div className="form-group">
@@ -50,7 +125,7 @@ export default function Login() {
               placeholder="Masukkan ID Anda"
               value={id}
               onChange={e => setId(e.target.value)}
-              autoFocus
+              autoFocus={!biometricAvailable}
               required
             />
           </div>
