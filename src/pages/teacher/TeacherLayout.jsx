@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
 import { users } from '../../lib/db'
-import { BookOpen, Plus, Activity, BarChart2, LogOut, KeyRound, X, Save, Users } from 'lucide-react'
+import { BookOpen, Plus, Activity, BarChart2, LogOut, KeyRound, X, Save, Users, Menu } from 'lucide-react'
 
 export default function TeacherLayout() {
   const user = getCurrentUser()
@@ -13,6 +13,7 @@ export default function TeacherLayout() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   function handleLogout() {
     logout()
@@ -40,9 +41,15 @@ export default function TeacherLayout() {
     }
   }
 
+  function navClick() { setSidebarOpen(false) }
+
   return (
     <div className="dashboard-layout">
-      <nav className="sidebar">
+      <button className="sidebar-toggle" onClick={() => setSidebarOpen(v => !v)}>
+        <Menu size={20} />
+      </button>
+      <div className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} onClick={() => setSidebarOpen(false)} />
+      <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-logo">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
             <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
@@ -52,23 +59,23 @@ export default function TeacherLayout() {
 
         <div className="sidebar-nav">
           <div className="nav-label">Ujian</div>
-          <NavLink to="/teacher/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to="/teacher/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <BookOpen size={18} /> Daftar Ujian
           </NavLink>
-          <NavLink to="/teacher/create" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to="/teacher/create" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <Plus size={18} /> Buat Ujian
           </NavLink>
 
           <div className="nav-label">Siswa</div>
-          <NavLink to="/teacher/students" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <NavLink to="/teacher/students" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <Users size={18} /> Kelola Siswa
           </NavLink>
 
           <div className="nav-label">Monitoring</div>
-          <NavLink to="/teacher/exams" className="nav-item">
+          <NavLink to="/teacher/exams" className="nav-item" onClick={navClick}>
             <Activity size={18} /> Monitor Siswa
           </NavLink>
-          <NavLink to="/teacher/exams" className="nav-item">
+          <NavLink to="/teacher/exams" className="nav-item" onClick={navClick}>
             <BarChart2 size={18} /> Hasil Ujian
           </NavLink>
         </div>

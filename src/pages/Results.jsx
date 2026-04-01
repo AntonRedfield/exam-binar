@@ -44,7 +44,7 @@ export default function Results() {
         </div>
 
         {/* Score card */}
-        <div className="card" style={{ textAlign: 'center', marginBottom: '1.5rem', background: 'linear-gradient(135deg, var(--navy-mid), var(--navy-light))' }}>
+        <div className="card results-score" style={{ textAlign: 'center', marginBottom: '1.5rem', background: 'linear-gradient(135deg, var(--navy-mid), var(--navy-light))' }}>
           <p className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{result.exams?.title}</p>
           <h1 style={{ fontSize: '3.5rem', fontFamily: 'Outfit, sans-serif', marginBottom: '0.25rem', color: pctNum >= 60 ? 'var(--success)' : 'var(--danger)' }}>
             {pctStr}%
@@ -52,7 +52,7 @@ export default function Results() {
           <div className="progress-bar" style={{ maxWidth: 240, margin: '0 auto 1rem' }}>
             <div className="progress-fill" style={{ width: `${pctNum}%`, background: pctNum >= 60 ? 'linear-gradient(90deg, var(--success), #34D399)' : 'linear-gradient(90deg, var(--danger), #F87171)' }} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+          <div className="results-stats" style={{ display: 'flex', justifyContent: 'center', gap: '2rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             <span>Nilai: <strong style={{ color: 'var(--text-primary)' }}>{pctStr}%</strong></span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <ShieldAlert size={14} color={result.violation_count > 0 ? 'var(--warning)' : 'var(--success)'} />

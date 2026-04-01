@@ -89,14 +89,14 @@ export default function StudentHome() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--navy)' }}>
       {/* Header */}
-      <header style={{ background: 'var(--glass)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <header className="student-header" style={{ background: 'var(--glass)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
           <span style={{ fontFamily: 'Cambria, "Times New Roman", serif', fontWeight: 700, fontSize: '1.25rem' }}>
             BINAR JHS <span className="text-gold">Exam App</span>
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="student-header-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user.name}</div>
             <div className="text-muted text-xs">Kelas {user.kelas} &middot; {user.id}</div>
