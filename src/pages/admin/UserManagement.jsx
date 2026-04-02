@@ -143,7 +143,7 @@ export default function UserManagement() {
       const cols = lines[i].split(/\t|,/)
       if (cols.length < 2) continue // skip bad rows that don't even have ID & Name
       
-      const id = cols[0]?.trim() || ''
+      const id = cols[0]?.trim().toLowerCase() || ''
       const name = cols[1]?.trim() || ''
       const kelas = cols[2]?.trim() || null
       const password = cols[3]?.trim() || null
@@ -297,7 +297,7 @@ export default function UserManagement() {
               {!isEdit && (
                 <div className="form-group">
                   <label className="form-label">ID Login</label>
-                  <input className="form-input" value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value }))} placeholder="cth: budi.090812@murid.binar" />
+                  <input className="form-input" value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value.toLowerCase() }))} placeholder="cth: budi.090812@murid.binar" />
                 </div>
               )}
               <div className="form-group">
