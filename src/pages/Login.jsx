@@ -142,7 +142,7 @@ export default function Login() {
               className="form-input"
               placeholder="Masukkan ID Anda"
               value={id}
-              onChange={e => setId(e.target.value)}
+              onChange={e => setId(e.target.value.toLowerCase())}
               autoFocus={!biometricAvailable}
               required
             />
