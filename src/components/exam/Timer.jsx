@@ -1,28 +1,35 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Clock } from 'lucide-react'
 
 export default function Timer({ endTimestamp, onExpire }) {
   const [remaining, setRemaining] = useState(null)
-  const [triggered, setTriggered] = useState(false)
+  const triggeredRef = useRef(false)
+  const onExpireRef = useRef(onExpire)
+
+  // Keep callback ref fresh without restarting the interval
+  useEffect(() => {
+    onExpireRef.current = onExpire
+  }, [onExpire])
 
   useEffect(() => {
     if (!endTimestamp) return
+    triggeredRef.current = false
 
     function tick() {
       const end = new Date(endTimestamp).getTime()
       const now = Date.now()
       const diff = Math.max(0, Math.floor((end - now) / 1000))
       setRemaining(diff)
-      if (diff <= 0 && !triggered) {
-        setTriggered(true)
-        onExpire?.()
+      if (diff <= 0 && !triggeredRef.current) {
+        triggeredRef.current = true
+        onExpireRef.current?.()
       }
     }
 
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [endTimestamp, onExpire, triggered])
+  }, [endTimestamp])
 
   if (remaining === null) return null
 

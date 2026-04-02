@@ -11,7 +11,7 @@ import QuestionEssay from '../components/exam/QuestionEssay'
 import Timer from '../components/exam/Timer'
 import QuestionNavigator from '../components/exam/QuestionNavigator'
 import ViolationWarning from '../components/exam/ViolationWarning'
-import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert } from 'lucide-react'
+import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react'
 
 export default function ExamRoom() {
   const { examId } = useParams()
@@ -28,12 +28,14 @@ export default function ExamRoom() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [timeUp, setTimeUp] = useState(false)
   const [mobileTab, setMobileTab] = useState('answer')
 
   const sessionRef = useRef(null)
   const answersRef = useRef({})
   const violationsRef = useRef(0)
   const autoSaveTimer = useRef(null)
+  const submitLock = useRef(false)
 
   useEffect(() => {
     async function load() {
@@ -100,11 +102,15 @@ export default function ExamRoom() {
   }
 
   async function handleTimerExpire() {
+    setTimeUp(true)
+    // Small delay so the student sees the overlay before navigation
     await submitExam(true)
   }
 
   async function submitExam(isAuto = false) {
-    if (submitting) return
+    // Prevent double-submit from both manual click and timer expiry
+    if (submitLock.current) return
+    submitLock.current = true
     setSubmitting(true)
     clearInterval(autoSaveTimer.current)
 
@@ -132,10 +138,17 @@ export default function ExamRoom() {
         breakdown: JSON.stringify(breakdown),
       })
 
+      // If auto-submit, show the overlay briefly before navigating
+      if (isAuto) {
+        await new Promise(resolve => setTimeout(resolve, 2500))
+      }
+
       navigate(`/results/${result.id}`)
     } catch (err) {
       console.error('Submit error', err)
+      submitLock.current = false
       setSubmitting(false)
+      setTimeUp(false)
     }
   }
 
@@ -288,7 +301,32 @@ export default function ExamRoom() {
       </div>
 
       {/* Submit confirm modal */}
-      {showSubmitConfirm && (
+      {/* Time's Up overlay */}
+      {timeUp && (
+        <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(10,22,40,0.95)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ textAlign: 'center', animation: 'fadeInScale 0.4s ease-out' }}>
+            <div style={{
+              width: 80, height: 80, borderRadius: '50%',
+              background: 'rgba(239,68,68,0.15)', border: '3px solid var(--danger)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 1.5rem',
+              animation: 'pulse 1.5s ease-in-out infinite'
+            }}>
+              <AlertTriangle size={36} color="var(--danger)" />
+            </div>
+            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--danger)', fontFamily: 'Outfit, sans-serif' }}>
+              Waktu Habis!
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '1.5rem' }}>
+              Ujian Anda sedang dikumpulkan secara otomatis...
+            </p>
+            <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto', borderColor: 'rgba(239,68,68,0.2)', borderTopColor: 'var(--danger)' }} />
+          </div>
+        </div>
+      )}
+
+      {/* Submit confirm modal */}
+      {showSubmitConfirm && !timeUp && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 400, textAlign: 'center' }}>
             <div style={{ width: 56, height: 56, borderRadius: 14, background: 'rgba(79,142,247,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
