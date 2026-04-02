@@ -68,7 +68,7 @@ export const sessions = {
 export const results = {
   get: (studentId, examId) =>
     supabase.from('results').select('*').eq('student_id', studentId).eq('exam_id', examId).maybeSingle(),
-  getById: (id) => supabase.from('results').select('*, users(name, kelas), exams(title, status)').eq('id', id).single(),
+  getById: (id) => supabase.from('results').select('*, users(name, kelas), exams(title, status, passing_grade)').eq('id', id).single(),
   listByExam: (examId) =>
     supabase
       .from('results')

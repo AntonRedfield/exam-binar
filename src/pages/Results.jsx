@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
-import { results } from '../lib/db'
+import { results, exams } from '../lib/db'
 import { CheckCircle, XCircle, Clock, ShieldAlert, Printer, ArrowLeft } from 'lucide-react'
 
 export default function Results() {
@@ -27,6 +27,7 @@ export default function Results() {
   const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
   const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
   const essayPending = breakdown.some(b => b.status === 'pending')
+  const passingGrade = result.exams?.passing_grade ?? 60
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--navy)', padding: '2rem 1rem' }}>
@@ -46,11 +47,11 @@ export default function Results() {
         {/* Score card */}
         <div className="card results-score" style={{ textAlign: 'center', marginBottom: '1.5rem', background: 'linear-gradient(135deg, var(--navy-mid), var(--navy-light))' }}>
           <p className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{result.exams?.title}</p>
-          <h1 style={{ fontSize: '3.5rem', fontFamily: 'Outfit, sans-serif', marginBottom: '0.25rem', color: pctNum >= 60 ? 'var(--success)' : 'var(--danger)' }}>
+          <h1 style={{ fontSize: '3.5rem', fontFamily: 'Outfit, sans-serif', marginBottom: '0.25rem', color: pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)' }}>
             {pctStr}%
           </h1>
           <div className="progress-bar" style={{ maxWidth: 240, margin: '0 auto 1rem' }}>
-            <div className="progress-fill" style={{ width: `${pctNum}%`, background: pctNum >= 60 ? 'linear-gradient(90deg, var(--success), #34D399)' : 'linear-gradient(90deg, var(--danger), #F87171)' }} />
+            <div className="progress-fill" style={{ width: `${pctNum}%`, background: pctNum >= passingGrade ? 'linear-gradient(90deg, var(--success), #34D399)' : 'linear-gradient(90deg, var(--danger), #F87171)' }} />
           </div>
           <div className="results-stats" style={{ display: 'flex', justifyContent: 'center', gap: '2rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             <span>Nilai: <strong style={{ color: 'var(--text-primary)' }}>{pctStr}%</strong></span>

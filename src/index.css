@@ -28,9 +28,9 @@
   --radius: 12px;
   --radius-sm: 8px;
   --radius-lg: 20px;
-  --shadow: 0 4px 20px rgba(0,0,0,0.4);
-  --shadow-glow: 0 0 30px rgba(79,142,247,0.15);
-  --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow: 0 2px 8px rgba(0,0,0,0.12);
+  --shadow-glow: 0 0 12px rgba(79,142,247,0.08);
+  --transition: all 0.15s ease;
 }
 
 /* ─── RESET ──────────────────────────────────────────────────────────────── */
@@ -82,15 +82,12 @@ h3 { font-size: 1.2rem; font-weight: 600; }
 /* ─── GLASS CARD ──────────────────────────────────────────────────────────── */
 .card {
   background: var(--glass);
-  backdrop-filter: blur(16px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.5rem;
-  transition: var(--transition);
 }
 .card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 .card-header {
   padding-bottom: 1rem;
@@ -104,23 +101,23 @@ h3 { font-size: 1.2rem; font-weight: 600; }
   padding: 0.625rem 1.25rem;
   border: none; border-radius: var(--radius-sm);
   font-size: 0.9rem; font-weight: 600;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s;
+  transition: background-color 0.15s ease;
   white-space: nowrap;
 }
-.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:active:not(:disabled) { opacity: 0.85; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary {
   background: linear-gradient(135deg, var(--gold), var(--gold-dark));
   color: #000000; box-shadow: 0 4px 14px rgba(245,166,35,0.35);
 }
-.btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(245,166,35,0.5); }
+.btn-primary:hover:not(:disabled) { box-shadow: 0 2px 8px rgba(245,166,35,0.3); }
 .btn-gold {
   background: linear-gradient(135deg, var(--gold), var(--gold-dark));
   color: #000000; box-shadow: 0 4px 14px rgba(245,166,35,0.35);
 }
-.btn-gold:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(245,166,35,0.5); }
+.btn-gold:hover:not(:disabled) { box-shadow: 0 2px 8px rgba(245,166,35,0.3); }
 .btn-danger { background: var(--danger); color: white; }
-.btn-danger:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+.btn-danger:hover:not(:disabled) { opacity: 0.9; }
 .btn-ghost {
   background: white; color: var(--text-primary);
   border: 1px solid var(--border);
@@ -224,12 +221,9 @@ tbody tr:hover { background: var(--glass-light); }
   border-bottom: 1px solid var(--border);
   padding-bottom: 1.5rem;
   margin-bottom: 2rem;
-  animation: fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 .page-body { 
   padding: 0 2rem 2rem; flex: 1; 
-  animation: fade-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  opacity: 0; /* Starts hidden until animation */
 }
 
 /* ─── ANIMATIONS ─────────────────────────────────────────────────────────── */
@@ -250,7 +244,6 @@ tbody tr:hover { background: var(--glass-light); }
   padding: 0.875rem 1.5rem;
   background: var(--glass);
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(20px);
   z-index: 10; flex-shrink: 0;
 }
 .exam-body { display: flex; flex: 1; overflow: hidden; }
@@ -384,11 +377,9 @@ tbody tr:hover { background: var(--glass-light); }
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
   display: flex; align-items: center; gap: 1rem;
-  transition: var(--transition);
 }
 .stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .stat-icon {
   width: 48px; height: 48px; border-radius: 12px;
@@ -401,7 +392,7 @@ tbody tr:hover { background: var(--glass-light); }
 /* ─── MODAL ──────────────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  background: rgba(0,0,0,0.6);
   display: flex; align-items: center; justify-content: center;
   z-index: 1000; padding: 1rem;
 }
@@ -410,12 +401,7 @@ tbody tr:hover { background: var(--glass-light); }
   border-radius: var(--radius-lg); padding: 2rem;
   max-width: 560px; width: 100%;
   box-shadow: var(--shadow);
-  animation: modal-in 0.2s ease;
   max-height: 90vh; overflow-y: auto;
-}
-@keyframes modal-in {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
 }
 
 /* ─── ALERT TOAST ─────────────────────────────────────────────────────────── */
@@ -430,24 +416,18 @@ tbody tr:hover { background: var(--glass-light); }
 /* ─── LOGIN PAGE ──────────────────────────────────────────────────────────── */
 .login-bg {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 30% 30%, #86d67a 0%, var(--navy) 60%),
-              radial-gradient(ellipse at 80% 80%, #a3e698 0%, transparent 50%);
+  background: linear-gradient(135deg, #86d67a 0%, var(--navy) 70%);
   padding: 1rem;
   position: relative; overflow: hidden;
 }
-.login-bg::before {
-  content: ''; position: absolute; inset: 0;
-  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%234F8EF7' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-}
 .login-card {
   background: var(--glass);
-  backdrop-filter: blur(20px);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 2.5rem;
   width: 100%; max-width: 420px;
   position: relative;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(79,142,247,0.05) inset;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
 }
 .login-logo {
   text-align: center; margin-bottom: 2rem;
@@ -457,7 +437,7 @@ tbody tr:hover { background: var(--glass-light); }
   background: linear-gradient(135deg, var(--gold), var(--gold-dark));
   display: flex; align-items: center; justify-content: center;
   margin: 0 auto 1rem;
-  box-shadow: 0 8px 24px rgba(245,166,35,0.35);
+  box-shadow: 0 4px 12px rgba(245,166,35,0.25);
 }
 
 /* ─── BIOMETRIC AUTH UI ──────────────────────────────────────────────────── */
@@ -465,24 +445,21 @@ tbody tr:hover { background: var(--glass-light); }
 /* Overlay for the enrollment prompt */
 .biometric-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+  background: rgba(0,0,0,0.6);
   display: flex; align-items: center; justify-content: center;
   z-index: 2000; padding: 1rem;
-  animation: fade-in-up 0.3s ease;
 }
 
 /* Glassmorphism modal */
 .biometric-modal {
   background: var(--glass);
-  backdrop-filter: blur(24px);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 2.5rem 2rem 2rem;
   max-width: 380px; width: 100%;
   text-align: center;
   position: relative;
-  box-shadow: 0 24px 80px rgba(0,0,0,0.35);
-  animation: modal-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
 }
 
 .biometric-close {
