@@ -10,6 +10,7 @@ import ExamList from './pages/teacher/ExamList'
 import CreateExam from './pages/teacher/CreateExam'
 import Monitor from './pages/teacher/Monitor'
 import ResultsView from './pages/teacher/ResultsView'
+import QuestionAnalytics from './pages/teacher/QuestionAnalytics'
 import AdminLayout from './pages/admin/AdminLayout'
 import UserManagement from './pages/admin/UserManagement'
 import ExamOversight from './pages/admin/ExamOversight'
@@ -71,6 +72,7 @@ export default function App() {
           <Route path="edit/:examId" element={<CreateExam />} />
           <Route path="monitor/:examId" element={<Monitor />} />
           <Route path="results/:examId" element={<ResultsView />} />
+          <Route path="analytics/:examId" element={<QuestionAnalytics />} />
           <Route path="students" element={<UserManagement />} />
         </Route>
 
@@ -83,6 +85,8 @@ export default function App() {
           <Route path="users" element={<UserManagement />} />
           <Route path="exams" element={<ExamOversight />} />
           <Route path="analytics" element={<Analytics />} />
+          <Route path="results/:examId" element={<ResultsView />} />
+          <Route path="analytics/:examId" element={<QuestionAnalytics />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

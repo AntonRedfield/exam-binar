@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
-import { ChevronLeft, Printer, Edit3, Save, Eye, X } from 'lucide-react'
+import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2 } from 'lucide-react'
 
 export default function ResultsView() {
   const { examId } = useParams()
@@ -26,6 +26,8 @@ export default function ResultsView() {
   }
 
   useEffect(() => { load() }, [examId])
+
+  const passingGrade = exam?.passing_grade ?? 60
 
   async function saveEssay(resultId, essayScore) {
     setSaving(resultId)
@@ -78,6 +80,14 @@ export default function ResultsView() {
     : 0
   const avgStr = avgPct ? avgPct.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '0'
 
+  // Count students passing/failing
+  const passCount = resultList.filter(r => {
+    const total = r.auto_score + (r.essay_score || 0)
+    const pct = r.max_auto_score > 0 ? (total / r.max_auto_score) * 100 : 0
+    return pct >= passingGrade
+  }).length
+  const failCount = resultList.length - passCount
+
   return (
     <>
       <div className="page-header no-print">
@@ -86,10 +96,21 @@ export default function ResultsView() {
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/teacher/exams')}><ChevronLeft size={15} /></button>
             <div>
               <h2>Hasil: {exam?.title}</h2>
-              <p className="text-muted text-sm">{resultList.length} siswa · Rata-rata Nilai: {avgStr}%</p>
+              <p className="text-muted text-sm">
+                {resultList.length} siswa · Rata-rata: {avgStr}% · KKM: {passingGrade}
+                {' · '}
+                <span style={{ color: 'var(--success)' }}>✓ {passCount} Lulus</span>
+                {' · '}
+                <span style={{ color: 'var(--danger)' }}>✗ {failCount} Belum Lulus</span>
+              </p>
             </div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={15} /> Cetak</button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/analytics/${examId}`)}>
+              <BarChart2 size={15} /> Analisis Soal
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={15} /> Cetak</button>
+          </div>
         </div>
       </div>
       <div className="print-only" style={{ position: 'relative', textAlign: 'center', marginBottom: '2rem', borderBottom: '2px solid #000', paddingBottom: '1rem', paddingTop: '1rem' }}>
@@ -99,7 +120,7 @@ export default function ResultsView() {
         </div>
         <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain', marginBottom: '0.5rem' }} />
         <h1 style={{ margin: 0, fontSize: '1.6rem', fontFamily: 'Cambria, "Times New Roman", serif', color: 'black' }}>BINAR Exam Result</h1>
-        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'normal', color: 'black' }}>Mata Pelajaran: {exam?.title}</h2>
+        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'normal', color: 'black' }}>Mata Pelajaran: {exam?.title} — KKM: {passingGrade}</h2>
       </div>
       <div className="page-body">
         <div className="card" style={{ padding: 0 }}>
@@ -132,6 +153,7 @@ export default function ResultsView() {
                   const pctNum = r.max_auto_score > 0 ? (total / r.max_auto_score) * 100 : 0
                   const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
                   const essayVal = essayEdits[r.id] !== undefined ? essayEdits[r.id] : (r.essay_score || 0)
+                  const nilaiColor = pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)'
                   return (
                     <tr key={r.id}>
                       <td className="text-muted no-print">{i + 1}</td>
@@ -151,10 +173,10 @@ export default function ResultsView() {
                         </div>
                         <span className="print-only">{r.essay_score || 0}</span>
                       </td>
-                      <td className="no-print" style={{ fontWeight: 700, color: pctNum >= 60 ? 'var(--success)' : 'var(--danger)' }}>
+                      <td className="no-print" style={{ fontWeight: 700, color: nilaiColor }}>
                         {r.auto_score + Number(essayVal)}
                       </td>
-                      <td style={{ color: pctNum >= 60 ? 'var(--success)' : 'var(--danger)' }}>{pctStr}%</td>
+                      <td style={{ fontWeight: 700, color: nilaiColor }}>{pctStr}%</td>
                       <td>
                         {r.violation_count > 0
                           ? <span style={{ color: 'var(--warning)' }}>⚠ {r.violation_count}</span>

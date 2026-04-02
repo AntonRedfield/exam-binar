@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS exams (
   target_kelas TEXT DEFAULT 'all',
   created_by TEXT REFERENCES users(id),
   status TEXT DEFAULT 'draft' CHECK (status IN ('draft','published','closed')),
+  passing_grade INT DEFAULT 60,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

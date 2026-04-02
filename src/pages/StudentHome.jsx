@@ -137,10 +137,8 @@ export default function StudentHome() {
               }
 
               return (
-                <div key={exam.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', cursor: 'pointer', transition: 'transform 0.15s, border-color 0.15s', borderColor: isDone ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(245,158,11,0.25)' : 'var(--border)' }}
+                <div key={exam.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', cursor: 'pointer', borderColor: isDone ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(245,158,11,0.25)' : 'var(--border)' }}
                   onClick={() => handleExamClick(exam)}
-                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                  onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
                 >
                   <div style={{ width: 52, height: 52, borderRadius: 14, background: isDone ? 'var(--success-bg)' : isActive ? 'var(--warning-bg)' : 'rgba(79,142,247,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     {isDone ? <CheckCircle size={26} color="var(--success)" /> : isActive ? <RotateCcw size={26} color="var(--warning)" /> : <Play size={26} color="var(--accent)" />}

@@ -22,6 +22,7 @@ export default function CreateExam() {
   const [pdfUrl, setPdfUrl] = useState('')
   const [duration, setDuration] = useState(60)
   const [targetKelas, setTargetKelas] = useState([])
+  const [passingGrade, setPassingGrade] = useState(60)
   const [questionItems, setQuestionItems] = useState([makeQuestion(1)])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -45,6 +46,7 @@ export default function CreateExam() {
         setTitle(exam.title)
         setPdfUrl(exam.pdf_url)
         setDuration(exam.duration_minutes)
+        setPassingGrade(exam.passing_grade ?? 60)
         setTargetKelas(exam.target_kelas === 'all' || !exam.target_kelas ? [] : exam.target_kelas.split(','))
       }
       if (qs?.length) setQuestionItems(qs.map(q => ({ ...q, options: q.options || { A: '', B: '', C: '', D: '' } })))
@@ -76,7 +78,7 @@ export default function CreateExam() {
 
     try {
       const targetStr = targetKelas.length === 0 ? 'all' : targetKelas.join(',')
-      const examData = { title: title.trim(), pdf_url: pdfUrl.trim(), duration_minutes: Number(duration), target_kelas: targetStr, created_by: user.id, status: publish ? 'published' : 'draft' }
+      const examData = { title: title.trim(), pdf_url: pdfUrl.trim(), duration_minutes: Number(duration), passing_grade: Number(passingGrade) || 60, target_kelas: targetStr, created_by: user.id, status: publish ? 'published' : 'draft' }
 
       let savedExamId = examId
       if (isEdit) {
@@ -150,6 +152,11 @@ export default function CreateExam() {
               <div className="form-group">
                 <label className="form-label">Durasi (menit)</label>
                 <input type="number" className="form-input" value={duration} onChange={e => setDuration(e.target.value)} min="1" max="300" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">KKM (Kriteria Ketuntasan Minimal)</label>
+                <input type="number" className="form-input" value={passingGrade} onChange={e => setPassingGrade(e.target.value)} min="0" max="100" placeholder="60" />
+                <span className="text-xs text-muted">Nilai minimum kelulusan (skala 0—100)</span>
               </div>
               <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                 <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
