@@ -12,6 +12,6 @@ jobs:
     steps:
       - name: Ping Supabase Database
         run: |
-          curl -X GET "${{ secrets.https://xfxkfuodvxgsejtokamg.supabase.co }}/rest/v1/users?select=OB-Binar@binar.edu&limit=1" \
-          -H "apikey: ${{ secrets.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeGtmdW9kdnhnc2VqdG9rYW1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTE2MTMsImV4cCI6MjA4ODc4NzYxM30.0ORbeQnfA5jj5Bbe98b6CFFuwrJPEiqSERXmjWEmPUU }}" \
-          -H "Authorization: Bearer ${{ secrets.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeGtmdW9kdnhnc2VqdG9rYW1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTE2MTMsImV4cCI6MjA4ODc4NzYxM30.0ORbeQnfA5jj5Bbe98b6CFFuwrJPEiqSERXmjWEmPUU }}"
+          curl -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/users?select=id&limit=1" \
+          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
