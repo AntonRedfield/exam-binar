@@ -12,7 +12,7 @@ export default function ExamList() {
   const [sortConfig, setSortConfig] = useState({ key: 'title', direction: 'asc' })
 
   async function load() {
-    const source = user.role === 'SUPERADMIN' ? exams.list() : exams.listByTeacher(user.id)
+    const source = exams.list()
     const { data } = await source
     setExamList(data || [])
     setLoading(false)
@@ -84,11 +84,9 @@ export default function ExamList() {
                     <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('title')}>
                       Judul Ujian {sortConfig.key === 'title' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                     </th>
-                    {user.role === 'SUPERADMIN' && (
-                      <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('teacher_name')}>
-                        Guru {sortConfig.key === 'teacher_name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                      </th>
-                    )}
+                    <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('teacher_name')}>
+                      Guru {sortConfig.key === 'teacher_name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                    </th>
                     <th>Target Kelas</th>
                     <th>Durasi</th>
                     <th>Status</th>
@@ -100,7 +98,7 @@ export default function ExamList() {
                   {sortedExams.map(exam => (
                     <tr key={exam.id}>
                       <td style={{ fontWeight: 600 }}>{exam.title}</td>
-                      {user.role === 'SUPERADMIN' && <td className="text-muted text-sm">{exam.users?.name || exam.created_by}</td>}
+                      <td className="text-muted text-sm">{exam.users?.name || exam.created_by}</td>
                       <td className="text-muted text-sm">
                         {!exam.target_kelas || exam.target_kelas === 'all' 
                           ? 'Semua Kelas' 
@@ -115,21 +113,27 @@ export default function ExamList() {
                       <td className="text-muted text-sm">{new Date(exam.created_at).toLocaleDateString('id-ID')}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/edit/${exam.id}`)} title="Edit">
-                            <Edit2 size={13} />
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => togglePublish(exam)} title={exam.status === 'published' ? 'Unpublish' : 'Publish'}>
-                            {exam.status === 'published' ? <Lock size={13} /> : <Globe size={13} />}
-                          </button>
+                          {(user.role === 'SUPERADMIN' || exam.created_by === user.id) && (
+                            <>
+                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/edit/${exam.id}`)} title="Edit">
+                                <Edit2 size={13} />
+                              </button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => togglePublish(exam)} title={exam.status === 'published' ? 'Unpublish' : 'Publish'}>
+                                {exam.status === 'published' ? <Lock size={13} /> : <Globe size={13} />}
+                              </button>
+                            </>
+                          )}
                           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/monitor/${exam.id}`)} title="Monitor">
                             <Activity size={13} />
                           </button>
                           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/results/${exam.id}`)} title="Hasil">
                             <BarChart2 size={13} />
                           </button>
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(exam.id)} title="Hapus">
-                            <Trash2 size={13} />
-                          </button>
+                          {(user.role === 'SUPERADMIN' || exam.created_by === user.id) && (
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(exam.id)} title="Hapus">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
