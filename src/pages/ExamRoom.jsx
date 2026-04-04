@@ -127,16 +127,30 @@ export default function ExamRoom() {
       const { autoScore, maxAutoScore, essayPending, breakdown } = gradeExam(answersRef.current, questionList)
 
       // Save result
-      const { data: result } = await results.create({
-        student_id: user.id,
-        exam_id: examId,
-        session_id: sessionRef.current.id,
-        auto_score: autoScore,
-        max_auto_score: maxAutoScore,
-        essay_score: 0,
-        violation_count: violationsRef.current,
-        breakdown: JSON.stringify(breakdown),
-      })
+      const existingRes = await results.get(user.id, examId)
+      let result = null
+      if (existingRes?.data) {
+        const { data } = await results.update(existingRes.data.id, {
+          session_id: sessionRef.current.id,
+          auto_score: autoScore,
+          max_auto_score: maxAutoScore,
+          violation_count: violationsRef.current,
+          breakdown: JSON.stringify(breakdown),
+        })
+        result = data
+      } else {
+        const { data } = await results.create({
+          student_id: user.id,
+          exam_id: examId,
+          session_id: sessionRef.current.id,
+          auto_score: autoScore,
+          max_auto_score: maxAutoScore,
+          essay_score: 0,
+          violation_count: violationsRef.current,
+          breakdown: JSON.stringify(breakdown),
+        })
+        result = data
+      }
 
       // If auto-submit, show the overlay briefly before navigating
       if (isAuto) {

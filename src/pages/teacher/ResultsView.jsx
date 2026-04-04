@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { exams, results } from '../../lib/db'
+import { exams, results, sessions, questions } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
+import { gradeExam } from '../../lib/grader'
 import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2 } from 'lucide-react'
 
 export default function ResultsView() {
@@ -16,12 +17,50 @@ export default function ResultsView() {
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
 
   async function load() {
-    const [{ data: examData }, { data: res }] = await Promise.all([
+    const [{ data: examData }, { data: res }, { data: sess }, { data: qs }] = await Promise.all([
       exams.getById(examId),
       results.listByExam(examId),
+      sessions.listByExam(examId),
+      questions.listByExam(examId)
     ])
+    
+    let newRes = [...(res || [])]
+    const missingResults = (sess || []).filter(s => !newRes.find(r => r.student_id === s.student_id))
+    
+    if (missingResults.length > 0 && qs) {
+      let added = false
+      for (const s of missingResults) {
+        const isTimeUp = s.end_timestamp && new Date(s.end_timestamp).getTime() < Date.now()
+        const isAbandoned = s.status === 'time_up' || s.status === 'submitted' || isTimeUp
+        if (isAbandoned) {
+          const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers || {}, qs)
+          const { data: createdRes } = await results.create({
+            student_id: s.student_id,
+            exam_id: examId,
+            session_id: s.id,
+            auto_score: autoScore,
+            max_auto_score: maxAutoScore,
+            essay_score: 0,
+            violation_count: s.violation_count || 0,
+            breakdown: JSON.stringify(breakdown),
+          })
+          if (createdRes) {
+            createdRes.users = s.users
+            newRes.push(createdRes)
+            added = true
+            if (s.status === 'active') {
+              await sessions.update(s.id, { status: 'time_up' })
+            }
+          }
+        }
+      }
+      if (added) {
+        setResultList([...newRes])
+      }
+    }
+    
     setExam(examData)
-    setResultList(res || [])
+    setResultList(newRes)
     setLoading(false)
   }
 
