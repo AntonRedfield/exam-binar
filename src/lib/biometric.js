@@ -124,7 +124,11 @@ function bufferToBase64(buffer) {
 }
 
 function base64ToBuffer(base64) {
-  const binary = atob(base64)
+  let b64 = base64.replace(/-/g, '+').replace(/_/g, '/')
+  while (b64.length % 4) {
+    b64 += '='
+  }
+  const binary = atob(b64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
@@ -237,13 +241,20 @@ export async function authenticateWithBiometric(userId) {
   const publicKeyOptions = {
     challenge: crypto.getRandomValues(new Uint8Array(32)),
     rpId,
-    allowCredentials: [{
-      id: base64ToBuffer(entry.credentialId),
-      type: 'public-key',
-      transports: ['internal']
-    }],
     userVerification: 'required',
     timeout: 60000
+  }
+
+  if (entry.credentialId && !entry.credentialId.startsWith('existing_')) {
+    try {
+      publicKeyOptions.allowCredentials = [{
+        id: base64ToBuffer(entry.credentialId),
+        type: 'public-key',
+        transports: ['internal']
+      }]
+    } catch (e) {
+      console.warn("Invalid credential ID format, using discoverable credential", e)
+    }
   }
 
   try {
