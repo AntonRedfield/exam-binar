@@ -30,14 +30,18 @@ export function gradeExam(answers, questions) {
     }
 
     if (q.type === 'TRUE_FALSE') {
+      const optionsObj = q.options || {}
       const correctObj = q.correct_answer || {}
       const givenObj = studentAnswer || {}
-      const keys = Object.keys(correctObj)
+      // Grade based on the available statements visible to the student
+      const keys = Object.keys(optionsObj)
       
       let correctCount = 0
       for (const k of keys) {
-        if (String(correctObj[k]).toLowerCase() === String(givenObj[k]).toLowerCase()) {
-          correctCount++
+        if (correctObj[k] !== undefined) {
+          if (String(correctObj[k]).toLowerCase() === String(givenObj[k]).toLowerCase()) {
+            correctCount++
+          }
         }
       }
 
