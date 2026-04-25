@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams } from '../../lib/db'
-import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock } from 'lucide-react'
+import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen } from 'lucide-react'
 
 export default function ExamList() {
   const user = getCurrentUser()
@@ -88,6 +88,7 @@ export default function ExamList() {
                       Guru {sortConfig.key === 'teacher_name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                     </th>
                     <th>Target Kelas</th>
+                    <th>Mode</th>
                     <th>Durasi</th>
                     <th>Status</th>
                     <th>Dibuat</th>
@@ -104,7 +105,12 @@ export default function ExamList() {
                           ? 'Semua Kelas' 
                           : `Kelas ${exam.target_kelas.split(',').join(', ')}`}
                       </td>
-                      <td>{exam.duration_minutes} mnt</td>
+                      <td>
+                        <span className={`badge ${exam.mode === 'quiz' ? 'badge-active' : 'badge-draft'}`} style={{ fontSize: '0.75rem' }}>
+                          {exam.mode === 'quiz' ? '⚡ Kuis' : '📝 Ujian'}
+                        </span>
+                      </td>
+                      <td>{exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} mnt`}</td>
                       <td>
                         <span className={`badge badge-${exam.status === 'published' ? 'active' : exam.status === 'closed' ? 'closed' : 'draft'}`}>
                           {exam.status === 'published' ? 'Aktif' : exam.status === 'closed' ? 'Tutup' : 'Draft'}

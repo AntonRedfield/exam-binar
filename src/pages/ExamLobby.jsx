@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions } from '../lib/db'
-import { BookOpen, Clock, Users, ShieldAlert, Play, RotateCcw } from 'lucide-react'
+import { BookOpen, Clock, Users, ShieldAlert, Play, RotateCcw, Zap } from 'lucide-react'
 
 export default function ExamLobby() {
   const { examId } = useParams()
@@ -35,7 +35,11 @@ export default function ExamLobby() {
     setStarting(true)
     setError('')
     try {
-      const endTimestamp = new Date(Date.now() + exam.duration_minutes * 60 * 1000).toISOString()
+      // Quiz mode stores duration in seconds, exam mode in minutes
+      const durationMs = exam.mode === 'quiz'
+        ? exam.duration_minutes * 1000
+        : exam.duration_minutes * 60 * 1000
+      const endTimestamp = new Date(Date.now() + durationMs).toISOString()
 
       if (!session || session.status === 'reset') {
         // Create or re-create session
@@ -89,14 +93,23 @@ export default function ExamLobby() {
         {/* Header icon */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
           <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', margin: '0 auto 1rem' }} />
-          <h1 style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>{exam.title}</h1>
-          <p className="text-muted text-sm">Baca ketentuan sebelum memulai ujian</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+            <h1 style={{ fontSize: '1.5rem', margin: 0 }}>{exam.title}</h1>
+            <span className={`badge ${exam.mode === 'quiz' ? 'badge-active' : 'badge-draft'}`} style={{ fontSize: '0.75rem' }}>
+              {exam.mode === 'quiz' ? '⚡ Kuis' : '📝 Ujian'}
+            </span>
+          </div>
+          <p className="text-muted text-sm">Baca ketentuan sebelum memulai {exam.mode === 'quiz' ? 'kuis' : 'ujian'}</p>
         </div>
 
         {/* Exam info card */}
         <div className="card" style={{ marginBottom: '1.25rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <Stat icon={<Clock size={18} />} label="Durasi" value={`${exam.duration_minutes} Menit`} />
+            <Stat icon={<Clock size={18} />} label="Durasi" value={
+              exam.mode === 'quiz'
+                ? 'Timer per soal'
+                : `${exam.duration_minutes} Menit`
+            } />
             <Stat icon={<Users size={18} />} label="Soal" value={`${questionCount} Pertanyaan`} />
           </div>
         </div>
@@ -110,6 +123,12 @@ export default function ExamLobby() {
           <ul style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingLeft: '1rem' }}>
             <li>Jangan berpindah tab atau jendela browser selama ujian.</li>
             <li>Klik kanan, copy, dan paste dinonaktifkan selama ujian.</li>
+            {exam.mode === 'quiz' && (
+              <li style={{ color: 'var(--warning)', fontWeight: 600 }}>Mode Kuis: Anda hanya dapat maju ke soal berikutnya, tidak bisa kembali.</li>
+            )}
+            {exam.mode === 'quiz' && (
+              <li style={{ color: 'var(--warning)', fontWeight: 600 }}>Setiap soal memiliki timer sendiri. Jika waktu habis, jawaban akan terkunci otomatis.</li>
+            )}
             <li>Timer berjalan di server — terus berjalan meskipun koneksi terputus.</li>
             <li>Jawaban disimpan otomatis setiap 10 detik.</li>
             <li>Setiap pelanggaran akan tercatat dalam laporan hasil.</li>
@@ -128,7 +147,7 @@ export default function ExamLobby() {
               ? <><div className="spinner" style={{ width: 20, height: 20, borderColor: 'rgba(0,0,0,0.2)', borderTopColor: '#0A1628' }} /> Memulai...</>
               : isActive
               ? <><RotateCcw size={18} /> Lanjutkan Ujian</>
-              : <><Play size={18} /> Mulai Ujian</>
+              : <><Play size={18} /> Mulai {exam.mode === 'quiz' ? 'Kuis' : 'Ujian'}</>
             }
           </button>
         )}

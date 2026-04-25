@@ -45,6 +45,7 @@ export default function ExamOversight() {
                   <tr>
                     <th>Judul Ujian</th>
                     <th>Guru</th>
+                    <th>Mode</th>
                     <th>Durasi</th>
                     <th>Target Kelas</th>
                     <th>Status</th>
@@ -54,12 +55,17 @@ export default function ExamOversight() {
                 </thead>
                 <tbody>
                   {examList.length === 0 ? (
-                    <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>Belum ada ujian terdaftar.</td></tr>
+                    <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>Belum ada ujian terdaftar.</td></tr>
                   ) : examList.map(exam => (
                     <tr key={exam.id}>
                       <td style={{ fontWeight: 600 }}>{exam.title}</td>
                       <td className="text-muted text-sm">{exam.users?.name || exam.created_by}</td>
-                      <td>{exam.duration_minutes} mnt</td>
+                      <td>
+                        <span className={`badge ${exam.mode === 'quiz' ? 'badge-active' : 'badge-draft'}`} style={{ fontSize: '0.75rem' }}>
+                          {exam.mode === 'quiz' ? '⚡ Kuis' : '📝 Ujian'}
+                        </span>
+                      </td>
+                      <td>{exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} mnt`}</td>
                       <td>{exam.target_kelas || 'Semua'}</td>
                       <td>
                         <span className={`badge badge-${exam.status === 'published' ? 'active' : exam.status === 'closed' ? 'closed' : 'draft'}`}>
