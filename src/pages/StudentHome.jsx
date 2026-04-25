@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../lib/auth'
 import { exams, sessions, results } from '../lib/db'
-import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff } from 'lucide-react'
+import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap } from 'lucide-react'
 import BiometricPrompt from '../components/BiometricPrompt'
 
 function getStatusBadge(status) {
@@ -146,10 +146,13 @@ export default function StudentHome() {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.375rem' }}>
                       <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{exam.title}</h3>
+                      {exam.mode === 'quiz' && (
+                        <span className="badge badge-active" style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>⚡ Kuis</span>
+                      )}
                       {getStatusBadge(session?.status)}
                     </div>
                     <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={13} /> {exam.duration_minutes} menit</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={13} /> {exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} menit`}</span>
                       {scoreNode}
                       {isActive && exam.status === 'published' && <span className="text-gold">Klik untuk melanjutkan ujian</span>}
                       {isActive && exam.status !== 'published' && <span className="text-danger">Ujian telah ditutup</span>}

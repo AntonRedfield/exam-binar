@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock } from 'lucide-react'
 
 const TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'ESSAY']
 const TYPE_LABELS = { MCQ: 'Pilihan Ganda (1 jawaban)', COMPLEX_MCQ: 'Multi-Jawab (beberapa benar)', TRUE_FALSE: 'Benar / Salah', ESSAY: 'Esai (penilaian manual)' }
 const OPTION_KEYS = ['A', 'B', 'C', 'D']
 
 function makeQuestion(n) {
-  return { number: n, type: 'MCQ', options: { A: '', B: '', C: '', D: '' }, correct_answer: 'A', points: 1, variant: 'A' }
+  return { number: n, type: 'MCQ', question_text: '', options: { A: '', B: '', C: '', D: '' }, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
 }
 
 export default function CreateExam() {
@@ -23,6 +23,9 @@ export default function CreateExam() {
   const [duration, setDuration] = useState(60)
   const [targetKelas, setTargetKelas] = useState([])
   const [passingGrade, setPassingGrade] = useState(60)
+  const [mode, setMode] = useState('exam')
+  const [quizTimerType, setQuizTimerType] = useState('uniform')
+  const [uniformTime, setUniformTime] = useState(30)
   const [questionItems, setQuestionItems] = useState([makeQuestion(1)])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -44,12 +47,20 @@ export default function CreateExam() {
       const { data: qs } = await questions.listByExam(examId)
       if (exam) {
         setTitle(exam.title)
-        setPdfUrl(exam.pdf_url)
+        setPdfUrl(exam.pdf_url || '')
         setDuration(exam.duration_minutes)
         setPassingGrade(exam.passing_grade ?? 60)
         setTargetKelas(exam.target_kelas === 'all' || !exam.target_kelas ? [] : exam.target_kelas.split(','))
+        setMode(exam.mode || 'exam')
+        setQuizTimerType(exam.quiz_timer_type || 'uniform')
       }
-      if (qs?.length) setQuestionItems(qs.map(q => ({ ...q, options: q.options || { A: '', B: '', C: '', D: '' } })))
+      if (qs?.length) {
+        setQuestionItems(qs.map(q => ({ ...q, question_text: q.question_text || '', options: q.options || { A: '', B: '', C: '', D: '' }, time_limit: q.time_limit || null })))
+        // If uniform, populate the bulk time from the first question's time_limit
+        if ((exam?.quiz_timer_type || 'uniform') === 'uniform' && qs[0]?.time_limit) {
+          setUniformTime(qs[0].time_limit)
+        }
+      }
       setLoading(false)
     }
     load()
@@ -72,13 +83,32 @@ export default function CreateExam() {
   }
 
   async function handleSave(publish = false) {
-    if (!title.trim()) { setError('Judul ujian harus diisi.'); return }
-    if (!pdfUrl.trim()) { setError('Link PDF Google Drive harus diisi.'); return }
+    if (!title.trim()) { setError('Judul harus diisi.'); return }
+    // Validate quiz timers
+    if (mode === 'quiz') {
+      if (quizTimerType === 'uniform' && (!uniformTime || uniformTime < 1)) {
+        setError('Waktu per soal (seragam) harus > 0 detik.'); return
+      }
+      if (quizTimerType === 'independent') {
+        const missingTimers = questionItems.some(q => !q.time_limit || q.time_limit < 1)
+        if (missingTimers) { setError('Setiap soal dalam mode Kuis (Timer Independen) harus memiliki waktu > 0 detik.'); return }
+      }
+    }
     setSaving(true); setError('')
 
     try {
       const targetStr = targetKelas.length === 0 ? 'all' : targetKelas.join(',')
-      const examData = { title: title.trim(), pdf_url: pdfUrl.trim(), duration_minutes: Number(duration), passing_grade: Number(passingGrade) || 60, target_kelas: targetStr, created_by: user.id, status: publish ? 'published' : 'draft' }
+      const examData = {
+        title: title.trim(),
+        pdf_url: pdfUrl.trim() || null,
+        duration_minutes: Number(duration),
+        passing_grade: Number(passingGrade) || 60,
+        target_kelas: targetStr,
+        created_by: user.id,
+        status: publish ? 'published' : 'draft',
+        mode,
+        quiz_timer_type: mode === 'quiz' ? quizTimerType : 'uniform',
+      }
 
       let savedExamId = examId
       if (isEdit) {
@@ -94,10 +124,14 @@ export default function CreateExam() {
         exam_id: savedExamId,
         number: q.number,
         type: q.type,
+        question_text: q.question_text || '',
         options: q.type === 'ESSAY' ? null : q.options,
         correct_answer: q.type === 'ESSAY' ? null : q.correct_answer,
         points: Number(q.points) || 1,
         variant: q.variant || 'A',
+        time_limit: mode === 'quiz'
+          ? (quizTimerType === 'uniform' ? Number(uniformTime) || 30 : (Number(q.time_limit) || 30))
+          : null,
       }))
       await questions.createMany(qRows)
 
@@ -110,6 +144,8 @@ export default function CreateExam() {
 
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
 
+  const isIndependent = mode === 'quiz' && quizTimerType === 'independent'
+
   return (
     <>
       <div className="page-header">
@@ -118,7 +154,7 @@ export default function CreateExam() {
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/teacher/exams')}><ChevronLeft size={15} /></button>
             <div>
               <h2>{isEdit ? 'Edit Ujian' : 'Buat Ujian Baru'}</h2>
-              <p className="text-muted text-sm">{questionItems.length} soal</p>
+              <p className="text-muted text-sm">{questionItems.length} soal · Mode: {mode === 'exam' ? 'Ujian' : 'Kuis'}</p>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -135,24 +171,120 @@ export default function CreateExam() {
       <div className="page-body">
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
+        {/* Mode Selector */}
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header"><h3>Mode</h3></div>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button
+              className={`btn ${mode === 'exam' ? 'btn-gold' : 'btn-ghost'}`}
+              onClick={() => setMode('exam')}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
+            >
+              <BookOpen size={18} />
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 700 }}>Ujian</div>
+                <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer global, PDF soal</div>
+              </div>
+            </button>
+            <button
+              className={`btn ${mode === 'quiz' ? 'btn-gold' : 'btn-ghost'}`}
+              onClick={() => setMode('quiz')}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
+            >
+              <Zap size={18} />
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 700 }}>Kuis</div>
+                <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer per soal, maju satu arah</div>
+              </div>
+            </button>
+          </div>
+
+          {/* Quiz timer type */}
+          {mode === 'quiz' && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+              <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
+                <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
+                Pengaturan Waktu Per Soal
+              </label>
+              <div style={{ display: 'flex', gap: '0.625rem' }}>
+                <label style={{
+                  flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.75rem', borderRadius: 8,
+                  border: `2px solid ${quizTimerType === 'uniform' ? 'var(--gold)' : 'var(--border)'}`,
+                  background: quizTimerType === 'uniform' ? 'rgba(245,158,11,0.05)' : 'transparent',
+                  cursor: 'pointer', fontSize: '0.85rem'
+                }}>
+                  <input type="radio" name="quizTimerType" checked={quizTimerType === 'uniform'} onChange={() => setQuizTimerType('uniform')} />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Waktu Seragam</div>
+                    <div className="text-muted text-xs">Semua soal punya waktu yang sama</div>
+                  </div>
+                </label>
+                <label style={{
+                  flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.75rem', borderRadius: 8,
+                  border: `2px solid ${quizTimerType === 'independent' ? 'var(--gold)' : 'var(--border)'}`,
+                  background: quizTimerType === 'independent' ? 'rgba(245,158,11,0.05)' : 'transparent',
+                  cursor: 'pointer', fontSize: '0.85rem'
+                }}>
+                  <input type="radio" name="quizTimerType" checked={quizTimerType === 'independent'} onChange={() => setQuizTimerType('independent')} />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Waktu Independen</div>
+                    <div className="text-muted text-xs">Setiap soal punya waktu sendiri</div>
+                  </div>
+                </label>
+              </div>
+              {/* Uniform time input */}
+              {quizTimerType === 'uniform' && (
+                <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Clock size={16} color="var(--gold)" />
+                  <label className="form-label" style={{ margin: 0, whiteSpace: 'nowrap', fontSize: '0.85rem' }}>Waktu per soal:</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    style={{ width: 90, padding: '0.4rem 0.6rem' }}
+                    value={uniformTime}
+                    onChange={e => setUniformTime(Number(e.target.value) || '')}
+                    min="5"
+                    placeholder="30"
+                  />
+                  <span className="text-sm text-muted">detik</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Basic info */}
         <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <div className="card-header"><h3>Informasi Ujian</h3></div>
+          <div className="card-header"><h3>Informasi {mode === 'exam' ? 'Ujian' : 'Kuis'}</h3></div>
           <div style={{ display: 'grid', gap: '1rem' }}>
             <div className="form-group">
-              <label className="form-label">Judul Ujian</label>
-              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="cth: Ujian Tengah Semester Matematika" />
+              <label className="form-label">Judul {mode === 'exam' ? 'Ujian' : 'Kuis'}</label>
+              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={mode === 'exam' ? 'cth: Ujian Tengah Semester Matematika' : 'cth: Kuis Harian Bab 3'} />
             </div>
             <div className="form-group">
-              <label className="form-label">Link PDF Google Drive</label>
+              <label className="form-label">Link PDF Google Drive <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
               <input className="form-input" value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
-              <span className="text-xs text-muted">Pastikan file dapat diakses publik (Anyone with the link → Viewer)</span>
+              <span className="text-xs text-muted">Kosongkan jika soal ditulis manual di bawah. Pastikan file dapat diakses publik.</span>
             </div>
             <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div className="form-group">
-                <label className="form-label">Durasi (menit)</label>
-                <input type="number" className="form-input" value={duration} onChange={e => setDuration(e.target.value)} min="1" max="300" />
-              </div>
+              {/* Show global duration only for exam mode */}
+              {mode === 'exam' && (
+                <div className="form-group">
+                  <label className="form-label">Durasi (menit)</label>
+                  <input type="number" className="form-input" value={duration} onChange={e => setDuration(e.target.value)} min="1" max="300" />
+                </div>
+              )}
+              {mode === 'quiz' && (
+                <div className="form-group">
+                  <label className="form-label">Durasi</label>
+                  <div className="alert alert-info text-sm" style={{ margin: 0, padding: '0.5rem 0.75rem' }}>
+                    <Clock size={14} style={{ marginRight: '0.25rem', verticalAlign: '-2px' }} />
+                    {quizTimerType === 'uniform' ? `${uniformTime} detik / soal (seragam)` : 'Diatur independen per soal'}
+                  </div>
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">KKM (Kriteria Ketuntasan Minimal)</label>
                 <input type="number" className="form-input" value={passingGrade} onChange={e => setPassingGrade(e.target.value)} min="0" max="100" placeholder="60" />
@@ -207,10 +339,39 @@ export default function CreateExam() {
                     <label className="form-label" style={{ whiteSpace: 'nowrap', textTransform: 'none', fontSize: '0.8rem' }}>Poin:</label>
                     <input type="number" className="form-input" style={{ width: 56, padding: '0.35rem 0.5rem', fontSize: '0.85rem' }} value={q.points} onChange={e => updateQuestion(idx, 'points', e.target.value)} min="1" />
                   </div>
+                  {/* Per-question timer for quiz independent mode */}
+                  {isIndependent && (
+                    <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.375rem' }}>
+                      <Clock size={14} color="var(--gold)" />
+                      <input
+                        type="number"
+                        className="form-input"
+                        style={{ width: 64, padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                        value={q.time_limit || ''}
+                        onChange={e => updateQuestion(idx, 'time_limit', e.target.value ? Number(e.target.value) : null)}
+                        min="5"
+                        placeholder="dtk"
+                        title="Waktu per soal (detik)"
+                      />
+                      <span className="text-xs text-muted">dtk</span>
+                    </div>
+                  )}
                   {questionItems.length > 1 && (
                     <button className="btn btn-danger btn-sm" onClick={() => removeQuestion(idx)}><Trash2 size={13} /></button>
                   )}
                 </div>
+              </div>
+
+              {/* Question text - manual question body */}
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Teks Soal</label>
+                <textarea
+                  className="form-input"
+                  style={{ minHeight: 60, resize: 'vertical', fontSize: '0.85rem' }}
+                  value={q.question_text || ''}
+                  onChange={e => updateQuestion(idx, 'question_text', e.target.value)}
+                  placeholder="Tulis soal di sini (opsional jika menggunakan PDF)..."
+                />
               </div>
 
               {/* MCQ / COMPLEX_MCQ options */}
