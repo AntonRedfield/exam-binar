@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions } from '../lib/db'
-import { BookOpen, Clock, Users, ShieldAlert, Play, RotateCcw, Zap } from 'lucide-react'
+import { BookOpen, Clock, Users, ShieldAlert, Play, RotateCcw, Zap, Camera, AlertTriangle, CheckCircle } from 'lucide-react'
+import { MONITORING_LEVELS } from '../lib/monitoringConfig'
+import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
 
 export default function ExamLobby() {
   const { examId } = useParams()
@@ -15,8 +17,12 @@ export default function ExamLobby() {
   const [loading, setLoading] = useState(true)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const [cameraGranted, setCameraGranted] = useState(false)
+  const [cameraChecking, setCameraChecking] = useState(false)
+  const [cameraError, setCameraError] = useState('')
 
   useEffect(() => {
+    if (!user) return
     async function load() {
       const [{ data: examData }, { data: qs }, { data: sess }] = await Promise.all([
         exams.getById(examId),
@@ -29,22 +35,50 @@ export default function ExamLobby() {
       setLoading(false)
     }
     load()
-  }, [examId, user.id])
+  }, [examId, user?.id])
+
+  const monitorLevel = exam?.monitoring_level || 1
+  const levelConfig = MONITORING_LEVELS[monitorLevel] || MONITORING_LEVELS[1]
+  const needsCamera = monitorLevel === 4
+
+  // Camera check for Level 4
+  async function handleCameraCheck() {
+    setCameraChecking(true)
+    setCameraError('')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 320, height: 240, facingMode: 'user' },
+        audio: false,
+      })
+      // Immediately stop — we just needed permission
+      stream.getTracks().forEach(t => t.stop())
+      setCameraGranted(true)
+    } catch (err) {
+      const msg = err.name === 'NotAllowedError'
+        ? 'Akses kamera ditolak. Izinkan kamera di pengaturan browser untuk memulai ujian.'
+        : err.name === 'NotFoundError'
+        ? 'Kamera tidak ditemukan. Pastikan perangkat memiliki kamera yang berfungsi.'
+        : `Gagal mengakses kamera: ${err.message}`
+      setCameraError(msg)
+    }
+    setCameraChecking(false)
+  }
 
   async function handleStart() {
+    if (needsCamera && !cameraGranted) {
+      setCameraError('Kamera harus diaktifkan sebelum memulai ujian Level 4.')
+      return
+    }
     setStarting(true)
     setError('')
     try {
-      // Quiz mode stores duration in seconds, exam mode in minutes
       const durationMs = exam.mode === 'quiz'
         ? exam.duration_minutes * 1000
         : exam.duration_minutes * 60 * 1000
       const endTimestamp = new Date(Date.now() + durationMs).toISOString()
 
       if (!session || session.status === 'reset') {
-        // Create or re-create session
         if (session) {
-          // Update existing reset session
           await sessions.update(session.id, {
             status: 'active',
             end_timestamp: endTimestamp,
@@ -86,10 +120,11 @@ export default function ExamLobby() {
 
   const isDone = session?.status === 'submitted' || session?.status === 'time_up'
   const isActive = session?.status === 'active'
+  const canStart = !needsCamera || cameraGranted
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)', padding: '1rem' }}>
-      <div style={{ maxWidth: 520, width: '100%' }}>
+      <div style={{ maxWidth: 560, width: '100%' }}>
         {/* Header icon */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
           <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', margin: '0 auto 1rem' }} />
@@ -114,26 +149,96 @@ export default function ExamLobby() {
           </div>
         </div>
 
-        {/* Rules */}
-        <div className="card" style={{ marginBottom: '1.25rem', borderColor: 'rgba(245,158,11,0.2)' }}>
+        {/* Monitoring Level Badge */}
+        <div className="card" style={{
+          marginBottom: '1.25rem',
+          borderColor: levelConfig.colorBorder,
+          background: levelConfig.colorBg,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 12,
+              background: `${levelConfig.color}20`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <MonitoringIcon level={monitorLevel} size={28} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: levelConfig.color }}>
+                Level {monitorLevel} — {levelConfig.name}
+              </div>
+              {monitorLevel === 4 && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  {MONITORING_LEVELS[4].fullName}
+                </div>
+              )}
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                {levelConfig.tagline}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Rules — specific to monitoring level */}
+        <div className="card" style={{ marginBottom: '1.25rem', borderColor: `${levelConfig.color}40` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.875rem' }}>
-            <ShieldAlert size={18} color="var(--warning)" />
-            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--warning)' }}>Peraturan Ujian</span>
+            <ShieldAlert size={18} color={levelConfig.color} />
+            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: levelConfig.color }}>
+              Peraturan {exam.mode === 'quiz' ? 'Kuis' : 'Ujian'} — {levelConfig.name}
+            </span>
           </div>
           <ul style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingLeft: '1rem' }}>
-            <li>Jangan berpindah tab atau jendela browser selama ujian.</li>
-            <li>Klik kanan, copy, dan paste dinonaktifkan selama ujian.</li>
+            {levelConfig.briefRules.map((rule, i) => (
+              <li key={i} style={rule.startsWith('⚠️') || rule.startsWith('🔴') || rule.startsWith('⏰') ? { color: levelConfig.color, fontWeight: 600 } : {}}>
+                {rule}
+              </li>
+            ))}
             {exam.mode === 'quiz' && (
               <li style={{ color: 'var(--warning)', fontWeight: 600 }}>Mode Kuis: Anda hanya dapat maju ke soal berikutnya, tidak bisa kembali.</li>
             )}
-            {exam.mode === 'quiz' && (
-              <li style={{ color: 'var(--warning)', fontWeight: 600 }}>Setiap soal memiliki timer sendiri. Jika waktu habis, jawaban akan terkunci otomatis.</li>
-            )}
-            <li>Timer berjalan di server — terus berjalan meskipun koneksi terputus.</li>
             <li>Jawaban disimpan otomatis setiap 10 detik.</li>
-            <li>Setiap pelanggaran akan tercatat dalam laporan hasil.</li>
           </ul>
         </div>
+
+        {/* Camera check for Level 4 */}
+        {needsCamera && !isDone && (
+          <div className="card" style={{
+            marginBottom: '1.25rem',
+            borderColor: cameraGranted ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+            background: cameraGranted ? 'var(--success-bg)' : 'var(--danger-bg)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <Camera size={22} color={cameraGranted ? 'var(--success)' : 'var(--danger)'} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: cameraGranted ? 'var(--success)' : 'var(--danger)' }}>
+                  {cameraGranted ? '✅ Kamera Aktif' : '🔴 Kamera Diperlukan'}
+                </div>
+                <p className="text-muted text-sm" style={{ margin: '0.15rem 0 0' }}>
+                  {cameraGranted
+                    ? 'Kamera siap. Sistem deteksi wajah akan aktif selama ujian.'
+                    : 'Ujian Level 4 memerlukan akses kamera untuk deteksi wajah.'}
+                </p>
+              </div>
+              {!cameraGranted && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleCameraCheck}
+                  disabled={cameraChecking}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {cameraChecking
+                    ? <><div className="spinner" style={{ width: 14, height: 14 }} /> Memeriksa...</>
+                    : <><Camera size={14} /> Izinkan Kamera</>}
+                </button>
+              )}
+            </div>
+            {cameraError && (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <AlertTriangle size={14} /> {cameraError}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
@@ -142,7 +247,12 @@ export default function ExamLobby() {
             <CheckCircle size={16} /> Anda telah menyelesaikan ujian ini.
           </div>
         ) : (
-          <button className="btn btn-gold btn-lg w-full" onClick={handleStart} disabled={starting}>
+          <button
+            className="btn btn-gold btn-lg w-full"
+            onClick={handleStart}
+            disabled={starting || !canStart}
+            style={!canStart ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+          >
             {starting
               ? <><div className="spinner" style={{ width: 20, height: 20, borderColor: 'rgba(0,0,0,0.2)', borderTopColor: '#0A1628' }} /> Memulai...</>
               : isActive
@@ -150,6 +260,12 @@ export default function ExamLobby() {
               : <><Play size={18} /> Mulai {exam.mode === 'quiz' ? 'Kuis' : 'Ujian'}</>
             }
           </button>
+        )}
+
+        {!canStart && !isDone && (
+          <p className="text-danger text-xs" style={{ textAlign: 'center', marginTop: '0.5rem' }}>
+            Aktifkan kamera terlebih dahulu untuk memulai ujian Level 4.
+          </p>
         )}
 
         <p className="text-muted text-xs" style={{ textAlign: 'center', marginTop: '1rem' }}>

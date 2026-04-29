@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams } from '../../lib/db'
 import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen } from 'lucide-react'
+import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
+import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 
 export default function ExamList() {
   const user = getCurrentUser()
@@ -89,6 +91,7 @@ export default function ExamList() {
                     </th>
                     <th>Target Kelas</th>
                     <th>Mode</th>
+                    <th>Pengawasan</th>
                     <th>Durasi</th>
                     <th>Status</th>
                     <th>Dibuat</th>
@@ -108,6 +111,12 @@ export default function ExamList() {
                       <td>
                         <span className={`badge ${exam.mode === 'quiz' ? 'badge-active' : 'badge-draft'}`} style={{ fontSize: '0.75rem' }}>
                           {exam.mode === 'quiz' ? '⚡ Kuis' : '📝 Ujian'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={getMonitoringBadgeStyle(exam.monitoring_level || 1)}>
+                          <MonitoringIcon level={exam.monitoring_level || 1} size={14} />
+                          Lv.{exam.monitoring_level || 1}
                         </span>
                       </td>
                       <td>{exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} mnt`}</td>

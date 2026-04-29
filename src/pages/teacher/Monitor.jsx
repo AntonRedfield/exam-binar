@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, sessions } from '../../lib/db'
 import { RefreshCcw, ChevronLeft, RotateCcw, Activity } from 'lucide-react'
+import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
+import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 
 function statusBadge(status) {
   const map = {
@@ -83,7 +85,15 @@ export default function Monitor() {
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/teacher/exams')}><ChevronLeft size={15} /></button>
             <div>
               <h2>Monitor: {exam?.title}</h2>
-              <p className="text-muted text-sm">Auto-refresh tiap 10 detik</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <p className="text-muted text-sm" style={{ margin: 0 }}>Auto-refresh tiap 10 detik</p>
+                {exam?.monitoring_level && (
+                  <span style={getMonitoringBadgeStyle(exam.monitoring_level)}>
+                    <MonitoringIcon level={exam.monitoring_level} size={12} />
+                    {MONITORING_LEVELS[exam.monitoring_level]?.name || `Lv.${exam.monitoring_level}`}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={load}><RefreshCcw size={15} /> Refresh</button>

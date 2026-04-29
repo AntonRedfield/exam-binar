@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp } from 'lucide-react'
+import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
+import { MonitoringIcon } from '../../lib/monitoringUI'
 
 const TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'ESSAY']
 const TYPE_LABELS = { MCQ: 'Pilihan Ganda (1 jawaban)', COMPLEX_MCQ: 'Multi-Jawab (beberapa benar)', TRUE_FALSE: 'Benar / Salah', ESSAY: 'Esai (penilaian manual)' }
@@ -31,6 +33,8 @@ export default function CreateExam() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(isEdit)
   const [dbClasses, setDbClasses] = useState([])
+  const [monitoringLevel, setMonitoringLevel] = useState(1)
+  const [showMonitorInfo, setShowMonitorInfo] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -53,6 +57,7 @@ export default function CreateExam() {
         setTargetKelas(exam.target_kelas === 'all' || !exam.target_kelas ? [] : exam.target_kelas.split(','))
         setMode(exam.mode || 'exam')
         setQuizTimerType(exam.quiz_timer_type || 'uniform')
+        setMonitoringLevel(exam.monitoring_level || 1)
       }
       if (qs?.length) {
         setQuestionItems(qs.map(q => ({ ...q, question_text: q.question_text || '', options: q.options || { A: '', B: '', C: '', D: '' }, time_limit: q.time_limit || null })))
@@ -108,6 +113,7 @@ export default function CreateExam() {
         status: publish ? 'published' : 'draft',
         mode,
         quiz_timer_type: mode === 'quiz' ? quizTimerType : 'uniform',
+        monitoring_level: monitoringLevel,
       }
 
       let savedExamId = examId
@@ -115,7 +121,10 @@ export default function CreateExam() {
         await exams.update(examId, examData)
         await questions.deleteByExam(examId)
       } else {
-        const { data } = await exams.create(examData)
+        const { data, error: createErr } = await exams.create(examData)
+        if (createErr || !data) {
+          throw new Error(createErr?.message || 'Gagal membuat ujian — periksa kolom database.')
+        }
         savedExamId = data.id
       }
 
@@ -251,6 +260,120 @@ export default function CreateExam() {
                   <span className="text-sm text-muted">detik</span>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Monitoring Level Selector */}
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <MonitoringIcon level={monitoringLevel} size={22} /> Tingkat Pengawasan
+            </h3>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowMonitorInfo(!showMonitorInfo)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem' }}
+            >
+              <Info size={14} />
+              {showMonitorInfo ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          </div>
+
+          {/* Level cards grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.625rem' }}>
+            {Object.values(MONITORING_LEVELS).map(lvl => (
+              <button
+                key={lvl.id}
+                type="button"
+                onClick={() => setMonitoringLevel(lvl.id)}
+                className="monitoring-level-card"
+                style={{
+                  padding: '0.875rem 0.75rem',
+                  borderRadius: 10,
+                  border: `2px solid ${monitoringLevel === lvl.id ? lvl.color : 'var(--border)'}`,
+                  background: monitoringLevel === lvl.id ? lvl.colorBg : 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: monitoringLevel === lvl.id ? `${lvl.color}20` : 'var(--navy-light)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.2s ease',
+                }}>
+                  <MonitoringIcon level={lvl.id} size={24} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.82rem', color: monitoringLevel === lvl.id ? lvl.color : 'var(--text-primary)' }}>
+                    Lv.{lvl.id}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: monitoringLevel === lvl.id ? lvl.color : 'var(--text-secondary)' }}>
+                    {lvl.name}
+                  </div>
+                  <div className="text-muted" style={{ fontSize: '0.68rem', marginTop: '0.15rem', lineHeight: 1.3 }}>
+                    {lvl.tagline}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Selected level description */}
+          <div style={{
+            marginTop: '0.875rem',
+            padding: '0.875rem 1rem',
+            borderRadius: 8,
+            background: MONITORING_LEVELS[monitoringLevel].colorBg,
+            border: `1px solid ${MONITORING_LEVELS[monitoringLevel].colorBorder}`,
+            fontSize: '0.83rem',
+            color: 'var(--text-primary)',
+            lineHeight: 1.5,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
+              <MonitoringIcon level={monitoringLevel} size={18} />
+              <strong style={{ color: MONITORING_LEVELS[monitoringLevel].color }}>
+                {MONITORING_LEVELS[monitoringLevel].name}
+                {monitoringLevel === 4 && <span style={{ fontSize: '0.72rem', fontWeight: 400, marginLeft: '0.35rem', opacity: 0.8 }}>({MONITORING_LEVELS[4].fullName})</span>}
+              </strong>
+            </div>
+            <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+              {MONITORING_LEVELS[monitoringLevel].description}
+            </p>
+          </div>
+
+          {/* Expandable teacher info */}
+          {showMonitorInfo && (
+            <div style={{
+              marginTop: '0.75rem',
+              padding: '1rem',
+              borderRadius: 8,
+              background: 'rgba(79,142,247,0.06)',
+              border: '1px solid rgba(79,142,247,0.15)',
+              fontSize: '0.82rem',
+              lineHeight: 1.6,
+            }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent)' }}>
+                <Info size={15} /> Panduan Tingkat Pengawasan
+              </div>
+              {Object.values(MONITORING_LEVELS).map(lvl => (
+                <div key={lvl.id} style={{ marginBottom: '0.625rem', paddingBottom: '0.625rem', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <MonitoringIcon level={lvl.id} size={16} />
+                    <span style={{ color: lvl.color }}>Level {lvl.id} — {lvl.name}</span>
+                  </div>
+                  <p style={{ margin: '0.25rem 0 0', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                    {lvl.teacherInfo}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </div>

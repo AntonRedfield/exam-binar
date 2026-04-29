@@ -905,3 +905,205 @@ tbody tr:hover { background: var(--glass-light); }
   .tf-btn { padding: 1.25rem; }
   .q-nav-btn { width: 42px; height: 42px; }
 }
+
+/* ─── MONITORING SYSTEM STYLES ─────────────────────────────────────────────── */
+
+/* Screen Freeze Overlay */
+.freeze-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(10,22,40,0.97);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: freezeIn 0.4s ease-out;
+  border: 4px solid var(--danger);
+}
+.freeze-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 4px solid var(--danger);
+  animation: freezePulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.freeze-content {
+  text-align: center;
+  max-width: 420px;
+  padding: 2rem;
+}
+.freeze-icon {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.15);
+  border: 3px solid var(--danger);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 1.5rem;
+  color: var(--danger);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.freeze-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--danger);
+  font-family: 'Outfit', sans-serif;
+  margin-bottom: 0.75rem;
+}
+.freeze-offense-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(239,68,68,0.15);
+  color: var(--danger);
+  padding: 0.3rem 0.8rem;
+  border-radius: 99px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.freeze-desc {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+.freeze-countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+.freeze-countdown-number {
+  font-size: 4rem;
+  font-weight: 900;
+  color: var(--danger);
+  font-family: 'Outfit', sans-serif;
+  line-height: 1;
+  text-shadow: 0 0 30px rgba(239,68,68,0.4);
+}
+.freeze-countdown-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+.freeze-progress {
+  width: 100%;
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+.freeze-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--danger), #f97316);
+  border-radius: 99px;
+  transition: width 1s linear;
+}
+.freeze-warning-text {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+/* Face Detection PiP */
+.face-detect-pip {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9990;
+  background: var(--navy-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  min-width: 80px;
+}
+.face-detect-pip.face-detect-error {
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--danger);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.face-detect-canvas {
+  display: block;
+  width: 80px;
+  height: 60px;
+  border-radius: 9px 9px 0 0;
+}
+.face-detect-pip-info {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--success);
+}
+.face-detect-status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.face-detect-status-dot.face-detect-active {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+  animation: pulse 2s ease-in-out infinite;
+}
+.face-detect-lookaway-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(239,68,68,0.9);
+  color: white;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 0.1rem 0.35rem;
+  border-radius: 99px;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+.face-detect-loading {
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.face-detect-pip-label {
+  letter-spacing: 0.05em;
+}
+
+/* Monitoring Level Card hover */
+.monitoring-level-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+/* Animations */
+@keyframes freezeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes freezePulse {
+  0%, 100% { border-color: var(--danger); opacity: 1; }
+  50% { border-color: rgba(239,68,68,0.3); opacity: 0.6; }
+}
+
+/* Responsive: monitoring cards stack on small screens */
+@media (max-width: 768px) {
+  .monitoring-level-card {
+    padding: 0.625rem 0.5rem !important;
+  }
+}
+@media (max-width: 540px) {
+  .face-detect-pip {
+    bottom: 8px;
+    right: 8px;
+  }
+}
