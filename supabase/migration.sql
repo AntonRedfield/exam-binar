@@ -16,12 +16,15 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS exams (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
-  pdf_url TEXT NOT NULL,
+  pdf_url TEXT,
   duration_minutes INT NOT NULL DEFAULT 60,
   target_kelas TEXT DEFAULT 'all',
   created_by TEXT REFERENCES users(id),
   status TEXT DEFAULT 'draft' CHECK (status IN ('draft','published','closed')),
   passing_grade INT DEFAULT 60,
+  mode TEXT DEFAULT 'exam',
+  quiz_timer_type TEXT DEFAULT 'uniform',
+  monitoring_level INT DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -31,10 +34,12 @@ CREATE TABLE IF NOT EXISTS questions (
   exam_id UUID REFERENCES exams(id) ON DELETE CASCADE,
   number INT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('MCQ','COMPLEX_MCQ','TRUE_FALSE','ESSAY')),
+  question_text TEXT,
   options JSONB,
   correct_answer JSONB,
   points INT DEFAULT 1,
-  variant TEXT DEFAULT 'A'
+  variant TEXT DEFAULT 'A',
+  time_limit INT
 );
 
 -- 4. EXAM SESSIONS TABLE

@@ -64,6 +64,24 @@ export default defineConfig({
               expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] }
             }
+          },
+          {
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@mediapipe\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'mediapipe-wasm-cache',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/storage\.googleapis\.com\/mediapipe-models\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'mediapipe-models-cache',
+              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
           }
         ]
       }
