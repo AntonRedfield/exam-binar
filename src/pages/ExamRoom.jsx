@@ -67,6 +67,19 @@ function shuffleArray(array, seedStr) {
   return newArr;
 }
 
+function formatCorrectAnswer(correct, qType) {
+  if (!correct) return '-';
+  if (qType === 'COMPLEX_MCQ' && Array.isArray(correct)) {
+    return correct.join(', ');
+  }
+  if (qType === 'TRUE_FALSE' && typeof correct === 'object') {
+    return Object.entries(correct)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(' | ');
+  }
+  return String(correct);
+}
+
 export default function ExamRoom() {
   const { examId } = useParams()
   const navigate = useNavigate()
@@ -86,6 +99,7 @@ export default function ExamRoom() {
   const [mobileTab, setMobileTab] = useState('answer')
   const [lockedQuestions, setLockedQuestions] = useState({})
   const [questionTimeWarning, setQuestionTimeWarning] = useState(false)
+  const [quizFeedback, setQuizFeedback] = useState(null)
 
   // Monitoring-specific state
   const [freezeActive, setFreezeActive] = useState(false)
@@ -243,17 +257,62 @@ export default function ExamRoom() {
     setAnswers(updated)
   }
 
+  function handleQuizNext(isSubmit = false) {
+    const currQ = questionList[currentQ - 1]
+    if (!currQ) return;
+    const { breakdown } = gradeExam(answersRef.current, [currQ])
+    const res = breakdown[0]
+    
+    setLockedQuestions(prev => ({ ...prev, [String(currentQ)]: true }))
+
+    let message = ''
+    let status = res?.status || 'pending'
+    
+    if (status === 'correct') {
+      message = 'Jawaban Anda Benar!'
+    } else if (status === 'wrong') {
+      message = 'Jawaban Anda Salah.'
+    } else if (status === 'partial') {
+      message = 'Jawaban Anda Kurang Tepat.'
+    } else {
+      message = 'Jawaban disimpan.'
+    }
+
+    setQuizFeedback({
+      status,
+      message,
+      correct: res?.correct,
+      qType: currQ.type,
+      isSubmit
+    })
+  }
+
   // Quiz per-question timer expired
   const handleQuestionTimerExpire = useCallback(() => {
     const totalQ = questionList.length
     setLockedQuestions(prev => ({ ...prev, [String(currentQ)]: true }))
     setQuestionTimeWarning(false)
-    if (currentQ < totalQ) {
-      setCurrentQ(prev => prev + 1)
+    
+    const currQ = questionList[currentQ - 1]
+    if (currQ) {
+      const { breakdown } = gradeExam(answersRef.current, [currQ])
+      const res = breakdown[0]
+      setQuizFeedback({
+        status: res?.status || 'pending',
+        message: 'Waktu habis untuk soal ini!',
+        correct: res?.correct,
+        qType: currQ.type,
+        isSubmit: currentQ >= totalQ,
+        isTimeUp: true
+      })
     } else {
-      handleTimerExpire()
+      if (currentQ < totalQ) {
+        setCurrentQ(prev => prev + 1)
+      } else {
+        handleTimerExpire()
+      }
     }
-  }, [currentQ, questionList.length])
+  }, [currentQ, questionList])
 
   const handleQuestionTimeWarning = useCallback(() => {
     setQuestionTimeWarning(true)
@@ -540,14 +599,11 @@ export default function ExamRoom() {
               <>
                 <div style={{ flex: 1 }} />
                 {currentQ < totalQ ? (
-                  <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => {
-                    setLockedQuestions(prev => ({ ...prev, [String(currentQ)]: true }))
-                    setCurrentQ(q => q + 1)
-                  }}>
+                  <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => handleQuizNext(false)}>
                     Selanjutnya <ChevronRight size={15} />
                   </button>
                 ) : (
-                  <button className="btn btn-gold btn-sm" style={{ flex: 1 }} onClick={() => setShowSubmitConfirm(true)} disabled={submitting}>
+                  <button className="btn btn-gold btn-sm" style={{ flex: 1 }} onClick={() => handleQuizNext(true)} disabled={submitting}>
                     <Send size={14} /> Kumpulkan
                   </button>
                 )}
@@ -571,6 +627,66 @@ export default function ExamRoom() {
           </div>
         </div>
       </div>
+
+      {/* Quiz Feedback Modal */}
+      {isQuiz && quizFeedback && (
+        <div className="modal-overlay" style={{ zIndex: 10000, background: 'rgba(10,22,40,0.85)', backdropFilter: 'blur(4px)' }}>
+          <div className="modal" style={{ maxWidth: 400, textAlign: 'center', 
+              borderTop: `5px solid ${quizFeedback.status === 'correct' ? 'var(--success)' : quizFeedback.status === 'wrong' ? 'var(--danger)' : 'var(--gold)'}` 
+          }}>
+            <div style={{ marginBottom: '1rem', animation: 'bounce 0.5s ease' }}>
+              {quizFeedback.status === 'correct' && <div style={{ fontSize: '3.5rem' }}>🎉</div>}
+              {quizFeedback.status === 'wrong' && <div style={{ fontSize: '3.5rem' }}>❌</div>}
+              {quizFeedback.status === 'partial' && <div style={{ fontSize: '3.5rem' }}>⚠️</div>}
+              {quizFeedback.status === 'pending' && <div style={{ fontSize: '3.5rem' }}>📝</div>}
+            </div>
+            
+            <h2 style={{ 
+              color: quizFeedback.status === 'correct' ? 'var(--success)' : quizFeedback.status === 'wrong' ? 'var(--danger)' : 'var(--text)',
+              marginBottom: '0.5rem',
+              fontWeight: 800,
+              fontFamily: 'Outfit, sans-serif'
+            }}>
+              {quizFeedback.status === 'correct' ? 'Selamat!' : quizFeedback.status === 'wrong' ? 'Salah!' : 'Perhatian'}
+            </h2>
+            
+            <p style={{ marginBottom: quizFeedback.correct && quizFeedback.status !== 'correct' ? '1rem' : '1.5rem', fontSize: '1.05rem', color: 'var(--text)' }}>
+              {quizFeedback.message}
+            </p>
+
+            {quizFeedback.correct && quizFeedback.status !== 'correct' && quizFeedback.status !== 'pending' && (
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: 8, marginBottom: '1.5rem', textAlign: 'left', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <span className="text-muted text-sm d-block" style={{ marginBottom: '0.25rem' }}>Jawaban yang benar:</span>
+                <strong style={{ color: 'var(--success)', fontSize: '1rem' }}>
+                  {formatCorrectAnswer(quizFeedback.correct, quizFeedback.qType)}
+                </strong>
+              </div>
+            )}
+            
+            <button 
+              className={`btn btn-${quizFeedback.status === 'correct' ? 'success' : 'primary'}`} 
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+              onClick={() => {
+                const isSub = quizFeedback.isSubmit;
+                const isTUp = quizFeedback.isTimeUp;
+                setQuizFeedback(null)
+                
+                if (isSub) {
+                  if (isTUp) {
+                    handleTimerExpire()
+                  } else {
+                    setShowSubmitConfirm(true)
+                  }
+                } else {
+                  setCurrentQ(prev => prev + 1)
+                }
+              }}
+            >
+              Lanjut <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Time's Up overlay */}
       {timeUp && (
