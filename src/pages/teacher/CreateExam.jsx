@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
 
@@ -11,7 +11,7 @@ const TYPE_LABELS = { MCQ: 'Pilihan Ganda (1 jawaban)', COMPLEX_MCQ: 'Multi-Jawa
 const OPTION_KEYS = ['A', 'B', 'C', 'D']
 
 function makeQuestion(n) {
-  return { number: n, type: 'MCQ', question_text: '', options: { A: '', B: '', C: '', D: '' }, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
+  return { number: n, type: 'MCQ', question_text: '', image_url: '', options: { A: '', B: '', C: '', D: '' }, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
 }
 
 export default function CreateExam() {
@@ -21,6 +21,7 @@ export default function CreateExam() {
   const user = getCurrentUser()
 
   const [title, setTitle] = useState('')
+  const [information, setInformation] = useState('')
   const [pdfUrl, setPdfUrl] = useState('')
   const [duration, setDuration] = useState(60)
   const [targetKelas, setTargetKelas] = useState([])
@@ -28,6 +29,7 @@ export default function CreateExam() {
   const [mode, setMode] = useState('exam')
   const [quizTimerType, setQuizTimerType] = useState('uniform')
   const [uniformTime, setUniformTime] = useState(30)
+  const [questionOrder, setQuestionOrder] = useState('ORDER')
   const [questionItems, setQuestionItems] = useState([makeQuestion(1)])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -51,6 +53,7 @@ export default function CreateExam() {
       const { data: qs } = await questions.listByExam(examId)
       if (exam) {
         setTitle(exam.title)
+        setInformation(exam.information || '')
         setPdfUrl(exam.pdf_url || '')
         setDuration(exam.duration_minutes)
         setPassingGrade(exam.passing_grade ?? 60)
@@ -58,9 +61,10 @@ export default function CreateExam() {
         setMode(exam.mode || 'exam')
         setQuizTimerType(exam.quiz_timer_type || 'uniform')
         setMonitoringLevel(exam.monitoring_level || 1)
+        setQuestionOrder(exam.question_order || 'ORDER')
       }
       if (qs?.length) {
-        setQuestionItems(qs.map(q => ({ ...q, question_text: q.question_text || '', options: q.options || { A: '', B: '', C: '', D: '' }, time_limit: q.time_limit || null })))
+        setQuestionItems(qs.map(q => ({ ...q, question_text: q.question_text || '', image_url: q.image_url || '', options: q.options || { A: '', B: '', C: '', D: '' }, time_limit: q.time_limit || null })))
         // If uniform, populate the bulk time from the first question's time_limit
         if ((exam?.quiz_timer_type || 'uniform') === 'uniform' && qs[0]?.time_limit) {
           setUniformTime(qs[0].time_limit)
@@ -99,12 +103,37 @@ export default function CreateExam() {
         if (missingTimers) { setError('Setiap soal dalam mode Kuis (Timer Independen) harus memiliki waktu > 0 detik.'); return }
       }
     }
+    
+    // Validate that questions and answers are filled
+    for (let i = 0; i < questionItems.length; i++) {
+      const q = questionItems[i]
+      if (questionOrder === 'SHUFFLE' || !pdfUrl) {
+        if (!q.question_text || !q.question_text.trim()) {
+          setError(`Soal no ${q.number} masih kosong, harap isi teks soal terlebih dahulu.`)
+          return
+        }
+      }
+      if (q.type === 'MCQ' && !q.correct_answer) {
+        setError(`Kunci jawaban soal no ${q.number} belum dipilih.`)
+        return
+      }
+      if (q.type === 'COMPLEX_MCQ' && (!Array.isArray(q.correct_answer) || q.correct_answer.length === 0)) {
+        setError(`Kunci jawaban soal no ${q.number} (Multi-Jawab) belum dipilih.`)
+        return
+      }
+      if (q.type === 'TRUE_FALSE' && (!q.correct_answer || Object.keys(q.correct_answer).length === 0)) {
+        setError(`Kunci jawaban soal no ${q.number} (Benar/Salah) belum diisi semua.`)
+        return
+      }
+    }
+
     setSaving(true); setError('')
 
     try {
       const targetStr = targetKelas.length === 0 ? 'all' : targetKelas.join(',')
       const examData = {
         title: title.trim(),
+        information: information.trim() || null,
         pdf_url: pdfUrl.trim() || null,
         duration_minutes: Number(duration),
         passing_grade: Number(passingGrade) || 60,
@@ -114,6 +143,7 @@ export default function CreateExam() {
         mode,
         quiz_timer_type: mode === 'quiz' ? quizTimerType : 'uniform',
         monitoring_level: monitoringLevel,
+        question_order: questionOrder,
       }
 
       let savedExamId = examId
@@ -134,6 +164,7 @@ export default function CreateExam() {
         number: q.number,
         type: q.type,
         question_text: q.question_text || '',
+        image_url: q.image_url || null,
         options: q.type === 'ESSAY' ? null : q.options,
         correct_answer: q.type === 'ESSAY' ? null : q.correct_answer,
         points: Number(q.points) || 1,
@@ -387,10 +418,63 @@ export default function CreateExam() {
               <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={mode === 'exam' ? 'cth: Ujian Tengah Semester Matematika' : 'cth: Kuis Harian Bab 3'} />
             </div>
             <div className="form-group">
-              <label className="form-label">Link PDF Google Drive <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
-              <input className="form-input" value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
-              <span className="text-xs text-muted">Kosongkan jika soal ditulis manual di bawah. Pastikan file dapat diakses publik.</span>
+              <label className="form-label">Informasi Khusus <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
+              <textarea 
+                className="form-input" 
+                value={information} 
+                onChange={e => setInformation(e.target.value)} 
+                placeholder="cth: Jika ketahuan mencontek, nilai langsung 0"
+                style={{ minHeight: '60px', resize: 'vertical' }}
+              />
+              <span className="text-xs text-muted">Informasi ini akan ditampilkan di halaman lobi sebelum siswa memulai ujian.</span>
             </div>
+            <div className="form-group">
+              <label className="form-label">Link PDF Google Drive <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
+              <input 
+                className="form-input" 
+                value={pdfUrl} 
+                onChange={e => {
+                  setPdfUrl(e.target.value)
+                  if (e.target.value) setQuestionOrder('ORDER')
+                }} 
+                placeholder="https://drive.google.com/file/d/..." 
+                disabled={questionOrder === 'SHUFFLE'}
+              />
+              {questionOrder === 'SHUFFLE' ? (
+                <span className="text-xs" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                  <AlertTriangle size={14} /> PDF tidak dapat digunakan jika fitur Acak Soal (SHUFFLE) diaktifkan.
+                </span>
+              ) : (
+                <span className="text-xs text-muted">Kosongkan jika soal ditulis manual di bawah. Pastikan file dapat diakses publik.</span>
+              )}
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">Urutan Soal</label>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                  <input 
+                    type="radio" 
+                    checked={questionOrder === 'ORDER'} 
+                    onChange={() => setQuestionOrder('ORDER')} 
+                  />
+                  Berurutan (Normal)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: pdfUrl ? 'not-allowed' : 'pointer', fontSize: '0.9rem', opacity: pdfUrl ? 0.5 : 1 }}>
+                  <input 
+                    type="radio" 
+                    checked={questionOrder === 'SHUFFLE'} 
+                    onChange={() => {
+                      if (!pdfUrl) setQuestionOrder('SHUFFLE')
+                    }} 
+                    disabled={!!pdfUrl}
+                  />
+                  Acak (Shuffle)
+                </label>
+              </div>
+              {pdfUrl && <span className="text-xs text-muted" style={{ display: 'block', marginTop: '0.25rem' }}>Fitur Acak Soal dinonaktifkan karena Anda menggunakan file PDF.</span>}
+            </div>
+
             <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               {/* Show global duration only for exam mode */}
               {mode === 'exam' && (
@@ -495,6 +579,26 @@ export default function CreateExam() {
                   onChange={e => updateQuestion(idx, 'question_text', e.target.value)}
                   placeholder="Tulis soal di sini (opsional jika menggunakan PDF)..."
                 />
+              </div>
+
+              {/* Question Image Attachment */}
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Lampiran Gambar <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
+                <input
+                  className="form-input"
+                  style={{ fontSize: '0.85rem' }}
+                  value={q.image_url || ''}
+                  onChange={e => updateQuestion(idx, 'image_url', e.target.value)}
+                  placeholder="https://drive.google.com/file/d/..."
+                  disabled={!!pdfUrl}
+                />
+                {!!pdfUrl ? (
+                  <span className="text-xs" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                    <AlertTriangle size={14} /> Fitur lampiran gambar tidak dapat digunakan jika Anda menggunakan PDF.
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted">Untuk hasil terbaik gunakan webP format, bisa juga menggunakan JPG, PNG atau SVG format. Pastikan link Google Drive dapat diakses publik.</span>
+                )}
               </div>
 
               {/* MCQ / COMPLEX_MCQ options */}

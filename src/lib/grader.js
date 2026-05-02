@@ -97,3 +97,12 @@ export function getDriveEmbedUrl(url) {
   if (!fileId) return url // fallback
   return `https://drive.google.com/file/d/${fileId}/preview`
 }
+
+/**
+ * Build a Google Drive direct image URL from a share link
+ */
+export function getDriveImageUrl(url) {
+  const fileId = extractDriveFileId(url)
+  if (!fileId) return url // fallback
+  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`
+}
