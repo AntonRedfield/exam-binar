@@ -17,6 +17,7 @@ export default function UserManagement() {
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [isEdit, setIsEdit] = useState(false)
+  const [oldId, setOldId] = useState('')
   
   // Import Modal
   const [showImport, setShowImport] = useState(false)
@@ -50,6 +51,7 @@ export default function UserManagement() {
 
   function openEdit(user) {
     setForm({ id: user.id, password: user.password || '', name: user.name, kelas: user.kelas || '', role: user.role })
+    setOldId(user.id)
     setIsEdit(true)
     setError('')
     setShowModal(true)
@@ -60,7 +62,7 @@ export default function UserManagement() {
     setSaving(true); setError('')
     try {
       if (isEdit) {
-        await users.update(form.id, { password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
+        await users.update(oldId, { id: form.id.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
       } else {
         await users.create({ id: form.id.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
       }
@@ -294,12 +296,10 @@ export default function UserManagement() {
               <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}><X size={15} /></button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {!isEdit && (
-                <div className="form-group">
-                  <label className="form-label">ID Login</label>
-                  <input className="form-input" value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value.toLowerCase() }))} placeholder="cth: budi.090812@murid.binar" />
-                </div>
-              )}
+              <div className="form-group">
+                <label className="form-label">ID Login</label>
+                <input className="form-input" value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value.toLowerCase() }))} placeholder="cth: budi.090812@murid.binar" />
+              </div>
               <div className="form-group">
                 <label className="form-label">Nama Lengkap</label>
                 <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nama Lengkap" />
