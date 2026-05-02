@@ -47,7 +47,7 @@ export default function Results() {
         {/* Score card */}
         <div className="card results-score" style={{ textAlign: 'center', marginBottom: '1.5rem', background: 'linear-gradient(135deg, var(--navy-mid), var(--navy-light))' }}>
           <p className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{result.exams?.title}</p>
-          <h1 style={{ fontSize: '3.5rem', fontFamily: 'Outfit, sans-serif', marginBottom: '0.25rem', color: pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)' }}>
+          <h1 style={{ fontSize: '3.5rem', fontFamily: 'Cambria, "Times New Roman", serif', marginBottom: '0.25rem', color: pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)' }}>
             {pctStr}%
           </h1>
           <div className="progress-bar" style={{ maxWidth: 240, margin: '0 auto 1rem' }}>

@@ -149,7 +149,7 @@ export default function Login() {
           </div>
 
           {needsPassword && (
-            <div className="form-group" style={{ animation: 'modal-in 0.2s ease' }}>
+            <div className="form-group">
               <label className="form-label">Password</label>
               <div style={{ position: 'relative' }}>
                 <input
