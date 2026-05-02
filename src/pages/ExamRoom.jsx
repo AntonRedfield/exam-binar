@@ -419,7 +419,7 @@ export default function ExamRoom() {
           zIndex: 9997, background: 'rgba(239,68,68,0.95)', color: 'white',
           padding: '1.5rem 2.5rem', borderRadius: 15, fontWeight: 700,
           fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
-          boxShadow: '0 10px 40px rgba(239,68,68,0.5)', animation: 'fadeInScale 0.3s ease-out',
+          boxShadow: '0 10px 40px rgba(239,68,68,0.5)',
         }}>
           <AlertTriangle size={24} /> {timeReductionMsg}
         </div>
@@ -432,7 +432,7 @@ export default function ExamRoom() {
           zIndex: 9998, background: 'rgba(245,158,11,0.95)', color: '#000',
           padding: '0.625rem 1.25rem', borderRadius: 10, fontWeight: 700,
           fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem',
-          boxShadow: '0 4px 20px rgba(245,158,11,0.3)', animation: 'fadeInScale 0.3s ease-out'
+          boxShadow: '0 4px 20px rgba(245,158,11,0.3)'
         }}>
           <AlertTriangle size={18} /> Waktu soal hampir habis!
         </div>
@@ -452,7 +452,7 @@ export default function ExamRoom() {
       <div className="exam-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           {isQuiz ? <Zap size={18} color="var(--gold)" /> : <BookOpen size={18} color="var(--gold)" />}
-          <span style={{ fontWeight: 700, fontFamily: 'Outfit, sans-serif' }}>{exam?.title}</span>
+          <span style={{ fontWeight: 700, fontFamily: 'Cambria, "Times New Roman", serif' }}>{exam?.title}</span>
           {isQuiz && <span className="badge badge-active" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>KUIS</span>}
           {/* Monitoring level badge */}
           <span style={{ ...getMonitoringBadgeStyle(monitorLevel), fontSize: '0.65rem', padding: '0.15rem 0.45rem' }}>
@@ -630,11 +630,11 @@ export default function ExamRoom() {
 
       {/* Quiz Feedback Modal */}
       {isQuiz && quizFeedback && (
-        <div className="modal-overlay" style={{ zIndex: 10000, background: 'rgba(10,22,40,0.85)', backdropFilter: 'blur(4px)' }}>
+        <div className="modal-overlay" style={{ zIndex: 10000, background: 'rgba(10,22,40,0.85)' }}>
           <div className="modal" style={{ maxWidth: 400, textAlign: 'center', 
               borderTop: `5px solid ${quizFeedback.status === 'correct' ? 'var(--success)' : quizFeedback.status === 'wrong' ? 'var(--danger)' : 'var(--gold)'}` 
           }}>
-            <div style={{ marginBottom: '1rem', animation: 'bounce 0.5s ease' }}>
+            <div style={{ marginBottom: '1rem' }}>
               {quizFeedback.status === 'correct' && <div style={{ fontSize: '3.5rem' }}>🎉</div>}
               {quizFeedback.status === 'wrong' && <div style={{ fontSize: '3.5rem' }}>❌</div>}
               {quizFeedback.status === 'partial' && <div style={{ fontSize: '3.5rem' }}>⚠️</div>}
@@ -645,7 +645,7 @@ export default function ExamRoom() {
               color: quizFeedback.status === 'correct' ? 'var(--success)' : quizFeedback.status === 'wrong' ? 'var(--danger)' : 'var(--text)',
               marginBottom: '0.5rem',
               fontWeight: 800,
-              fontFamily: 'Outfit, sans-serif'
+              fontFamily: 'Cambria, "Times New Roman", serif'
             }}>
               {quizFeedback.status === 'correct' ? 'Selamat!' : quizFeedback.status === 'wrong' ? 'Salah!' : 'Perhatian'}
             </h2>
@@ -690,17 +690,17 @@ export default function ExamRoom() {
 
       {/* Time's Up overlay */}
       {timeUp && (
-        <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(10,22,40,0.95)', backdropFilter: 'blur(8px)' }}>
-          <div style={{ textAlign: 'center', animation: 'fadeInScale 0.4s ease-out' }}>
+        <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(10,22,40,0.95)' }}>
+          <div style={{ textAlign: 'center' }}>
             <div style={{
               width: 80, height: 80, borderRadius: '50%',
               background: 'rgba(239,68,68,0.15)', border: '3px solid var(--danger)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 1.5rem', animation: 'pulse 1.5s ease-in-out infinite'
+              margin: '0 auto 1.5rem'
             }}>
               <AlertTriangle size={36} color="var(--danger)" />
             </div>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--danger)', fontFamily: 'Outfit, sans-serif' }}>
+            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--danger)', fontFamily: 'Cambria, "Times New Roman", serif' }}>
               Waktu Habis!
             </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '1.5rem' }}>
