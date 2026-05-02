@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS exams (
   mode TEXT DEFAULT 'exam',
   quiz_timer_type TEXT DEFAULT 'uniform',
   monitoring_level INT DEFAULT 1,
+  question_order TEXT DEFAULT 'ORDER' CHECK (question_order IN ('ORDER','SHUFFLE')),
+  information TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -39,7 +41,8 @@ CREATE TABLE IF NOT EXISTS questions (
   correct_answer JSONB,
   points INT DEFAULT 1,
   variant TEXT DEFAULT 'A',
-  time_limit INT
+  time_limit INT,
+  image_url TEXT
 );
 
 -- 4. EXAM SESSIONS TABLE

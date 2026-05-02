@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions, results } from '../lib/db'
-import { gradeExam, getDriveEmbedUrl } from '../lib/grader'
+import { gradeExam, getDriveEmbedUrl, getDriveImageUrl } from '../lib/grader'
 import { useAntiCheat } from '../hooks/useAntiCheat'
 import { useFaceDetection } from '../hooks/useFaceDetection'
 import QuestionMCQ from '../components/exam/QuestionMCQ'
@@ -24,6 +24,48 @@ import {
 } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
 import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock } from 'lucide-react'
+
+// Simple seeded PRNG based on string
+function cyrb128(str) {
+  let h1 = 1779033703, h2 = 3144134277,
+      h3 = 1013904242, h4 = 2773480762;
+  for (let i = 0, k; i < str.length; i++) {
+      k = str.charCodeAt(i);
+      h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+      h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+      h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+      h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+  }
+  h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+  h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+  h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+  h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+  return [(h1^h2^h3^h4)>>>0, (h2^h1)>>>0, (h3^h1)>>>0, (h4^h1)>>>0];
+}
+
+function sfc32(a, b, c, d) {
+  return function() {
+    a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0; 
+    var t = (a + b | 0) + d | 0;
+    d = d + 1 | 0;
+    a = b ^ b >>> 9;
+    b = c + (c << 3) | 0;
+    c = (c << 21 | c >>> 11);
+    c = c + t | 0;
+    return (t >>> 0) / 4294967296;
+  }
+}
+
+function shuffleArray(array, seedStr) {
+  const seed = cyrb128(seedStr);
+  const rand = sfc32(seed[0], seed[1], seed[2], seed[3]);
+  const newArr = [...array];
+  for (let i = newArr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+  }
+  return newArr;
+}
 
 export default function ExamRoom() {
   const { examId } = useParams()
@@ -70,8 +112,15 @@ export default function ExamRoom() {
         navigate(`/exam/${examId}/lobby`)
         return
       }
+      
+      let finalQs = qs || []
+      // Apply consistent shuffle if configured
+      if (examData?.question_order === 'SHUFFLE') {
+        finalQs = shuffleArray(finalQs, sess.id)
+      }
+
       setExam(examData)
-      setQuestionList(qs || [])
+      setQuestionList(finalQs)
       setSession(sess)
       sessionRef.current = sess
       const savedAnswers = sess.answers || {}
@@ -280,7 +329,7 @@ export default function ExamRoom() {
     </div>
   )
 
-  const q = questionList.find(q => q.number === currentQ) || questionList[0]
+  const q = questionList[currentQ - 1] || questionList[0]
   const totalQ = questionList.length
   const hasPdf = Boolean(exam?.pdf_url)
   const isCurrentLocked = lockedQuestions[String(currentQ)]
@@ -441,6 +490,16 @@ export default function ExamRoom() {
                     </div>
                   )}
                 </div>
+
+                {q.image_url && (
+                  <div style={{ marginBottom: '1rem', textAlign: 'center' }}>
+                    <img 
+                      src={getDriveImageUrl(q.image_url)} 
+                      alt={`Lampiran Soal ${currentQ}`} 
+                      style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: 8, objectFit: 'contain' }} 
+                    />
+                  </div>
+                )}
 
                 {q.question_text && (
                   <div style={{

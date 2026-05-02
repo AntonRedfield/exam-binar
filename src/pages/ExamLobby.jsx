@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions } from '../lib/db'
-import { BookOpen, Clock, Users, ShieldAlert, Play, RotateCcw, Zap, Camera, AlertTriangle, CheckCircle } from 'lucide-react'
+import { BookOpen, Clock, Users, ShieldAlert, Play, RotateCcw, Zap, Camera, AlertTriangle, CheckCircle, Info } from 'lucide-react'
 import { MONITORING_LEVELS } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
 
@@ -137,6 +137,19 @@ export default function ExamLobby() {
           <p className="text-muted text-sm">Baca ketentuan sebelum memulai {exam.mode === 'quiz' ? 'kuis' : 'ujian'}</p>
         </div>
 
+        {/* Custom Exam Information / Rules */}
+        {exam.information && (
+          <div className="card" style={{ marginBottom: '1.25rem', borderColor: 'rgba(79,142,247,0.3)', background: 'rgba(79,142,247,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: '#000', fontWeight: 600 }}>
+              <Info size={16} />
+              <span>Informasi Tambahan</span>
+            </div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+              {exam.information}
+            </div>
+          </div>
+        )}
+
         {/* Exam info card */}
         <div className="card" style={{ marginBottom: '1.25rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -208,9 +221,9 @@ export default function ExamLobby() {
             background: cameraGranted ? 'var(--success-bg)' : 'var(--danger-bg)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <Camera size={22} color={cameraGranted ? 'var(--success)' : 'var(--danger)'} />
+              <Camera size={22} color={cameraGranted ? '#fff' : 'var(--danger)'} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: cameraGranted ? 'var(--success)' : 'var(--danger)' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: cameraGranted ? '#fff' : 'var(--danger)' }}>
                   {cameraGranted ? '✅ Kamera Aktif' : '🔴 Kamera Diperlukan'}
                 </div>
                 <p className="text-muted text-sm" style={{ margin: '0.15rem 0 0' }}>

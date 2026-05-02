@@ -5,7 +5,8 @@ export default function QuestionNavigator({ questions, answers, currentQ, onSele
         Soal
       </div>
       <div className="q-nav-grid">
-        {questions.map(q => {
+        {questions.map((q, index) => {
+          const displayNum = index + 1;
           const ans = answers[String(q.number)]
           let hasAnswer = false
 
@@ -18,14 +19,14 @@ export default function QuestionNavigator({ questions, answers, currentQ, onSele
              hasAnswer = ans !== undefined && ans !== null && ans !== ''
           }
 
-          const isCurrent = q.number === currentQ
+          const isCurrent = displayNum === currentQ
           let cls = 'q-nav-btn'
           if (isCurrent) cls += ' current'
           else if (hasAnswer) cls += ' answered'
 
           return (
-            <button key={q.number} className={cls} onClick={() => onSelect(q.number)} title={`Soal ${q.number}`}>
-              {q.number}
+            <button key={q.number} className={cls} onClick={() => onSelect(displayNum)} title={`Soal ${displayNum}`}>
+              {displayNum}
             </button>
           )
         })}
