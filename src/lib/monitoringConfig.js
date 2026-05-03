@@ -7,7 +7,7 @@ export const MONITORING_LEVELS = {
     name: 'Casual Mode',
     tagline: 'Santai & Bebas',
     color: '#22c55e',        // green
-    colorBg: 'rgba(34,197,94,0.1)',
+    colorBg: 'white',
     colorBorder: 'rgba(34,197,94,0.3)',
     restrictions: [],
     hasPenalty: false,
@@ -25,7 +25,7 @@ export const MONITORING_LEVELS = {
     name: 'Scout Mode',
     tagline: 'Pantau & Catat',
     color: '#f59e0b',        // amber
-    colorBg: 'rgba(245,158,11,0.1)',
+    colorBg: 'white',
     colorBorder: 'rgba(245,158,11,0.3)',
     restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
     hasPenalty: false,
@@ -45,7 +45,7 @@ export const MONITORING_LEVELS = {
     name: 'Vanguard Mode',
     tagline: 'Ketat & Tegas',
     color: '#8b5cf6',        // violet
-    colorBg: 'rgba(139,92,246,0.1)',
+    colorBg: 'white',
     colorBorder: 'rgba(139,92,246,0.3)',
     restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
     hasPenalty: true,
@@ -67,7 +67,7 @@ export const MONITORING_LEVELS = {
     name: 'STRIX SCARS',
     tagline: 'Deteksi Wajah & Maksimal',
     color: '#ef4444',         // red
-    colorBg: 'rgba(239,68,68,0.1)',
+    colorBg: 'white',
     colorBorder: 'rgba(239,68,68,0.3)',
     restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
     hasPenalty: true,

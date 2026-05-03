@@ -284,6 +284,9 @@ export default function ExamLobby() {
         <p className="text-muted text-xs" style={{ textAlign: 'center', marginTop: '1rem' }}>
           Masuk sebagai: <strong>{user.name}</strong> ({user.id})
         </p>
+        <div className="app-footer">
+          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+        </div>
       </div>
     </div>
   )

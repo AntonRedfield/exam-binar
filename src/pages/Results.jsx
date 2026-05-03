@@ -109,6 +109,9 @@ export default function Results() {
             </div>
           </div>
         )}
+        <div className="app-footer">
+          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+        </div>
       </div>
     </div>
   )

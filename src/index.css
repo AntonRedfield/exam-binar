@@ -150,7 +150,7 @@ select.form-input { cursor: pointer; }
   font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.badge-active { background: var(--success-bg); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+.badge-active { background: white; color: black; border: 1px solid white; }
 .badge-draft { background: rgba(100,116,139,0.15); color: var(--text-secondary); border: 1px solid var(--border); }
 .badge-closed { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
 .badge-pending { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); }
@@ -692,11 +692,56 @@ tbody tr:hover { background: var(--glass-light); }
   .dashboard-quicklink-icon { width: 40px; height: 40px; }
 }
 
+/* ─── APP FOOTER ─────────────────────────────────────────────────────────── */
+.app-footer {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  margin-top: auto;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── CLASS DETAIL ITEMS ─────────────────────────────────────────────────── */
+.class-detail-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--navy-mid);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.class-detail-item:hover {
+  border-color: var(--accent);
+  background: var(--navy-light);
+}
+.class-detail-name {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+.class-detail-count {
+  font-family: Cambria, 'Times New Roman', serif;
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+.class-detail-count span {
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 0.2rem;
+}
+
 /* ─── PRINT ──────────────────────────────────────────────────────────────── */
 .print-only { display: none !important; }
 
 @media print {
-  .no-print { display: none !important; }
+  .no-print, .app-footer { display: none !important; }
   .print-only { display: block !important; }
   .sidebar { display: none !important; }
   .dashboard-layout, .main-content { display: block !important; height: auto !important; overflow: visible !important; }

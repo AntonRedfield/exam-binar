@@ -191,9 +191,9 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="text-muted text-xs" style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-          BINAR Examination System &copy; 2025 &mdash; Semua aktivitas dimonitor
-        </p>
+        <div className="app-footer">
+          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+        </div>
       </div>
     </div>
   )

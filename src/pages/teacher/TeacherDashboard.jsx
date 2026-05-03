@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
-import { BookOpen, Plus, Activity, BarChart2, Users, ArrowRight, FileText, Zap } from 'lucide-react'
+import { BookOpen, Plus, Activity, BarChart2, Users, ArrowRight, FileText, Zap, School } from 'lucide-react'
 
 export default function TeacherDashboard() {
   const user = getCurrentUser()
   const navigate = useNavigate()
   const [stats, setStats] = useState(null)
   const [recentExams, setRecentExams] = useState([])
+  const [classBreakdown, setClassBreakdown] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -40,8 +41,22 @@ export default function TeacherDashboard() {
         avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
       }
 
+      // Fetch class breakdown
+      const { data: allStudents } = await supabase.from('users').select('kelas').eq('role', 'USER')
+      const classMap = {}
+      if (allStudents) {
+        allStudents.forEach(s => {
+          const k = s.kelas || 'Tanpa Kelas'
+          classMap[k] = (classMap[k] || 0) + 1
+        })
+      }
+      const classSorted = Object.entries(classMap)
+        .sort(([a], [b]) => a.localeCompare(b, 'id', { numeric: true }))
+        .map(([name, count]) => ({ name, count }))
+
       setStats({ totalExams, activeExams, draftExams, closedExams, totalSessions, avgScore, totalResults: recentResults?.length || 0 })
       setRecentExams(examList.slice(0, 5))
+      setClassBreakdown(classSorted)
       setLoading(false)
     }
     load()
@@ -84,6 +99,26 @@ export default function TeacherDashboard() {
             </div>
           ))}
         </div>
+
+        {/* ── Detail Kelas ────────────────────────────── */}
+        {classBreakdown.length > 0 && (
+          <div className="card" style={{ marginBottom: '2rem' }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <School size={18} style={{ color: 'var(--accent)' }} /> Detail Kelas
+              </h3>
+              <span className="text-muted text-sm">{classBreakdown.length} kelas terdaftar</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
+              {classBreakdown.map(c => (
+                <div key={c.name} className="class-detail-item">
+                  <div className="class-detail-name">{c.name}</div>
+                  <div className="class-detail-count">{c.count} <span>siswa</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Recent Exams ──────────────────────────────── */}
         <div className="card" style={{ marginBottom: '2rem' }}>
