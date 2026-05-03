@@ -73,14 +73,14 @@ export const MONITORING_LEVELS = {
     hasPenalty: true,
     hasFaceDetection: true,
     description: 'Tingkatan tertinggi pengawasan berbasis deteksi wajah. Burung hantu (STRIX) sebagai simbol mata yang selalu waspada dan presisi.',
-    fullName: 'Specialized Camera Automatic Recognition Systems',
+    fullName: 'Smart Camera for Analytic Recognition System',
     briefRules: [
       'Tingkatan tertinggi dengan pengawasan berbasis deteksi wajah (gaze-tracking).',
       'Kamera harus selalu aktif. Ujian tidak dapat dimulai tanpa kamera.',
       'Sanksi layar: Setiap 3 poin pelanggaran membekukan layar (15s, 30s, 60s+).',
       'Sanksi waktu: Setiap 7 poin mengurangi durasi 5 menit (Ujian) / 20% (Kuis).',
     ],
-    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\nMakna Filosofis Nama "STRIX" diambil dari bahasa Latin dan Yunani yang berarti burung hantu. Burung hantu merupakan simbol utama dari mata yang selalu waspada dan tidak berkedip. Hal ini secara sempurna merepresentasikan sistem pelacakan pandangan (gaze-tracking) berbasis kamera yang mengawasi pengguna secara presisi. Sedangkan SCARS merupakan singkatan dari (Specialized Camera Automatic Recognition Systems).\n\nKetentuan Sanksi:\na. Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\nb. Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\nc. Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
+    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\nMakna Filosofis Nama "STRIX" diambil dari bahasa Latin dan Yunani yang berarti burung hantu. Burung hantu merupakan simbol utama dari mata yang selalu waspada dan tidak berkedip. Hal ini secara sempurna merepresentasikan sistem pelacakan pandangan (gaze-tracking) berbasis kamera yang mengawasi pengguna secara presisi. Sedangkan SCARS merupakan singkatan dari (Smart Camera for Analytic Recognition System).\n\nKetentuan Sanksi:\na. Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\nb. Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\nc. Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
     freezeDurations: { exam: [15, 30, 60], quiz: 5 },
     timeReduction: { exam: 5 * 60, quiz: 0.20 }, // exam: 5 min in seconds, quiz: 20%
     timeReductionInterval: 7, // every 7 violations
