@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
-import { Shield, Users, BookOpen, BarChart2, LogOut, Menu } from 'lucide-react'
+import { Shield, Users, BookOpen, BarChart2, LogOut, Menu, LayoutDashboard } from 'lucide-react'
 import BiometricPrompt from '../../components/BiometricPrompt'
 
 export default function AdminLayout() {
@@ -25,6 +25,9 @@ export default function AdminLayout() {
           </div>
         </div>
         <div className="sidebar-nav">
+          <NavLink to="/admin/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
+            <LayoutDashboard size={18} /> Dashboard
+          </NavLink>
           <div className="nav-label">Manajemen</div>
           <NavLink to="/admin/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <Users size={18} /> Pengguna

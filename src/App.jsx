@@ -12,9 +12,11 @@ import Monitor from './pages/teacher/Monitor'
 import ResultsView from './pages/teacher/ResultsView'
 import QuestionAnalytics from './pages/teacher/QuestionAnalytics'
 import AdminLayout from './pages/admin/AdminLayout'
+import AdminDashboard from './pages/admin/AdminDashboard'
 import UserManagement from './pages/admin/UserManagement'
 import ExamOversight from './pages/admin/ExamOversight'
 import Analytics from './pages/admin/Analytics'
+import TeacherDashboard from './pages/teacher/TeacherDashboard'
 import './index.css'
 
 function ProtectedRoute({ children, roles }) {
@@ -27,8 +29,8 @@ function ProtectedRoute({ children, roles }) {
 function RoleRedirect() {
   const user = getCurrentUser()
   if (!user) return <Navigate to="/login" replace />
-  if (user.role === 'SUPERADMIN') return <Navigate to="/admin/users" replace />
-  if (user.role === 'TEACHER') return <Navigate to="/teacher/exams" replace />
+  if (user.role === 'SUPERADMIN') return <Navigate to="/admin/dashboard" replace />
+  if (user.role === 'TEACHER') return <Navigate to="/teacher/dashboard" replace />
   return <Navigate to="/home" replace />
 }
 
@@ -67,6 +69,7 @@ export default function App() {
             <TeacherLayout />
           </ProtectedRoute>
         }>
+          <Route path="dashboard" element={<TeacherDashboard />} />
           <Route path="exams" element={<ExamList />} />
           <Route path="create" element={<CreateExam />} />
           <Route path="edit/:examId" element={<CreateExam />} />
@@ -82,6 +85,7 @@ export default function App() {
             <AdminLayout />
           </ProtectedRoute>
         }>
+          <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="users" element={<UserManagement />} />
           <Route path="exams" element={<ExamOversight />} />
           <Route path="analytics" element={<Analytics />} />
