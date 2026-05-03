@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
 import { users } from '../../lib/db'
-import { BookOpen, Plus, Activity, BarChart2, LogOut, KeyRound, X, Save, Users, Menu } from 'lucide-react'
+import { BookOpen, Plus, Activity, BarChart2, LogOut, KeyRound, X, Save, Users, Menu, LayoutDashboard } from 'lucide-react'
 import BiometricPrompt from '../../components/BiometricPrompt'
 
 export default function TeacherLayout() {
@@ -59,6 +59,9 @@ export default function TeacherLayout() {
         </div>
 
         <div className="sidebar-nav">
+          <NavLink to="/teacher/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
+            <LayoutDashboard size={18} /> Dashboard
+          </NavLink>
           <div className="nav-label">Ujian</div>
           <NavLink to="/teacher/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <BookOpen size={18} /> Daftar Ujian
