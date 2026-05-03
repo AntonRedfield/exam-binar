@@ -98,6 +98,9 @@ export default function TeacherLayout() {
       </nav>
       <div className="main-content">
         <Outlet />
+        <div className="app-footer">
+          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+        </div>
       </div>
 
       <BiometricPrompt />
