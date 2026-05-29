@@ -75,8 +75,8 @@ export default function Login() {
       <div className="login-card">
         <div className="login-logo">
           <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', marginBottom: '1rem' }} />
-          <h2 style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>BINAR Junior High School</h2>
-          <p className="text-muted">Aplikasi Ujian Berbasis Komputer</p>
+          <h2 style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>BOLOS</h2>
+          <p className="text-muted">(BINAR Online Lecture Operational System)</p>
         </div>
 
         {/* ─── Biometric Login Section (Multi-User) ─── */}
