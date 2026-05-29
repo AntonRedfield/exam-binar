@@ -85,7 +85,7 @@ export default function AdminDashboard() {
     <>
       <div className="page-header">
         <h2>{greeting}, {user?.name || 'Admin'} 👋</h2>
-        <p className="text-muted text-sm">Ringkasan sistem ujian BINAR</p>
+        <p className="text-muted text-sm">Ringkasan sistem ujian BOLOS</p>
       </div>
       <div className="page-body">
 

@@ -14,9 +14,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['binar-logo.png', 'vite.svg'],
       manifest: {
-        name: 'BINAR Exam App',
-        short_name: 'BINAR Exam',
-        description: 'Aplikasi Ujian Berbasis Komputer — BINAR Junior High School',
+        name: 'BOLOS (BINAR Online Lecture Operational System)',
+        short_name: 'BOLOS',
+        description: 'Aplikasi Ujian Berbasis Komputer — BOLOS',
         theme_color: '#0a1628',
         background_color: '#0a1628',
         display: 'standalone',

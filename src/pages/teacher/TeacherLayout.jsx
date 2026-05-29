@@ -54,7 +54,10 @@ export default function TeacherLayout() {
         <div className="sidebar-logo">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
             <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
-            <h2>BINAR <span className="logo-accent">Guru</span></h2>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <h2 style={{ marginBottom: 0 }}>BOLOS <span className="logo-accent">Guru</span></h2>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(BINAR Online Lecture Operational System)</span>
+            </div>
           </div>
         </div>
 

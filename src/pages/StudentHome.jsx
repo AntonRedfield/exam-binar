@@ -93,9 +93,14 @@ export default function StudentHome() {
       <header className="student-header" style={{ background: 'var(--glass)', borderBottom: '1px solid var(--border)', padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
-          <span style={{ fontFamily: 'Cambria, "Times New Roman", serif', fontWeight: 700, fontSize: '1.25rem' }}>
-            BINAR JHS <span className="text-gold">Exam App</span>
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontFamily: 'Cambria, "Times New Roman", serif', fontWeight: 700, fontSize: '1.25rem' }}>
+              BOLOS
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '-0.1rem' }} className="text-muted">
+              (BINAR Online Lecture Operational System)
+            </span>
+          </div>
         </div>
         <div className="student-header-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ textAlign: 'right' }}>
