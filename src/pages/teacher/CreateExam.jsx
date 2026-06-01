@@ -239,7 +239,30 @@ export default function CreateExam() {
             </button>
           </div>
 
-          {/* Quiz timer type */}
+          {/* Exam duration - shown when exam mode is selected */}
+          {mode === 'exam' && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+              <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
+                <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
+                Durasi Ujian
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <Clock size={16} color="var(--gold)" />
+                <input
+                  type="number"
+                  className="form-input"
+                  style={{ width: 100, padding: '0.4rem 0.6rem' }}
+                  value={duration}
+                  onChange={e => setDuration(e.target.value)}
+                  min="1"
+                  max="300"
+                />
+                <span className="text-sm text-muted">menit</span>
+              </div>
+            </div>
+          )}
+
+          {/* Quiz timer type - shown when quiz mode is selected */}
           {mode === 'quiz' && (
             <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
               <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
@@ -476,22 +499,6 @@ export default function CreateExam() {
             </div>
 
             <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              {/* Show global duration only for exam mode */}
-              {mode === 'exam' && (
-                <div className="form-group">
-                  <label className="form-label">Durasi (menit)</label>
-                  <input type="number" className="form-input" value={duration} onChange={e => setDuration(e.target.value)} min="1" max="300" />
-                </div>
-              )}
-              {mode === 'quiz' && (
-                <div className="form-group">
-                  <label className="form-label">Durasi</label>
-                  <div className="alert alert-info text-sm" style={{ margin: 0, padding: '0.5rem 0.75rem' }}>
-                    <Clock size={14} style={{ marginRight: '0.25rem', verticalAlign: '-2px' }} />
-                    {quizTimerType === 'uniform' ? `${uniformTime} detik / soal (seragam)` : 'Diatur independen per soal'}
-                  </div>
-                </div>
-              )}
               <div className="form-group">
                 <label className="form-label">KKM (Kriteria Ketuntasan Minimal)</label>
                 <input type="number" className="form-input" value={passingGrade} onChange={e => setPassingGrade(e.target.value)} min="0" max="100" placeholder="60" />
