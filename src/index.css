@@ -642,6 +642,176 @@ tbody tr:hover { background: var(--glass-light); }
   color: rgba(34,197,94,0.6); flex-shrink: 0;
 }
 
+/* ─── Fast Login: User Item Wrapper (with clear button) ──────────────────── */
+.biometric-user-item-wrap {
+  display: flex; align-items: stretch; gap: 0;
+  position: relative;
+}
+.biometric-user-item-wrap .biometric-user-item {
+  flex: 1;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+.biometric-user-clear {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; flex-shrink: 0;
+  background: rgba(239,68,68,0.06);
+  border: 1px solid rgba(34,197,94,0.2);
+  border-left: 1px solid rgba(239,68,68,0.15);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.biometric-user-clear:hover {
+  background: rgba(239,68,68,0.15);
+  color: var(--danger);
+  border-color: rgba(239,68,68,0.3);
+}
+
+/* ─── Fast Login: Info/Warning Banners (Cases C & D) ─────────────────────── */
+.fast-login-banner {
+  display: flex; align-items: flex-start; gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+  animation: fadeSlideIn 0.35s ease-out;
+}
+.fast-login-banner strong {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+.fast-login-banner p {
+  margin: 0;
+  color: inherit;
+  opacity: 0.85;
+}
+.fast-login-banner-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.fast-login-banner-warn {
+  background: var(--danger-bg);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: #FCA5A5;
+}
+.fast-login-banner-info {
+  background: var(--warning-bg);
+  border: 1px solid rgba(245,158,11,0.25);
+  color: #FCD34D;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Fast Login: Skeleton Loading ───────────────────────────────────────── */
+.fast-login-checking {
+  display: flex; flex-direction: column; gap: 0.625rem;
+  padding: 0.5rem 0;
+  margin-bottom: 1rem;
+}
+.fast-login-skeleton {
+  height: 48px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg,
+    rgba(0,0,0,0.04) 25%,
+    rgba(0,0,0,0.08) 50%,
+    rgba(0,0,0,0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s ease-in-out infinite;
+}
+.fast-login-skeleton-short {
+  height: 16px;
+  width: 60%;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── Fast Login: Retry Section ──────────────────────────────────────────── */
+.fast-login-retry-section {
+  display: flex; gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/* ─── Fast Login: Diagnostics Panel ──────────────────────────────────────── */
+.fast-login-diagnostics {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+.fast-login-diagnostics-toggle {
+  display: flex; align-items: center; gap: 0.4rem;
+  background: none; border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem; font-weight: 600;
+  cursor: pointer;
+  padding: 0.3rem 0;
+  width: 100%;
+  transition: color 0.15s ease;
+}
+.fast-login-diagnostics-toggle:hover {
+  color: var(--text-secondary);
+}
+.fast-login-diagnostics-content {
+  margin-top: 0.5rem;
+  background: rgba(0,0,0,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 0.75rem;
+  animation: fadeSlideIn 0.25s ease-out;
+}
+.fast-login-diag-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.25rem 0;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+}
+.fast-login-diag-row:last-child {
+  border-bottom: none;
+}
+.fast-login-diag-row span:first-child {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.fast-login-diag-row span:last-child {
+  font-weight: 500;
+}
+
+/* ─── Biometric: Pulse Animation (during auth/register) ──────────────────── */
+.biometric-icon-pulse {
+  animation: bioPulse 1.5s ease-in-out infinite;
+}
+@keyframes bioPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34,197,94,0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(34,197,94,0);
+    transform: scale(1.05);
+  }
+}
+
+/* ─── Biometric: Warning Icon (no platform auth step) ────────────────────── */
+.biometric-icon-warn {
+  background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(245,158,11,0.1));
+  border-color: rgba(245,158,11,0.3);
+  color: var(--warning);
+}
+
 /* ─── DASHBOARD ──────────────────────────────────────────────────────────── */
 .dashboard-recent-item {
   display: flex; align-items: center; gap: 1rem;

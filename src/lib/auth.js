@@ -77,10 +77,43 @@ export async function loginWithBiometric(userId) {
     throw new Error('Akun tidak ditemukan. Kredensial biometrik telah dihapus.')
   }
 
-  // Step 3: Create session
+  // Step 3: Self-heal — if Supabase doesn't know about the passkey, update it
+  if (!dbUser.has_passkey) {
+    await updatePasskeyStatus(dbUser.id, true).catch(err => {
+      console.warn('[FastLogin] Failed to self-heal passkey status:', err)
+    })
+  }
+
+  // Step 4: Create session
   const sessionData = { id: dbUser.id, name: dbUser.name, kelas: dbUser.kelas, role: dbUser.role }
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionData))
   return sessionData
+}
+
+/**
+ * Update the passkey registration status for a user in Supabase.
+ * @param {string} userId — The user ID
+ * @param {boolean} hasPasskey — Whether the user has a passkey registered
+ */
+export async function updatePasskeyStatus(userId, hasPasskey) {
+  const updateData = { has_passkey: hasPasskey }
+  if (hasPasskey) {
+    updateData.passkey_registered_at = new Date().toISOString()
+  } else {
+    updateData.passkey_registered_at = null
+  }
+
+  const { error } = await supabase
+    .from('users')
+    .update(updateData)
+    .eq('id', userId)
+
+  if (error) {
+    console.error('[FastLogin] Failed to update passkey status:', error)
+    throw error
+  }
+
+  console.info('[FastLogin] Updated passkey status for', userId, '→', hasPasskey)
 }
 
 export function logout() {

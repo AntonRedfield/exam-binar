@@ -1,19 +1,47 @@
 import { useState, useEffect } from 'react'
-import { getCurrentUser } from '../lib/auth'
-import { shouldOfferBiometric, registerBiometric, dismissBiometricPrompt } from '../lib/biometric'
-import { Fingerprint, ScanFace, KeyRound, X, ShieldCheck, ChevronRight } from 'lucide-react'
+import { getCurrentUser, updatePasskeyStatus } from '../lib/auth'
+import {
+  shouldOfferBiometric,
+  registerBiometric,
+  dismissBiometricPrompt,
+  detectFastLoginState,
+  FastLoginState,
+} from '../lib/biometric'
+import { Fingerprint, ScanFace, KeyRound, X, ShieldCheck, ChevronRight, ShieldAlert } from 'lucide-react'
 
 export default function BiometricPrompt() {
   const [show, setShow] = useState(false)
-  const [step, setStep] = useState('offer') // 'offer' | 'registering' | 'success' | 'error'
+  const [step, setStep] = useState('offer') // 'offer' | 'registering' | 'success' | 'error' | 'no_platform'
   const [errorMsg, setErrorMsg] = useState('')
   const user = getCurrentUser()
 
   useEffect(() => {
     async function check() {
       if (!user) return
+
+      // First check if we should even offer (dismissed or already registered)
       const shouldShow = await shouldOfferBiometric(user.id)
-      if (shouldShow) {
+      if (!shouldShow) return
+
+      // Then do a full state detection to ensure platform authenticator is available
+      const { state } = await detectFastLoginState()
+
+      if (state === FastLoginState.NO_PLATFORM_AUTH) {
+        // Device has no PIN/fingerprint/Face ID — show helpful message instead
+        setTimeout(() => {
+          setStep('no_platform')
+          setShow(true)
+        }, 1200)
+        return
+      }
+
+      if (state === FastLoginState.UNSUPPORTED_BROWSER) {
+        // Don't show anything on unsupported browsers
+        return
+      }
+
+      // Platform authenticator available and no passkey registered — offer enrollment
+      if (state === FastLoginState.READY_TO_REGISTER || state === FastLoginState.PASSKEY_READY) {
         setTimeout(() => setShow(true), 1200)
       }
     }
@@ -22,12 +50,18 @@ export default function BiometricPrompt() {
 
   async function handleEnable() {
     if (!user) return
-    
+
     setStep('registering')
     setErrorMsg('')
 
     try {
       await registerBiometric(user)
+
+      // Sync passkey status to Supabase
+      await updatePasskeyStatus(user.id, true).catch(err => {
+        console.warn('[FastLogin] Failed to sync passkey status to server:', err)
+      })
+
       setStep('success')
       setTimeout(() => setShow(false), 2500)
     } catch (err) {
@@ -46,8 +80,8 @@ export default function BiometricPrompt() {
   return (
     <div className="biometric-overlay">
       <div className="biometric-modal">
-        <button 
-          className="biometric-close" 
+        <button
+          className="biometric-close"
           onClick={handleDismiss}
           aria-label="Tutup"
         >
@@ -70,7 +104,7 @@ export default function BiometricPrompt() {
 
             <h3 className="biometric-title">Login Lebih Cepat</h3>
             <p className="biometric-desc">
-              Hai <strong>{user?.name}</strong>, aktifkan login cepat menggunakan sidik jari, Face ID, atau PIN perangkat Anda. 
+              Hai <strong>{user?.name}</strong>, aktifkan login cepat menggunakan sidik jari, Face ID, atau PIN perangkat Anda.
               Login berikutnya cukup satu sentuhan!
             </p>
 
@@ -138,6 +172,35 @@ export default function BiometricPrompt() {
                 Coba Lagi
               </button>
             </div>
+          </div>
+        )}
+
+        {step === 'no_platform' && (
+          <div className="biometric-status">
+            <div className="biometric-icon-circle biometric-icon-warn">
+              <ShieldAlert size={32} strokeWidth={1.5} />
+            </div>
+            <h3 className="biometric-title" style={{ color: 'var(--warning)' }}>Pengaturan Diperlukan</h3>
+            <p className="biometric-desc">
+              Untuk menggunakan Fast Login, silakan aktifkan salah satu metode keamanan berikut di pengaturan perangkat Anda:
+            </p>
+            <div className="biometric-methods" style={{ marginBottom: '1rem' }}>
+              <div className="biometric-method">
+                <Fingerprint size={16} />
+                <span>Sidik Jari</span>
+              </div>
+              <div className="biometric-method">
+                <ScanFace size={16} />
+                <span>Face ID</span>
+              </div>
+              <div className="biometric-method">
+                <KeyRound size={16} />
+                <span>PIN / Pola</span>
+              </div>
+            </div>
+            <button className="btn btn-ghost" style={{ width: '100%' }} onClick={handleDismiss}>
+              Mengerti
+            </button>
           </div>
         )}
       </div>
