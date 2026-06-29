@@ -22,3 +22,25 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ─── SECURITY: Environment variables (NEVER commit) ─────────────────────
+.env
+.env.*
+!.env.example
+.env.local
+.env.production
+
+# ─── SECURITY: Dev/admin utility scripts (contain credentials) ──────────
+fix-admin.js
+update-admin.js
+test-login.js
+seed-users.js
+setup-db.js
+check-db.js
+run-migration.js
+
+# ─── SECURITY: Internal dev notes & AI rules ────────────────────────────
+fix-fast-login.md
+public/cursorrule.md
+.cursorrules
+.cursor/
