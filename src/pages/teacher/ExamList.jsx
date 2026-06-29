@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams } from '../../lib/db'
-import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen } from 'lucide-react'
+import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen, ClipboardList } from 'lucide-react'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 
@@ -109,17 +109,21 @@ export default function ExamList() {
                           : `Kelas ${exam.target_kelas.split(',').join(', ')}`}
                       </td>
                       <td>
-                        <span className={`badge ${exam.mode === 'quiz' ? 'badge-active' : 'badge-draft'}`} style={{ fontSize: '0.75rem' }}>
-                          {exam.mode === 'quiz' ? '⚡ Kuis' : '📝 Ujian'}
+                        <span className={`badge ${exam.mode === 'quiz' ? 'badge-active' : exam.mode === 'survey' ? 'badge-survey' : 'badge-draft'}`} style={{ fontSize: '0.75rem' }}>
+                          {exam.mode === 'quiz' ? '⚡ Kuis' : exam.mode === 'survey' ? '📋 Survei' : '📝 Ujian'}
                         </span>
                       </td>
                       <td>
-                        <span style={getMonitoringBadgeStyle(exam.monitoring_level || 1)}>
-                          <MonitoringIcon level={exam.monitoring_level || 1} size={14} />
-                          Lv.{exam.monitoring_level || 1}
-                        </span>
+                        {exam.mode === 'survey' ? (
+                          <span className="text-muted">—</span>
+                        ) : (
+                          <span style={getMonitoringBadgeStyle(exam.monitoring_level || 1)}>
+                            <MonitoringIcon level={exam.monitoring_level || 1} size={14} />
+                            Lv.{exam.monitoring_level || 1}
+                          </span>
+                        )}
                       </td>
-                      <td>{exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} mnt`}</td>
+                      <td>{exam.mode === 'survey' ? 'Tanpa batas' : exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} mnt`}</td>
                       <td>
                         <span className={`badge badge-${exam.status === 'published' ? 'active' : exam.status === 'closed' ? 'closed' : 'draft'}`}>
                           {exam.status === 'published' ? 'Aktif' : exam.status === 'closed' ? 'Tutup' : 'Draft'}
@@ -138,12 +142,20 @@ export default function ExamList() {
                               </button>
                             </>
                           )}
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/monitor/${exam.id}`)} title="Monitor">
-                            <Activity size={13} />
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/results/${exam.id}`)} title="Hasil">
-                            <BarChart2 size={13} />
-                          </button>
+                          {exam.mode !== 'survey' && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/monitor/${exam.id}`)} title="Monitor">
+                              <Activity size={13} />
+                            </button>
+                          )}
+                          {exam.mode === 'survey' ? (
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/survey-responses/${exam.id}`)} title="Respons Survei">
+                              <ClipboardList size={13} />
+                            </button>
+                          ) : (
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/results/${exam.id}`)} title="Hasil">
+                              <BarChart2 size={13} />
+                            </button>
+                          )}
                           {(user.role === 'SUPERADMIN' || exam.created_by === user.id) && (
                             <button className="btn btn-danger btn-sm" onClick={() => handleDelete(exam.id)} title="Hapus">
                               <Trash2 size={13} />

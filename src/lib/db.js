@@ -80,3 +80,50 @@ export const results = {
   updateEssayScore: (id, essayScore) =>
     supabase.from('results').update({ essay_score: essayScore }).eq('id', id).select().single(),
 }
+
+// ─── SURVEY NOTIFICATIONS ─────────────────────────────────────────────────────
+export const notifications = {
+  listByUser: (userId) =>
+    supabase.from('survey_notifications').select('*, exams(title)').eq('user_id', userId).eq('is_read', false).order('created_at', { ascending: false }),
+  markRead: (id) =>
+    supabase.from('survey_notifications').update({ is_read: true }).eq('id', id),
+  markAllRead: (userId) =>
+    supabase.from('survey_notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false),
+  create: (data) =>
+    supabase.from('survey_notifications').insert(data).select().single(),
+  createMany: (dataArr) =>
+    supabase.from('survey_notifications').insert(dataArr).select(),
+  countUnread: async (userId) => {
+    const { count, error } = await supabase.from('survey_notifications').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('is_read', false)
+    return { count: count || 0, error }
+  },
+}
+
+// ─── SURVEY HELPERS ───────────────────────────────────────────────────────────
+export const surveys = {
+  /** List all students who should take a survey (by target_kelas) but haven't yet */
+  getMissingRespondents: async (examId) => {
+    const { data: exam } = await exams.getById(examId)
+    if (!exam) return { data: [], error: 'Survey not found' }
+
+    // Get all students
+    const { data: allStudents } = await users.listByRole('USER')
+    if (!allStudents) return { data: [], error: null }
+
+    // Filter by target_kelas
+    const targetStudents = allStudents.filter(s => {
+      if (!exam.target_kelas || exam.target_kelas === 'all') return true
+      if (!s.kelas) return false
+      const targets = exam.target_kelas.split(',')
+      return targets.some(t => s.kelas.startsWith(t))
+    })
+
+    // Get sessions for this exam
+    const { data: existingSessions } = await sessions.listByExam(examId)
+    const respondedIds = new Set((existingSessions || []).map(s => s.student_id))
+
+    // Filter out those who already responded
+    const missing = targetStudents.filter(s => !respondedIds.has(s.id))
+    return { data: missing, error: null }
+  },
+}

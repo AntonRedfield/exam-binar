@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../lib/auth'
 import { exams, sessions, results } from '../lib/db'
-import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap } from 'lucide-react'
+import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap, ClipboardList } from 'lucide-react'
 import BiometricPrompt from '../components/BiometricPrompt'
 
 function getStatusBadge(status) {
@@ -63,6 +63,20 @@ export default function StudentHome() {
 
   function handleExamClick(exam) {
     const session = sessionMap[exam.id]
+    if (exam.mode === 'survey') {
+      // Surveys go directly to SurveyRoom
+      if (session?.status === 'submitted') {
+        // Already submitted — let SurveyRoom handle the thank-you screen
+        navigate(`/survey/${exam.id}`)
+      } else {
+        if (exam.status !== 'published') {
+          alert('Survei ini sudah ditutup.')
+          return
+        }
+        navigate(`/survey/${exam.id}`)
+      }
+      return
+    }
     if (session?.status === 'submitted' || session?.status === 'time_up') {
       const result = resultMap[exam.id]
       if (result) navigate(`/results/${result.id}`)
@@ -130,42 +144,62 @@ export default function StudentHome() {
             {examList.map(exam => {
               const session = sessionMap[exam.id]
               const result = resultMap[exam.id]
-              const isDone = session?.status === 'submitted' || session?.status === 'time_up'
+              const isDone = (session?.status === 'submitted' || session?.status === 'time_up')
               const isActive = session?.status === 'active' || session?.status === 'reset'
+              const isSurvey = exam.mode === 'survey'
 
               let scoreNode = null
-              if (isDone && result) {
+              if (isDone && result && !isSurvey) {
                 const totalScore = (result.auto_score || 0) + (result.essay_score || 0)
                 const pctNum = result.max_auto_score > 0 ? (totalScore / result.max_auto_score) * 100 : 0
                 const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
                 scoreNode = <span className="text-success">Nilai: {pctStr}%</span>
               }
 
+              const accentColor = isSurvey ? 'rgba(20,184,166,0.2)' : isDone ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(245,158,11,0.25)' : 'var(--border)'
+              const iconBg = isSurvey 
+                ? (isDone ? 'rgba(20,184,166,0.15)' : 'rgba(20,184,166,0.1)') 
+                : (isDone ? 'var(--success-bg)' : isActive ? 'var(--warning-bg)' : 'rgba(79,142,247,0.1)')
+              const icon = isSurvey
+                ? (isDone ? <CheckCircle size={26} color="var(--success)" /> : <ClipboardList size={26} color="#14b8a6" />)
+                : (isDone ? <CheckCircle size={26} color="var(--success)" /> : isActive ? <RotateCcw size={26} color="var(--warning)" /> : <Play size={26} color="var(--accent)" />)
+
               return (
-                <div key={exam.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', cursor: 'pointer', borderColor: isDone ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(245,158,11,0.25)' : 'var(--border)' }}
+                <div key={exam.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', cursor: 'pointer', borderColor: accentColor }}
                   onClick={() => handleExamClick(exam)}
                 >
-                  <div style={{ width: 52, height: 52, borderRadius: 14, background: isDone ? 'var(--success-bg)' : isActive ? 'var(--warning-bg)' : 'rgba(79,142,247,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    {isDone ? <CheckCircle size={26} color="var(--success)" /> : isActive ? <RotateCcw size={26} color="var(--warning)" /> : <Play size={26} color="var(--accent)" />}
+                  <div style={{ width: 52, height: 52, borderRadius: 14, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {icon}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.375rem' }}>
                       <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{exam.title}</h3>
-                      {exam.mode === 'quiz' && (
+                      {isSurvey && (
+                        <span className="badge badge-survey" style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>📋 Survei</span>
+                      )}
+                      {!isSurvey && exam.mode === 'quiz' && (
                         <span className="badge badge-active" style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>⚡ Kuis</span>
                       )}
                       {getStatusBadge(session?.status)}
                     </div>
                     <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={13} /> {exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} menit`}</span>
+                      {isSurvey ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><ClipboardList size={13} /> Tanpa batas waktu</span>
+                      ) : (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={13} /> {exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} menit`}</span>
+                      )}
                       {scoreNode}
-                      {isActive && exam.status === 'published' && <span className="text-gold">Klik untuk melanjutkan ujian</span>}
-                      {isActive && exam.status !== 'published' && <span className="text-danger">Ujian telah ditutup</span>}
-                      {!session && <span>Belum dimulai — klik untuk mulai</span>}
+                      {!isSurvey && isActive && exam.status === 'published' && <span className="text-gold">Klik untuk melanjutkan ujian</span>}
+                      {!isSurvey && isActive && exam.status !== 'published' && <span className="text-danger">Ujian telah ditutup</span>}
+                      {isSurvey && isDone && <span className="text-success">Sudah mengisi</span>}
+                      {isSurvey && !session && <span>Belum diisi — klik untuk mengisi</span>}
+                      {!isSurvey && !session && <span>Belum dimulai — klik untuk mulai</span>}
                     </div>
                   </div>
                   <div className="text-muted" style={{ fontSize: '0.8rem', flexShrink: 0 }}>
-                    {isDone ? 'Lihat Hasil →' : (isActive && exam.status !== 'published') ? 'Ditutup' : isActive ? 'Lanjutkan →' : 'Mulai →'}
+                    {isSurvey 
+                      ? (isDone ? 'Sudah Diisi ✓' : 'Isi Survei →')
+                      : (isDone ? 'Lihat Hasil →' : (isActive && exam.status !== 'published') ? 'Ditutup' : isActive ? 'Lanjutkan →' : 'Mulai →')}
                   </div>
                 </div>
               )

@@ -29,6 +29,13 @@ export default function ExamLobby() {
         questions.listByExam(examId),
         sessions.get(user.id, examId),
       ])
+
+      // Redirect surveys to SurveyRoom — no lobby needed
+      if (examData?.mode === 'survey') {
+        navigate(`/survey/${examId}`, { replace: true })
+        return
+      }
+
       setExam(examData)
       setQuestionCount(qs?.length || 0)
       setSession(sess)

@@ -17,6 +17,8 @@ import UserManagement from './pages/admin/UserManagement'
 import ExamOversight from './pages/admin/ExamOversight'
 import Analytics from './pages/admin/Analytics'
 import TeacherDashboard from './pages/teacher/TeacherDashboard'
+import SurveyRoom from './pages/SurveyRoom'
+import SurveyResponses from './pages/teacher/SurveyResponses'
 import './index.css'
 
 function ProtectedRoute({ children, roles }) {
@@ -62,6 +64,11 @@ export default function App() {
             <Results />
           </ProtectedRoute>
         } />
+        <Route path="/survey/:examId" element={
+          <ProtectedRoute roles={['USER']}>
+            <SurveyRoom />
+          </ProtectedRoute>
+        } />
 
         {/* Teacher Routes */}
         <Route path="/teacher" element={
@@ -77,6 +84,7 @@ export default function App() {
           <Route path="results/:examId" element={<ResultsView />} />
           <Route path="analytics/:examId" element={<QuestionAnalytics />} />
           <Route path="students" element={<UserManagement />} />
+          <Route path="survey-responses/:examId" element={<SurveyResponses />} />
         </Route>
 
         {/* Admin Routes */}
