@@ -3,7 +3,7 @@ import { users } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { Plus, Edit2, Trash2, X, Save, Eye, EyeOff, Upload, FileText } from 'lucide-react'
 
-const EMPTY_FORM = { id: '', password: '', name: '', kelas: '', role: 'USER' }
+const EMPTY_FORM = { username: '', password: '', name: '', kelas: '', role: 'USER' }
 
 export default function UserManagement() {
   const currentUser = getCurrentUser()
@@ -50,7 +50,7 @@ export default function UserManagement() {
   }
 
   function openEdit(user) {
-    setForm({ id: user.id, password: user.password || '', name: user.name, kelas: user.kelas || '', role: user.role })
+    setForm({ username: user.username, password: user.password || '', name: user.name, kelas: user.kelas || '', role: user.role })
     setOldId(user.id)
     setIsEdit(true)
     setError('')
@@ -58,13 +58,13 @@ export default function UserManagement() {
   }
 
   async function handleSave() {
-    if (!form.id.trim() || !form.name.trim()) { setError('ID dan Nama wajib diisi.'); return }
+    if (!form.username.trim() || !form.name.trim()) { setError('Username dan Nama wajib diisi.'); return }
     setSaving(true); setError('')
     try {
       if (isEdit) {
-        await users.update(oldId, { id: form.id.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
+        await users.update(oldId, { username: form.username.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
       } else {
-        await users.create({ id: form.id.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
+        await users.create({ username: form.username.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
       }
       setShowModal(false)
       await load()
@@ -143,20 +143,20 @@ export default function UserManagement() {
     for (let i = 0; i < lines.length; i++) {
       // split by tab or comma
       const cols = lines[i].split(/\t|,/)
-      if (cols.length < 2) continue // skip bad rows that don't even have ID & Name
+      if (cols.length < 2) continue // skip bad rows that don't even have Username & Name
       
-      const id = cols[0]?.trim().toLowerCase() || ''
+      const username = cols[0]?.trim().toLowerCase() || ''
       const name = cols[1]?.trim() || ''
       const kelas = cols[2]?.trim() || null
       const password = cols[3]?.trim() || null
 
-      if (!id || !name) continue // ID and Name are mandatory
+      if (!username || !name) continue // Username and Name are mandatory
 
       try {
-        await users.create({ id, name, kelas, password, role: tab })
+        await users.create({ username, name, kelas, password, role: tab })
         successCount++
       } catch (err) {
-        errors.push(`Baris ${i + 1} (${id}): ${err.message}`)
+        errors.push(`Baris ${i + 1} (${username}): ${err.message}`)
       }
     }
 
@@ -170,7 +170,7 @@ export default function UserManagement() {
 
   const filtered = userList.filter(u =>
     u.name?.toLowerCase().includes(search.toLowerCase()) ||
-    u.id?.toLowerCase().includes(search.toLowerCase()) ||
+    u.username?.toLowerCase().includes(search.toLowerCase()) ||
     u.kelas?.toLowerCase().includes(search.toLowerCase())
   ).sort((a, b) => {
     const aVal = String(a[sortConfig.key] || '').toLowerCase()
@@ -211,7 +211,7 @@ export default function UserManagement() {
               <button key={val} className={`btn ${tab === val ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setTab(val)}>{label}</button>
             ))
           )}
-          <input className="form-input" style={{ marginLeft: 'auto', width: 220 }} placeholder="Cari nama / ID / kelas..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="form-input" style={{ marginLeft: 'auto', width: 220 }} placeholder="Cari nama / username / kelas..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
 
         <div className="card" style={{ padding: 0 }}>
@@ -229,8 +229,8 @@ export default function UserManagement() {
                       />
                     </th>
                   )}
-                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('id')}>
-                    ID {sortConfig.key === 'id' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('username')}>
+                    Username {sortConfig.key === 'username' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
                     Nama {sortConfig.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
@@ -257,7 +257,7 @@ export default function UserManagement() {
                         />
                       </td>
                     )}
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{u.id}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{u.username}</td>
                     <td style={{ fontWeight: 600 }}>{u.name}</td>
                     <td>{u.kelas || '—'}</td>
                     <td className="text-muted text-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -297,8 +297,8 @@ export default function UserManagement() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="form-group">
-                <label className="form-label">ID Login</label>
-                <input className="form-input" value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value.toLowerCase() }))} placeholder="cth: budi.090812@murid.binar" />
+                <label className="form-label">Username</label>
+                <input className="form-input" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value.toLowerCase() }))} placeholder="cth: budi.090812@murid.binar" />
               </div>
               <div className="form-group">
                 <label className="form-label">Nama Lengkap</label>
@@ -345,7 +345,7 @@ export default function UserManagement() {
               <div>
                 <h3>Import Data {tab === 'USER' ? 'Siswa' : 'Pengguna'}</h3>
                 <p className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                  Format CSV/Excel: <strong>ID, Nama Lengkap, Kelas, Password</strong>
+                  Format CSV/Excel: <strong>Username, Nama Lengkap, Kelas, Password</strong>
                 </p>
               </div>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowImport(false)}><X size={15} /></button>

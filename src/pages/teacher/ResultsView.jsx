@@ -196,7 +196,7 @@ export default function ResultsView() {
                   return (
                     <tr key={r.id}>
                       <td className="text-muted no-print">{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>{r.users?.name}</td>
+                      <td style={{ fontWeight: 600 }}>{r.users?.name || r.users?.username || 'Siswa Dihapus'}</td>
                       <td>{r.users?.kelas}</td>
                       <td className="no-print">{r.auto_score}</td>
                       <td className="no-print">

@@ -66,8 +66,8 @@ export default function Monitor() {
   }
 
   const sortedSessions = [...sessionList].sort((a, b) => {
-    let aVal = a.users?.[sortConfig.key] || a.student_id || ''
-    let bVal = b.users?.[sortConfig.key] || b.student_id || ''
+    let aVal = a.users?.[sortConfig.key] || a.users?.username || ''
+    let bVal = b.users?.[sortConfig.key] || b.users?.username || ''
     
     aVal = String(aVal).toLowerCase()
     bVal = String(bVal).toLowerCase()
@@ -139,7 +139,7 @@ export default function Monitor() {
                   <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>Belum ada siswa yang memulai ujian.</td></tr>
                 ) : sortedSessions.map(sess => (
                   <tr key={sess.id}>
-                    <td style={{ fontWeight: 600 }}>{sess.users?.name || sess.student_id}</td>
+                    <td style={{ fontWeight: 600 }}>{sess.users?.name || sess.users?.username || 'Siswa Dihapus'}</td>
                     <td>{sess.users?.kelas || '—'}</td>
                     <td>{statusBadge(sess.status)}</td>
                     <td style={{ fontFamily: 'monospace' }}>{sess.status === 'active' ? getRemaining(sess.end_timestamp) : '—'}</td>

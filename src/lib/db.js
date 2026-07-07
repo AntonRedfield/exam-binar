@@ -19,7 +19,7 @@ export const users = {
 
 // ─── EXAMS ────────────────────────────────────────────────────────────────────
 export const exams = {
-  list: () => supabase.from('exams').select('*, users(name)').order('created_at', { ascending: false }),
+  list: () => supabase.from('exams').select('*, users(name, username)').order('created_at', { ascending: false }),
   listByTeacher: (teacherId) =>
     supabase.from('exams').select('*').eq('created_by', teacherId).order('created_at', { ascending: false }),
   getById: (id) => supabase.from('exams').select('*').eq('id', id).single(),
@@ -53,7 +53,7 @@ export const sessions = {
   listByExam: (examId) =>
     supabase
       .from('exam_sessions')
-      .select('*, users(name, kelas)')
+      .select('*, users(name, kelas, username)')
       .eq('exam_id', examId)
       .order('started_at'),
   reset: (studentId, examId) =>
@@ -68,11 +68,11 @@ export const sessions = {
 export const results = {
   get: (studentId, examId) =>
     supabase.from('results').select('*').eq('student_id', studentId).eq('exam_id', examId).maybeSingle(),
-  getById: (id) => supabase.from('results').select('*, users(name, kelas), exams(title, status, passing_grade)').eq('id', id).single(),
+  getById: (id) => supabase.from('results').select('*, users(name, kelas, username), exams(title, status, passing_grade)').eq('id', id).single(),
   listByExam: (examId) =>
     supabase
       .from('results')
-      .select('*, breakdown, users(name, kelas)')
+      .select('*, breakdown, users(name, kelas, username)')
       .eq('exam_id', examId)
       .order('auto_score', { ascending: false }),
   create: (data) => supabase.from('results').insert(data).select().single(),

@@ -368,7 +368,7 @@ export default function SurveyResponses() {
                   {sessionList.map((s, i) => (
                     <tr key={s.id}>
                       <td className="text-muted">{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>{s.users?.name || s.student_id}</td>
+                      <td style={{ fontWeight: 600 }}>{s.users?.name || s.users?.username || 'Siswa Dihapus'}</td>
                       <td>{s.users?.kelas || '—'}</td>
                       <td className="text-muted text-sm">
                         {s.last_sync ? new Date(s.last_sync).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
@@ -434,7 +434,7 @@ export default function SurveyResponses() {
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 700, maxHeight: '80vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <div>
-                <h3 style={{ margin: 0 }}>Respons: {selectedUser.users?.name || selectedUser.student_id}</h3>
+                <h3 style={{ margin: 0 }}>Respons: {selectedUser.users?.name || selectedUser.users?.username || 'Siswa Dihapus'}</h3>
                 <span className="text-muted text-xs">
                   Kelas {selectedUser.users?.kelas || '—'} · {selectedUser.last_sync ? new Date(selectedUser.last_sync).toLocaleString('id-ID') : '—'}
                 </span>

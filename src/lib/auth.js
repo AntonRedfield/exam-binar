@@ -24,7 +24,7 @@ export async function login(id, password) {
   const { data: user, error } = await supabase
     .from('users')
     .select('*')
-    .eq('id', trimmedId)
+    .eq('username', trimmedId)
     .single()
 
   if (error || !user) {
@@ -38,7 +38,7 @@ export async function login(id, password) {
 
   // Students: ID-only (no password check)
   if (isStudentId(trimmedId)) {
-    const sessionData = { id: user.id, name: user.name, kelas: user.kelas, role: user.role }
+    const sessionData = { id: user.id, username: user.username, name: user.name, kelas: user.kelas, role: user.role }
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionData))
     return sessionData
   }
@@ -52,7 +52,7 @@ export async function login(id, password) {
     throw new Error('Password salah. Silakan coba lagi.')
   }
 
-  const sessionData = { id: user.id, name: user.name, kelas: user.kelas, role: user.role }
+  const sessionData = { id: user.id, username: user.username, name: user.name, kelas: user.kelas, role: user.role }
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionData))
   return sessionData
 }
@@ -85,7 +85,7 @@ export async function loginWithBiometric(userId) {
   }
 
   // Step 4: Create session
-  const sessionData = { id: dbUser.id, name: dbUser.name, kelas: dbUser.kelas, role: dbUser.role }
+  const sessionData = { id: dbUser.id, username: dbUser.username, name: dbUser.name, kelas: dbUser.kelas, role: dbUser.role }
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionData))
   return sessionData
 }
