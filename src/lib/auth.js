@@ -126,13 +126,27 @@ export async function login(username, password) {
   const cleanPassword = password.trim()
   const email = usernameToEmail(cleanUsername)
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password: cleanPassword
-  })
+  let data, error
+  try {
+    ({ data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: cleanPassword
+    }))
+  } catch (netErr) {
+    console.error('[Auth] Network error during sign-in:', netErr)
+    throw new Error(`Tidak dapat terhubung ke server autentikasi (${netErr?.message || 'network error'}).`)
+  }
 
   if (error || !data?.user || !data?.session) {
-    throw new Error('Username atau password salah. Silakan coba lagi.')
+    console.error('[Auth] Sign-in failed:', { email, status: error?.status, code: error?.code, message: error?.message })
+    const msg = (error?.message || '').toLowerCase()
+    if (error?.code === 'invalid_credentials' || msg.includes('invalid login credentials')) {
+      throw new Error('Username atau password salah. Silakan coba lagi.')
+    }
+    if (error?.status === 429 || msg.includes('rate limit')) {
+      throw new Error('Terlalu banyak percobaan login. Tunggu beberapa menit lalu coba lagi.')
+    }
+    throw new Error(`Login gagal: ${error?.message || 'respons server tidak valid'} (kode ${error?.status ?? '-'})`)
   }
 
   // Fetch user profile from Supabase profiles table
