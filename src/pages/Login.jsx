@@ -149,7 +149,8 @@ export default function Login() {
 
         {/* Footer */}
         <div className="login-footer">
-          Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
+          <div>&copy;2026 SNT 10 Kupang. All rights reserved.</div>
+          <div>System Engineered &amp; Maintain by Maulana Sulthoni.</div>
         </div>
       </div>
     </div>
