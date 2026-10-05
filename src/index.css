@@ -1690,19 +1690,19 @@ tbody tr:hover { background: var(--glass-light); }
   }
 }
 
-/* ─── LOGIN SCREEN (Light White Theme) ─────────────────────────────────────── */
+/* ─── LOGIN SCREEN (Deep Blue Theme) ───────────────────────────────────────── */
 .login-screen {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 50%, #f1f5f9 100%);
+  background: linear-gradient(135deg, #102142 0%, #1b3361 50%, #15294e 100%);
   padding: 1.5rem;
   position: relative;
   overflow: hidden;
 }
 
-/* Ambient floating orbs (subtle pastel accents) */
+/* Ambient floating orbs (gold and deep blue accents) */
 .login-bg-effects {
   position: absolute;
   inset: 0;
@@ -1717,20 +1717,20 @@ tbody tr:hover { background: var(--glass-light); }
   animation: login-orb-float 14s ease-in-out infinite;
 }
 .login-orb-1 {
-  width: 320px; height: 320px;
-  background: radial-gradient(circle, rgba(27, 51, 97, 0.12), transparent 70%);
+  width: 380px; height: 380px;
+  background: radial-gradient(circle, rgba(223, 174, 52, 0.16), transparent 70%);
   top: -80px; left: -60px;
   animation-delay: 0s;
 }
 .login-orb-2 {
-  width: 260px; height: 260px;
-  background: radial-gradient(circle, rgba(223, 174, 52, 0.14), transparent 70%);
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(36, 68, 130, 0.4), transparent 70%);
   bottom: -40px; right: -40px;
   animation-delay: -4s;
 }
 .login-orb-3 {
-  width: 200px; height: 200px;
-  background: radial-gradient(circle, rgba(27, 51, 97, 0.08), transparent 70%);
+  width: 240px; height: 240px;
+  background: radial-gradient(circle, rgba(223, 174, 52, 0.12), transparent 70%);
   top: 50%; left: 60%;
   transform: translate(-50%, -50%);
   animation-delay: -8s;
@@ -1746,13 +1746,13 @@ tbody tr:hover { background: var(--glass-light); }
   z-index: 1;
   width: 100%;
   max-width: 480px;
-  background: #1b3361;
-  border: 1px solid rgba(223, 174, 52, 0.35);
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: var(--radius-lg);
   padding: 2.75rem 2.25rem 2rem;
   box-shadow: 
-    0 20px 45px -10px rgba(10, 22, 45, 0.45),
-    0 8px 20px -4px rgba(0, 0, 0, 0.2);
+    0 25px 60px -15px rgba(0, 0, 0, 0.45),
+    0 0 35px rgba(223, 174, 52, 0.15);
   animation: login-card-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes login-card-enter {
@@ -1769,12 +1769,11 @@ tbody tr:hover { background: var(--glass-light); }
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: clamp(1.6rem, 5.5vw, 2.55rem);
   font-weight: 900;
-  color: #ffffff;
+  color: #1b3361;
   line-height: 1.15;
   letter-spacing: -0.02em;
   text-transform: uppercase;
   margin-bottom: 1.25rem;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 .login-logo-wrap {
   width: 140px;
@@ -1788,26 +1787,26 @@ tbody tr:hover { background: var(--glass-light); }
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 4px 12px rgba(27, 51, 97, 0.15));
 }
 .login-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #dfae34;
+  color: #1b3361;
   letter-spacing: 0.01em;
   line-height: 1.35;
   margin-bottom: 0;
 }
 
-/* Form Styles for Deep Blue Card */
+/* Form Styles for White Card */
 .login-form {
   display: flex;
   flex-direction: column;
   gap: 1.125rem;
 }
 .login-form .form-label {
-  color: #ffffff;
+  color: #1b3361;
   font-size: 0.8rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1816,7 +1815,7 @@ tbody tr:hover { background: var(--glass-light); }
 }
 .login-form .form-input {
   background: #ffffff;
-  border: 1.5px solid rgba(223, 174, 52, 0.35);
+  border: 1.5px solid rgba(27, 51, 97, 0.22);
   color: #1b3361;
   padding: 0.85rem 1rem;
   border-radius: var(--radius-sm);
@@ -1829,8 +1828,8 @@ tbody tr:hover { background: var(--glass-light); }
   font-weight: 400;
 }
 .login-form .form-input:focus {
-  border-color: #dfae34;
-  box-shadow: 0 0 0 3px rgba(223, 174, 52, 0.3);
+  border-color: #1b3361;
+  box-shadow: 0 0 0 3px rgba(27, 51, 97, 0.15);
   outline: none;
 }
 
@@ -1848,7 +1847,7 @@ tbody tr:hover { background: var(--glass-light); }
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #64748b;
+  color: #8fa0bc;
   cursor: pointer;
   padding: 2px;
   display: flex;
@@ -1862,9 +1861,9 @@ tbody tr:hover { background: var(--glass-light); }
 
 /* Error alert for card context */
 .login-form .alert-error {
-  background: rgba(239, 68, 68, 0.18);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
   border-radius: var(--radius-sm);
   padding: 0.75rem 1rem;
   font-size: 0.85rem;
@@ -1891,7 +1890,7 @@ tbody tr:hover { background: var(--glass-light); }
   letter-spacing: 0.02em;
   color: #1b3361;
   background: linear-gradient(135deg, #dfae34 0%, #c49624 100%);
-  border: 1px solid rgba(196, 150, 36, 0.5);
+  border: 1px solid rgba(196, 150, 36, 0.4);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -1928,9 +1927,9 @@ tbody tr:hover { background: var(--glass-light); }
   text-align: center;
   margin-top: 2rem;
   padding-top: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  border-top: 1px solid rgba(27, 51, 97, 0.12);
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.75);
+  color: #64748b;
   line-height: 1.6;
   letter-spacing: 0.01em;
 }
