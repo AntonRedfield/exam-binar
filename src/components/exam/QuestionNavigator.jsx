@@ -10,9 +10,8 @@ export default function QuestionNavigator({ questions, answers, currentQ, onSele
           const ans = answers[String(q.number)]
           let hasAnswer = false
 
-          if (q.type === 'TRUE_FALSE') {
-             // For True/False, we check if the object has at least one answer
-             hasAnswer = ans && typeof ans === 'object' && Object.keys(ans).length > 0
+          if (ans && typeof ans === 'object' && !Array.isArray(ans)) {
+             hasAnswer = Object.keys(ans).length > 0
           } else if (Array.isArray(ans)) {
              hasAnswer = ans.length > 0
           } else {

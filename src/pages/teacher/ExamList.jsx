@@ -132,7 +132,7 @@ export default function ExamList() {
                       <td className="text-muted text-sm">{new Date(exam.created_at).toLocaleDateString('id-ID')}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          {(user.role === 'SUPERADMIN' || exam.created_by === user.id) && (
+                          {(user.role === 'SUPERADMIN' || user.role === 'MODERATOR' || exam.created_by === user.id) && (
                             <>
                               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/edit/${exam.id}`)} title="Edit">
                                 <Edit2 size={13} />

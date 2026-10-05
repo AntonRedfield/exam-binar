@@ -119,7 +119,7 @@ export default function StudentHome() {
         <div className="student-header-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user.name}</div>
-            <div className="text-muted text-xs">Kelas {user.kelas} &middot; {user.id}</div>
+            <div className="text-muted text-xs">Kelas {user.kelas}</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
             <LogOut size={15} /> Keluar

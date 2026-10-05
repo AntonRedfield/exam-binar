@@ -187,9 +187,9 @@ export default function ExamLobby() {
               <div style={{ fontWeight: 700, fontSize: '0.95rem', color: levelConfig.color }}>
                 Level {monitorLevel} — {levelConfig.name}
               </div>
-              {monitorLevel === 4 && (
+              {monitorLevel === 4 && levelConfig.fullName && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  {MONITORING_LEVELS[4].fullName}
+                  {levelConfig.fullName}
                 </div>
               )}
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
@@ -289,7 +289,7 @@ export default function ExamLobby() {
         )}
 
         <p className="text-muted text-xs" style={{ textAlign: 'center', marginTop: '1rem' }}>
-          Masuk sebagai: <strong>{user.name}</strong> ({user.id})
+          Masuk sebagai: <strong>{user.name}</strong>
         </p>
         <div className="app-footer">
           Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025

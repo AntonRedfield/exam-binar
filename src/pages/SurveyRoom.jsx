@@ -89,7 +89,7 @@ export default function SurveyRoom() {
     load()
   }, [examId, user?.id, navigate])
 
-  // Auto-save to Supabase every 15 seconds
+  // Auto-save session answers every 15 seconds
   useEffect(() => {
     if (!session || submitted) return
     const timer = setInterval(async () => {

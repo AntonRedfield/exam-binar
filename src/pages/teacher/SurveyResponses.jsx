@@ -368,8 +368,8 @@ export default function SurveyResponses() {
                   {sessionList.map((s, i) => (
                     <tr key={s.id}>
                       <td className="text-muted">{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>{s.users?.name || s.users?.username || 'Siswa Dihapus'}</td>
-                      <td>{s.users?.kelas || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{s.users?.full_name || 'Siswa Dihapus'}</td>
+                      <td>{s.users?.classes?.name || '—'}</td>
                       <td className="text-muted text-sm">
                         {s.last_sync ? new Date(s.last_sync).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                       </td>
@@ -411,8 +411,8 @@ export default function SurveyResponses() {
                       <tr key={u.id}>
                         <td className="text-muted">{i + 1}</td>
                         <td className="text-muted text-sm">{u.id}</td>
-                        <td style={{ fontWeight: 600 }}>{u.name}</td>
-                        <td>{u.kelas || '—'}</td>
+                        <td style={{ fontWeight: 600 }}>{u.full_name}</td>
+                        <td>{u.classes?.name || '—'}</td>
                         <td>
                           <span className="badge badge-closed" style={{ fontSize: '0.72rem' }}>
                             <UserX size={11} style={{ marginRight: '0.2rem' }} /> Belum Mengisi
@@ -434,9 +434,9 @@ export default function SurveyResponses() {
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 700, maxHeight: '80vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <div>
-                <h3 style={{ margin: 0 }}>Respons: {selectedUser.users?.name || selectedUser.users?.username || 'Siswa Dihapus'}</h3>
+                <h3 style={{ margin: 0 }}>Respons: {selectedUser.users?.full_name || 'Siswa Dihapus'}</h3>
                 <span className="text-muted text-xs">
-                  Kelas {selectedUser.users?.kelas || '—'} · {selectedUser.last_sync ? new Date(selectedUser.last_sync).toLocaleString('id-ID') : '—'}
+                  Kelas {selectedUser.users?.classes?.name || '—'} · {selectedUser.last_sync ? new Date(selectedUser.last_sync).toLocaleString('id-ID') : '—'}
                 </span>
               </div>
               <button className="btn btn-ghost btn-sm" style={{ padding: '0.3rem' }} onClick={() => setSelectedUser(null)}><X size={18} /></button>

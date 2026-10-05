@@ -135,11 +135,20 @@ export default function QuestionAnalytics() {
     q.topWrongAnswer && q.topWrongAnswer[1] >= 2 && (q.type === 'MCQ' || q.type === 'COMPLEX_MCQ')
   )
 
-  const typeLabel = (t) => ({ MCQ: 'PG', COMPLEX_MCQ: 'Multi', TRUE_FALSE: 'B/S', ESSAY: 'Esai' }[t] || t)
-  const formatAnswer = (val) => {
+  const typeLabel = (t) => ({
+    MCQ: 'PG',
+    COMPLEX_MCQ: 'Multi',
+    TRUE_FALSE: 'B/S',
+    MATCHING: 'Jodoh',
+    SEQUENCING: 'Urut',
+    AGREE_DISAGREE: 'S/TS',
+    ESSAY: 'Esai'
+  }[t] || t)
+  const formatAnswer = (val, type) => {
     if (val === undefined || val === null) return '—'
+    if (type === 'SEQUENCING' && Array.isArray(val)) return val.map((v, i) => `${i + 1}:${v}`).join(', ')
     if (Array.isArray(val)) return val.join(', ')
-    if (typeof val === 'object') return Object.entries(val).map(([k, v]) => `${v}`).join(', ')
+    if (typeof val === 'object') return Object.entries(val).map(([k, v]) => `${k}→${v}`).join(', ')
     return String(val)
   }
 

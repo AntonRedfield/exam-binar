@@ -66,7 +66,7 @@ export default function Results() {
             )}
           </div>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
-            Siswa: <strong>{result.users?.name}</strong> &mdash; Kelas {result.users?.kelas}
+            Siswa: <strong>{result.users?.full_name}</strong> &mdash; Kelas {result.users?.classes?.name || '—'}
           </p>
         </div>
 
@@ -118,14 +118,25 @@ export default function Results() {
 }
 
 function typeLabel(type) {
-  return { MCQ: 'PG', COMPLEX_MCQ: 'Multi', TRUE_FALSE: 'B/S', ESSAY: 'Esai' }[type] || type
+  return {
+    MCQ: 'PG',
+    COMPLEX_MCQ: 'Multi',
+    TRUE_FALSE: 'B/S',
+    MATCHING: 'Jodoh',
+    SEQUENCING: 'Urut',
+    AGREE_DISAGREE: 'S/TS',
+    ESSAY: 'Esai'
+  }[type] || type
 }
 
-function formatAnswer(val) {
+function formatAnswer(val, type) {
   if (val === undefined || val === null) return '—'
+  if (type === 'SEQUENCING' && Array.isArray(val)) {
+    return val.map((v, i) => `${i + 1}:${v}`).join(', ')
+  }
   if (Array.isArray(val)) return val.join(', ')
   if (typeof val === 'object') {
-    return Object.entries(val).map(([k, v]) => `${k}:${v}`).join(', ')
+    return Object.entries(val).map(([k, v]) => `${k}→${v}`).join(', ')
   }
   return String(val)
 }

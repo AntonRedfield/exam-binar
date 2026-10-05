@@ -64,7 +64,7 @@ export const MONITORING_LEVELS = {
   },
   4: {
     id: 4,
-    name: 'STRIX SCARS',
+    name: 'STRIX',
     tagline: 'Deteksi Wajah & Maksimal',
     color: '#ef4444',         // red
     colorBg: 'white',
@@ -72,19 +72,33 @@ export const MONITORING_LEVELS = {
     restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
     hasPenalty: true,
     hasFaceDetection: true,
-    description: 'Tingkatan tertinggi pengawasan berbasis deteksi wajah. Burung hantu (STRIX) sebagai simbol mata yang selalu waspada dan presisi.',
     fullName: 'Smart Camera Automatic Recognition System',
+    description: 'Tingkatan tertinggi pengawasan berbasis deteksi wajah dengan Smart Camera Automatic Recognition System (STRIX). Terinspirasi dari burung hantu (Strix) sebagai simbol mata yang selalu waspada dan presisi.',
     briefRules: [
-      'Tingkatan tertinggi dengan pengawasan berbasis deteksi wajah (gaze-tracking).',
+      'Tingkatan tertinggi dengan pengawasan deteksi wajah (Smart Camera Automatic Recognition System).',
       'Kamera harus selalu aktif. Ujian tidak dapat dimulai tanpa kamera.',
       'Sanksi layar: Setiap 3 poin pelanggaran membekukan layar (15s, 30s, 60s+).',
       'Sanksi waktu: Setiap 7 poin mengurangi durasi 5 menit (Ujian) / 20% (Kuis).',
     ],
-    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\nMakna Filosofis Nama "STRIX" diambil dari bahasa Latin dan Yunani yang berarti burung hantu. Burung hantu merupakan simbol utama dari mata yang selalu waspada dan tidak berkedip. Hal ini secara sempurna merepresentasikan sistem pelacakan pandangan (gaze-tracking) berbasis kamera yang mengawasi pengguna secara presisi. Sedangkan SCARS merupakan singkatan dari (Smart Camera Automatic Recognition System).\n\nKetentuan Sanksi:\na. Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\nb. Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\nc. Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
+    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\nMakna Filosofis: Nama "STRIX" diambil dari bahasa Latin dan Yunani yang berarti burung hantu, simbol mata yang selalu waspada dan tidak berkedip. Dalam sistem pengawasan ini, STRIX diadaptasi sebagai singkatan dari Smart Camera Automatic Recognition System yang mengawasi pandangan pengguna (gaze-tracking) secara presisi menggunakan kamera.\n\nKetentuan Sanksi:\na. Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\nb. Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\nc. Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
     freezeDurations: { exam: [15, 30, 60], quiz: 5 },
     timeReduction: { exam: 5 * 60, quiz: 0.20 }, // exam: 5 min in seconds, quiz: 20%
     timeReductionInterval: 7, // every 7 violations
   },
+}
+
+/**
+ * Normalizes any monitoring level value (numeric, string, or legacy identifier)
+ * to a valid numeric level (1, 2, 3, or 4).
+ */
+export function normalizeMonitoringLevel(level) {
+  if (typeof level === 'number' && MONITORING_LEVELS[level]) return level
+  const parsed = parseInt(level, 10)
+  if (!isNaN(parsed) && MONITORING_LEVELS[parsed]) return parsed
+  if (level === 'scout' || level === 'standard') return 2
+  if (level === 'vanguard' || level === 'strict') return 3
+  if (level === 'strix' || level === 'maximum') return 4
+  return 1
 }
 
 // ─── PENALTY HELPERS ─────────────────────────────────────────────────────────

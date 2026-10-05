@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
-import { exams } from '../../lib/db'
-import { supabase } from '../../lib/supabase'
+import { localDb } from '../../lib/db'
 import { BookOpen, Plus, Activity, BarChart2, Users, ArrowRight, FileText, Zap, School } from 'lucide-react'
 
 export default function TeacherDashboard() {
@@ -15,52 +14,51 @@ export default function TeacherDashboard() {
 
   useEffect(() => {
     async function load() {
-      // Get all exams (teachers & superadmin see all)
-      const { data: allExams } = await exams.list()
-      const examList = allExams || []
+      try {
+        const teacherData = await localDb.getTeacherStats(user?.id)
 
-      const totalExams = examList.length
-      const activeExams = examList.filter(e => e.status === 'published').length
-      const draftExams = examList.filter(e => e.status === 'draft').length
-      const closedExams = examList.filter(e => e.status === 'closed').length
+        const {
+          examList,
+          totalExams,
+          activeExams,
+          draftExams,
+          closedExams,
+          totalSessions,
+          recentResults,
+          profiles
+        } = teacherData
 
-      // Get total sessions count
-      const { count: totalSessions } = await supabase
-        .from('exam_sessions')
-        .select('*', { count: 'exact', head: true })
+        let avgScore = 0
+        if (recentResults.length) {
+          const pcts = recentResults.map(r => r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0)
+          avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
+        }
 
-      // Get recent results stats
-      const { data: recentResults } = await supabase
-        .from('results')
-        .select('auto_score, max_auto_score')
-        .limit(100)
-
-      let avgScore = 0
-      if (recentResults?.length) {
-        const pcts = recentResults.map(r => r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0)
-        avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
-      }
-
-      // Fetch class breakdown
-      const { data: allStudents } = await supabase.from('users').select('kelas').eq('role', 'USER')
-      const classMap = {}
-      if (allStudents) {
-        allStudents.forEach(s => {
-          const k = s.kelas || 'Tanpa Kelas'
+        // Fetch class breakdown from profiles
+        const allProfiles = profiles || []
+        const classMap = {}
+        allProfiles.filter(p => p.username?.startsWith('partner.') || p.class_section).forEach(s => {
+          const k = s.class_section || 'Tanpa Kelas'
           classMap[k] = (classMap[k] || 0) + 1
         })
-      }
-      const classSorted = Object.entries(classMap)
-        .sort(([a], [b]) => a.localeCompare(b, 'id', { numeric: true }))
-        .map(([name, count]) => ({ name, count }))
+        const classSorted = Object.entries(classMap)
+          .sort(([a], [b]) => a.localeCompare(b, 'id', { numeric: true }))
+          .map(([name, count]) => ({ name, count }))
 
-      setStats({ totalExams, activeExams, draftExams, closedExams, totalSessions, avgScore, totalResults: recentResults?.length || 0 })
-      setRecentExams(examList.slice(0, 5))
-      setClassBreakdown(classSorted)
-      setLoading(false)
+        setStats({ totalExams, activeExams, draftExams, closedExams, totalSessions, avgScore, totalResults: recentResults.length })
+        setRecentExams(examList || [])
+        setClassBreakdown(classSorted)
+      } catch (err) {
+        console.error("Teacher dashboard load error:", err)
+        setStats({ totalExams: 0, activeExams: 0, draftExams: 0, closedExams: 0, totalSessions: 0, avgScore: 0, totalResults: 0 })
+      } finally {
+        setLoading(false)
+      }
     }
-    load()
-  }, [user.id])
+    if (user?.id) {
+      load()
+    }
+  }, [user?.id])
 
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
 

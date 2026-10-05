@@ -139,8 +139,8 @@ export default function Monitor() {
                   <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>Belum ada siswa yang memulai ujian.</td></tr>
                 ) : sortedSessions.map(sess => (
                   <tr key={sess.id}>
-                    <td style={{ fontWeight: 600 }}>{sess.users?.name || sess.users?.username || 'Siswa Dihapus'}</td>
-                    <td>{sess.users?.kelas || '—'}</td>
+                    <td style={{ fontWeight: 600 }}>{sess.users?.full_name || 'Siswa Dihapus'}</td>
+                    <td>{sess.users?.classes?.name || '—'}</td>
                     <td>{statusBadge(sess.status)}</td>
                     <td style={{ fontFamily: 'monospace' }}>{sess.status === 'active' ? getRemaining(sess.end_timestamp) : '—'}</td>
                     <td>{sess.current_question || 1}</td>

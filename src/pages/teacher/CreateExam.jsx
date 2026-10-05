@@ -2,17 +2,20 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat } from 'lucide-react'
-import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2 } from 'lucide-react'
+import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
 
-const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'ESSAY']
+const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'MATCHING', 'SEQUENCING', 'AGREE_DISAGREE', 'ESSAY']
 const SURVEY_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'LINEAR_SCALE', 'MCQ_GRID', 'CHECKBOX_GRID', 'MCQ', 'CHECKBOXES', 'DROPDOWN']
 
 const TYPE_LABELS = {
   MCQ: 'Pilihan Ganda (1 jawaban)',
   COMPLEX_MCQ: 'Multi-Jawab (beberapa benar)',
   TRUE_FALSE: 'Benar / Salah',
+  MATCHING: 'Menjodohkan (Matching)',
+  SEQUENCING: 'Mengurutkan (Sequencing)',
+  AGREE_DISAGREE: 'Setuju / Tidak Setuju',
   ESSAY: 'Esai (penilaian manual)',
   SHORT_ANSWER: 'Jawaban Singkat',
   PARAGRAPH: 'Paragraf',
@@ -23,19 +26,104 @@ const TYPE_LABELS = {
   DROPDOWN: 'Dropdown',
 }
 
-const OPTION_KEYS = ['A', 'B', 'C', 'D']
+const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
 
-function makeQuestion(n, isSurvey = false) {
+function makeOptions(count = 4) {
+  const clamped = Math.max(2, Math.min(10, count))
+  const obj = {}
+  for (let i = 0; i < clamped; i++) {
+    obj[ALL_LETTERS[i]] = ''
+  }
+  return obj
+}
+
+function makeStatements(count = 3) {
+  const clamped = Math.max(1, Math.min(10, count))
+  const obj = {}
+  for (let i = 0; i < clamped; i++) {
+    obj[`stmt_${Date.now()}_${i + 1}`] = ''
+  }
+  return obj
+}
+
+function makeStatementsAnswers(optionsObj) {
+  const obj = {}
+  Object.keys(optionsObj || {}).forEach(k => {
+    obj[k] = 'true'
+  })
+  return obj
+}
+
+function makeMatching(count = 3) {
+  const clamped = Math.max(2, Math.min(10, count))
+  const left = {}
+  const right = {}
+  const correct = {}
+  for (let i = 0; i < clamped; i++) {
+    const leftKey = String(i + 1)
+    const rightKey = ALL_LETTERS[i]
+    left[leftKey] = ''
+    right[rightKey] = ''
+    correct[leftKey] = rightKey
+  }
+  return { options: { left, right }, correct_answer: correct }
+}
+
+function makeSequencing(count = 4) {
+  const clamped = Math.max(2, Math.min(10, count))
+  const items = []
+  const correct = []
+  for (let i = 0; i < clamped; i++) {
+    const id = `seq_${Date.now()}_${i + 1}`
+    items.push({ id, text: '' })
+    correct.push(id)
+  }
+  return { options: { items }, correct_answer: correct }
+}
+
+function makeAgreeDisagree(count = 3) {
+  const clamped = Math.max(1, Math.min(10, count))
+  const options = {}
+  const correct = {}
+  for (let i = 0; i < clamped; i++) {
+    const key = `stmt_${Date.now()}_${i + 1}`
+    options[key] = ''
+    correct[key] = 'agree'
+  }
+  return { options, correct_answer: correct }
+}
+
+function makeSurveyOptions(count = 4) {
+  const clamped = Math.max(2, Math.min(10, count))
+  const obj = {}
+  for (let i = 0; i < clamped; i++) {
+    obj[`opt_${i + 1}`] = ''
+  }
+  return obj
+}
+
+function makeGridRows(count = 3) {
+  const clamped = Math.max(1, Math.min(15, count))
+  return Array.from({ length: clamped }, (_, i) => `Baris ${i + 1}`)
+}
+
+function makeGridColumns(count = 3) {
+  const clamped = Math.max(1, Math.min(10, count))
+  return Array.from({ length: clamped }, (_, i) => `Kolom ${i + 1}`)
+}
+
+function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCount = 3) {
   if (isSurvey) {
     return {
       number: n, type: 'SHORT_ANSWER', question_text: '', image_url: '',
       options: {}, correct_answer: null, points: 0, variant: 'A', time_limit: null,
       scale_min: 1, scale_max: 5, scale_min_label: '', scale_max_label: '',
-      grid_rows: [''], grid_columns: [''],
+      grid_rows: ['Baris 1', 'Baris 2', 'Baris 3'], grid_columns: ['Kolom 1', 'Kolom 2', 'Kolom 3'],
       allow_other: false, required: true,
     }
   }
-  return { number: n, type: 'MCQ', question_text: '', image_url: '', options: { A: '', B: '', C: '', D: '' }, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
+  const opts = makeOptions(defaultOptsCount)
+  return { number: n, type: 'MCQ', question_text: '', image_url: '', options: opts, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
 }
 
 export default function CreateExam() {
@@ -54,7 +142,16 @@ export default function CreateExam() {
   const [quizTimerType, setQuizTimerType] = useState('uniform')
   const [uniformTime, setUniformTime] = useState(30)
   const [questionOrder, setQuestionOrder] = useState('ORDER')
-  const [questionItems, setQuestionItems] = useState([makeQuestion(1)])
+  const [defaultOptionsCount, setDefaultOptionsCount] = useState(4)
+  const [defaultStatementsCount, setDefaultStatementsCount] = useState(3)
+  const [defaultMatchingCount, setDefaultMatchingCount] = useState(3)
+  const [defaultSequencingCount, setDefaultSequencingCount] = useState(4)
+  const [defaultAgreeDisagreeCount, setDefaultAgreeDisagreeCount] = useState(3)
+  const [defaultSurveyOptionsCount, setDefaultSurveyOptionsCount] = useState(4)
+  const [defaultGridRowsCount, setDefaultGridRowsCount] = useState(3)
+  const [defaultGridColsCount, setDefaultGridColsCount] = useState(3)
+  const [actionNotice, setActionNotice] = useState('')
+  const [questionItems, setQuestionItems] = useState([makeQuestion(1, false, 4, 3)])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(isEdit)
@@ -71,6 +168,13 @@ export default function CreateExam() {
   const [surveyAllowEdit, setSurveyAllowEdit] = useState(false)
 
   const isSurvey = mode === 'survey'
+
+  function showNotice(msg) {
+    setActionNotice(msg)
+    setTimeout(() => {
+      setActionNotice(prev => prev === msg ? '' : prev)
+    }, 4000)
+  }
 
   useEffect(() => {
     async function load() {
@@ -93,8 +197,17 @@ export default function CreateExam() {
         setTargetKelas(exam.target_kelas === 'all' || !exam.target_kelas ? [] : exam.target_kelas.split(','))
         setMode(exam.mode || 'exam')
         setQuizTimerType(exam.quiz_timer_type || 'uniform')
-        setMonitoringLevel(exam.monitoring_level || 1)
+        setMonitoringLevel(normalizeMonitoringLevel(exam.monitoring_level))
         setQuestionOrder(exam.question_order || 'ORDER')
+        // Load default options counts
+        if (exam.default_options_count) setDefaultOptionsCount(exam.default_options_count)
+        if (exam.default_statements_count) setDefaultStatementsCount(exam.default_statements_count)
+        if (exam.default_matching_count) setDefaultMatchingCount(exam.default_matching_count)
+        if (exam.default_sequencing_count) setDefaultSequencingCount(exam.default_sequencing_count)
+        if (exam.default_agree_disagree_count) setDefaultAgreeDisagreeCount(exam.default_agree_disagree_count)
+        if (exam.default_survey_options_count) setDefaultSurveyOptionsCount(exam.default_survey_options_count)
+        if (exam.default_grid_rows_count) setDefaultGridRowsCount(exam.default_grid_rows_count)
+        if (exam.default_grid_cols_count) setDefaultGridColsCount(exam.default_grid_cols_count)
         // Survey fields
         setSurveyType(exam.survey_type || 'one_time')
         setSurveyRecurrence(exam.survey_recurrence || 'weekly')
@@ -104,21 +217,119 @@ export default function CreateExam() {
         setSurveyAllowEdit(exam.survey_allow_edit || false)
       }
       if (qs?.length) {
-        setQuestionItems(qs.map(q => ({
-          ...q,
-          question_text: q.question_text || '',
-          image_url: q.image_url || '',
-          options: q.options || { A: '', B: '', C: '', D: '' },
-          time_limit: q.time_limit || null,
-          scale_min: q.scale_min ?? 1,
-          scale_max: q.scale_max ?? 5,
-          scale_min_label: q.scale_min_label || '',
-          scale_max_label: q.scale_max_label || '',
-          grid_rows: q.grid_rows || [''],
-          grid_columns: q.grid_columns || [''],
-          allow_other: q.allow_other || false,
-          required: q.required !== false,
-        })))
+        // Auto-detect default counts from questions if not set on exam
+        if (!exam?.default_options_count) {
+          const firstMcq = qs.find(q => q.type === 'MCQ' || q.type === 'COMPLEX_MCQ')
+          if (firstMcq?.options) {
+            const count = Object.keys(firstMcq.options).length
+            if (count >= 2 && count <= 10) setDefaultOptionsCount(count)
+          }
+        }
+        if (!exam?.default_statements_count) {
+          const firstTf = qs.find(q => q.type === 'TRUE_FALSE')
+          if (firstTf?.options) {
+            const count = Object.keys(firstTf.options).length
+            if (count >= 1 && count <= 10) setDefaultStatementsCount(count)
+          }
+        }
+        if (!exam?.default_matching_count) {
+          const firstM = qs.find(q => q.type === 'MATCHING')
+          if (firstM?.options?.left) {
+            const count = Object.keys(firstM.options.left).length
+            if (count >= 2 && count <= 10) setDefaultMatchingCount(count)
+          }
+        }
+        if (!exam?.default_sequencing_count) {
+          const firstS = qs.find(q => q.type === 'SEQUENCING')
+          if (firstS?.options?.items) {
+            const count = firstS.options.items.length
+            if (count >= 2 && count <= 10) setDefaultSequencingCount(count)
+          }
+        }
+        if (!exam?.default_agree_disagree_count) {
+          const firstAd = qs.find(q => q.type === 'AGREE_DISAGREE')
+          if (firstAd?.options) {
+            const count = Object.keys(firstAd.options).length
+            if (count >= 1 && count <= 10) setDefaultAgreeDisagreeCount(count)
+          }
+        }
+
+        setQuestionItems(qs.map(q => {
+          let opts = q.options
+          let ans = q.correct_answer
+
+          if (q.type === 'TRUE_FALSE') {
+            const optKeys = Object.keys(opts || {})
+            const isLegacyFormat = optKeys.length === 2 && optKeys.includes('A') && optKeys.includes('B') && (opts.A === 'Benar' || opts.A === 'benar')
+            if (isLegacyFormat || optKeys.length === 0) {
+              const s1 = `stmt_${Date.now()}_1`
+              const s2 = `stmt_${Date.now()}_2`
+              opts = {
+                [s1]: q.question_text || 'Pernyataan 1',
+                [s2]: 'Pernyataan alternatif 2',
+              }
+              ans = {
+                [s1]: (ans === 'A' || ans === 'true' || ans?.[s1] === 'true') ? 'true' : 'false',
+                [s2]: 'false'
+              }
+            } else if (typeof ans === 'string') {
+              const newAns = {}
+              optKeys.forEach((k, i) => {
+                newAns[k] = (ans === 'true' || (ans === 'A' && i === 0)) ? 'true' : 'false'
+              })
+              ans = newAns
+            }
+          }
+
+          if (q.type === 'MATCHING') {
+            if (!opts || !opts.left || !opts.right) {
+              const initialM = makeMatching(3)
+              opts = initialM.options
+              ans = initialM.correct_answer
+            }
+          }
+
+          if (q.type === 'SEQUENCING') {
+            if (!opts || !Array.isArray(opts.items) || opts.items.length === 0) {
+              const initialS = makeSequencing(4)
+              opts = initialS.options
+              ans = initialS.correct_answer
+            }
+          }
+
+          if (q.type === 'AGREE_DISAGREE') {
+            if (!opts || Object.keys(opts).length === 0) {
+              const initialAd = makeAgreeDisagree(3)
+              opts = initialAd.options
+              ans = initialAd.correct_answer
+            } else if (typeof ans === 'string' || !ans) {
+              const newAns = {}
+              Object.keys(opts).forEach(k => {
+                newAns[k] = 'agree'
+              })
+              ans = newAns
+            }
+          }
+
+          return {
+            ...q,
+            question_text: q.question_text || '',
+            image_url: q.image_url || '',
+            options: (['MCQ', 'COMPLEX_MCQ'].includes(q.type) && (!opts || Object.keys(opts).length === 0))
+              ? makeOptions(exam?.default_options_count || 4)
+              : (opts || {}),
+            correct_answer: ans !== undefined ? ans : (q.type === 'MCQ' ? 'A' : null),
+            time_limit: q.time_limit || null,
+            scale_min: q.scale_min ?? 1,
+            scale_max: q.scale_max ?? 5,
+            scale_min_label: q.scale_min_label || '',
+            scale_max_label: q.scale_max_label || '',
+            grid_rows: q.grid_rows || ['Baris 1'],
+            grid_columns: q.grid_columns || ['Kolom 1'],
+            allow_other: q.allow_other || false,
+            required: q.required !== false,
+          }
+        }))
         if ((exam?.quiz_timer_type || 'uniform') === 'uniform' && qs[0]?.time_limit) {
           setUniformTime(qs[0].time_limit)
         }
@@ -135,12 +346,12 @@ export default function CreateExam() {
     
     // Reset questions when switching between survey and non-survey modes
     if ((newMode === 'survey') !== (prevMode === 'survey')) {
-      setQuestionItems([makeQuestion(1, newMode === 'survey')])
+      setQuestionItems([makeQuestion(1, newMode === 'survey', defaultOptionsCount, defaultStatementsCount)])
     }
   }
 
   function addQuestion() {
-    setQuestionItems(prev => [...prev, makeQuestion(prev.length + 1, isSurvey)])
+    setQuestionItems(prev => [...prev, makeQuestion(prev.length + 1, isSurvey, defaultOptionsCount, defaultStatementsCount)])
   }
 
   function removeQuestion(idx) {
@@ -155,9 +366,363 @@ export default function CreateExam() {
     setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, options: { ...q.options, [key]: value } } : q))
   }
 
-  // Grid helpers
+  // --- MCQ & COMPLEX_MCQ Helper functions ---
+  function changeMcqOptionsCount(idx, targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentKeys = Object.keys(q.options || {})
+      const newOptions = {}
+      for (let c = 0; c < count; c++) {
+        const letter = ALL_LETTERS[c]
+        newOptions[letter] = q.options?.[letter] !== undefined ? q.options[letter] : (q.options?.[currentKeys[c]] || '')
+      }
+      const keptLetters = ALL_LETTERS.slice(0, count)
+      let newCorrect = q.correct_answer
+      if (q.type === 'MCQ') {
+        if (!keptLetters.includes(q.correct_answer)) {
+          newCorrect = 'A'
+        }
+      } else if (q.type === 'COMPLEX_MCQ') {
+        const currentArr = Array.isArray(q.correct_answer) ? q.correct_answer : []
+        const filtered = currentArr.filter(k => keptLetters.includes(k))
+        newCorrect = filtered.length > 0 ? filtered : ['A']
+      }
+      return { ...q, options: newOptions, correct_answer: newCorrect }
+    }))
+  }
+
+  function addMcqOption(idx) {
+    const q = questionItems[idx]
+    const currentCount = Object.keys(q.options || {}).length
+    if (currentCount < 10) {
+      changeMcqOptionsCount(idx, currentCount + 1)
+    }
+  }
+
+  function removeMcqOption(idx, letterToRemove) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentKeys = Object.keys(q.options || {})
+      if (currentKeys.length <= 2) return q // minimum 2 options
+      
+      const removeIndex = currentKeys.indexOf(letterToRemove)
+      if (removeIndex === -1) return q
+      
+      const remainingValues = currentKeys.filter(k => k !== letterToRemove).map(k => q.options[k])
+      const newOptions = {}
+      remainingValues.forEach((val, vi) => {
+        newOptions[ALL_LETTERS[vi]] = val
+      })
+      
+      let newCorrect = q.correct_answer
+      if (q.type === 'MCQ') {
+        const oldIndex = currentKeys.indexOf(q.correct_answer)
+        if (oldIndex === removeIndex) {
+          newCorrect = 'A'
+        } else if (oldIndex > removeIndex) {
+          newCorrect = ALL_LETTERS[oldIndex - 1]
+        }
+      } else if (q.type === 'COMPLEX_MCQ') {
+        const currentArr = Array.isArray(q.correct_answer) ? q.correct_answer : []
+        const updated = currentArr
+          .filter(k => k !== letterToRemove)
+          .map(k => {
+            const oldIdx = currentKeys.indexOf(k)
+            return oldIdx > removeIndex ? ALL_LETTERS[oldIdx - 1] : k
+          })
+        newCorrect = updated.length > 0 ? updated : ['A']
+      }
+      return { ...q, options: newOptions, correct_answer: newCorrect }
+    }))
+  }
+
+  // --- TRUE_FALSE Helper functions ---
+  function changeStatementsCount(idx, targetCount) {
+    const count = Math.max(1, Math.min(10, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentKeys = Object.keys(q.options || {})
+      const newOptions = {}
+      const newAnswers = {}
+      for (let c = 0; c < count; c++) {
+        const key = currentKeys[c] || `stmt_${Date.now()}_${c + 1}`
+        newOptions[key] = q.options?.[key] || ''
+        newAnswers[key] = q.correct_answer?.[key] || 'true'
+      }
+      return { ...q, options: newOptions, correct_answer: newAnswers }
+    }))
+  }
+
+  function addStatement(idx) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const newKey = `stmt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
+      return {
+        ...q,
+        options: { ...(q.options || {}), [newKey]: '' },
+        correct_answer: { ...(q.correct_answer || {}), [newKey]: 'true' }
+      }
+    }))
+  }
+
+  function removeStatement(idx, keyToRemove) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const newOptions = { ...q.options }
+      delete newOptions[keyToRemove]
+      const newAnswers = { ...(q.correct_answer || {}) }
+      delete newAnswers[keyToRemove]
+      return { ...q, options: newOptions, correct_answer: newAnswers }
+    }))
+  }
+
+  // --- MATCHING Helper functions ---
+  function changeMatchingCount(idx, targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentLeft = q.options?.left || {}
+      const currentRight = q.options?.right || {}
+      const currentCorrect = q.correct_answer || {}
+      const newLeft = {}
+      const newRight = {}
+      const newCorrect = {}
+
+      for (let c = 0; c < count; c++) {
+        const leftKey = String(c + 1)
+        const rightKey = ALL_LETTERS[c]
+        newLeft[leftKey] = currentLeft[leftKey] !== undefined ? currentLeft[leftKey] : ''
+        newRight[rightKey] = currentRight[rightKey] !== undefined ? currentRight[rightKey] : ''
+        const validRightKeys = ALL_LETTERS.slice(0, count)
+        newCorrect[leftKey] = validRightKeys.includes(currentCorrect[leftKey]) ? currentCorrect[leftKey] : rightKey
+      }
+      return { ...q, options: { left: newLeft, right: newRight }, correct_answer: newCorrect }
+    }))
+  }
+
+  function addMatchingPair(idx) {
+    const q = questionItems[idx]
+    const count = Object.keys(q.options?.left || {}).length
+    if (count < 10) changeMatchingCount(idx, count + 1)
+  }
+
+  function removeMatchingPair(idx, leftKeyToRemove) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentLeftKeys = Object.keys(q.options?.left || {})
+      if (currentLeftKeys.length <= 2) return q
+      const removeIdx = currentLeftKeys.indexOf(leftKeyToRemove)
+      if (removeIdx === -1) return q
+
+      const leftVals = currentLeftKeys.filter(k => k !== leftKeyToRemove).map(k => q.options.left[k])
+      const rightKeys = Object.keys(q.options?.right || {})
+      const rightVals = rightKeys.filter((_, ri) => ri !== removeIdx).map(k => q.options.right[k])
+
+      const newLeft = {}
+      const newRight = {}
+      const newCorrect = {}
+      leftVals.forEach((val, vi) => {
+        const lKey = String(vi + 1)
+        const rKey = ALL_LETTERS[vi]
+        newLeft[lKey] = val
+        newRight[rKey] = rightVals[vi] || ''
+        newCorrect[lKey] = rKey
+      })
+      return { ...q, options: { left: newLeft, right: newRight }, correct_answer: newCorrect }
+    }))
+  }
+
+  function updateMatchingLeft(idx, key, val) {
+    setQuestionItems(prev => prev.map((q, i) => i === idx ? {
+      ...q,
+      options: { ...q.options, left: { ...(q.options?.left || {}), [key]: val } }
+    } : q))
+  }
+
+  function updateMatchingRight(idx, key, val) {
+    setQuestionItems(prev => prev.map((q, i) => i === idx ? {
+      ...q,
+      options: { ...q.options, right: { ...(q.options?.right || {}), [key]: val } }
+    } : q))
+  }
+
+  function updateMatchingAnswer(idx, leftKey, rightKey) {
+    setQuestionItems(prev => prev.map((q, i) => i === idx ? {
+      ...q,
+      correct_answer: { ...(q.correct_answer || {}), [leftKey]: rightKey }
+    } : q))
+  }
+
+  // --- SEQUENCING Helper functions ---
+  function changeSequencingCount(idx, targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      let items = [...(q.options?.items || [])]
+      if (items.length < count) {
+        while (items.length < count) {
+          items.push({ id: `seq_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, text: '' })
+        }
+      } else {
+        items = items.slice(0, count)
+      }
+      const itemIds = items.map(it => it.id)
+      return { ...q, options: { items }, correct_answer: itemIds }
+    }))
+  }
+
+  function addSequencingItem(idx) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const items = [...(q.options?.items || [])]
+      if (items.length >= 10) return q
+      const id = `seq_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
+      items.push({ id, text: '' })
+      return { ...q, options: { items }, correct_answer: items.map(it => it.id) }
+    }))
+  }
+
+  function removeSequencingItem(idx, itemId) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const items = (q.options?.items || []).filter(it => it.id !== itemId)
+      if (items.length < 2) return q
+      return { ...q, options: { items }, correct_answer: items.map(it => it.id) }
+    }))
+  }
+
+  function updateSequencingText(idx, itemId, text) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const items = (q.options?.items || []).map(it => it.id === itemId ? { ...it, text } : it)
+      return { ...q, options: { items } }
+    }))
+  }
+
+  function moveSequencingItem(idx, itemIdx, direction) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const items = [...(q.options?.items || [])]
+      const targetIdx = itemIdx + direction
+      if (targetIdx < 0 || targetIdx >= items.length) return q
+      const temp = items[itemIdx]
+      items[itemIdx] = items[targetIdx]
+      items[targetIdx] = temp
+      return { ...q, options: { items }, correct_answer: items.map(it => it.id) }
+    }))
+  }
+
+  // --- AGREE_DISAGREE Helper functions ---
+  function changeAgreeDisagreeCount(idx, targetCount) {
+    const count = Math.max(1, Math.min(10, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentKeys = Object.keys(q.options || {})
+      const newOptions = {}
+      const newAnswers = {}
+      for (let c = 0; c < count; c++) {
+        const key = currentKeys[c] || `stmt_${Date.now()}_${c + 1}`
+        newOptions[key] = q.options?.[key] || ''
+        newAnswers[key] = q.correct_answer?.[key] || 'agree'
+      }
+      return { ...q, options: newOptions, correct_answer: newAnswers }
+    }))
+  }
+
+  function addAgreeDisagreeStatement(idx) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const newKey = `stmt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
+      return {
+        ...q,
+        options: { ...(q.options || {}), [newKey]: '' },
+        correct_answer: { ...(q.correct_answer || {}), [newKey]: 'agree' }
+      }
+    }))
+  }
+
+  function removeAgreeDisagreeStatement(idx, keyToRemove) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const newOptions = { ...q.options }
+      delete newOptions[keyToRemove]
+      const newAnswers = { ...(q.correct_answer || {}) }
+      delete newAnswers[keyToRemove]
+      return { ...q, options: newOptions, correct_answer: newAnswers }
+    }))
+  }
+
+  // --- Survey Option Helper functions ---
+  function changeSurveyOptionsCount(idx, targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentKeys = Object.keys(q.options || {})
+      const newOptions = {}
+      for (let c = 0; c < count; c++) {
+        const key = `opt_${c + 1}`
+        newOptions[key] = q.options?.[currentKeys[c]] !== undefined ? q.options[currentKeys[c]] : (q.options?.[key] || '')
+      }
+      return { ...q, options: newOptions }
+    }))
+  }
+
+  function addSurveyOption(idx) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentCount = Object.keys(q.options || {}).length
+      if (currentCount >= 10) return q
+      const nextKey = `opt_${currentCount + 1}`
+      return { ...q, options: { ...(q.options || {}), [nextKey]: '' } }
+    }))
+  }
+
+  function removeSurveyOption(idx, keyToRemove) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentKeys = Object.keys(q.options || {})
+      if (currentKeys.length <= 2) return q
+      const remainingValues = currentKeys.filter(k => k !== keyToRemove).map(k => q.options[k])
+      const newOptions = {}
+      remainingValues.forEach((val, vi) => {
+        newOptions[`opt_${vi + 1}`] = val
+      })
+      return { ...q, options: newOptions }
+    }))
+  }
+
+  // --- Grid helpers ---
+  function changeGridRowsCount(idx, targetCount) {
+    const count = Math.max(1, Math.min(15, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const rows = [...(q.grid_rows || [])]
+      if (rows.length < count) {
+        while (rows.length < count) rows.push(`Baris ${rows.length + 1}`)
+      } else {
+        rows.splice(count)
+      }
+      return { ...q, grid_rows: rows }
+    }))
+  }
+
+  function changeGridColsCount(idx, targetCount) {
+    const count = Math.max(1, Math.min(10, targetCount))
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const cols = [...(q.grid_columns || [])]
+      if (cols.length < count) {
+        while (cols.length < count) cols.push(`Kolom ${cols.length + 1}`)
+      } else {
+        cols.splice(count)
+      }
+      return { ...q, grid_columns: cols }
+    }))
+  }
+
   function addGridRow(idx) {
-    setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, grid_rows: [...(q.grid_rows || []), ''] } : q))
+    setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, grid_rows: [...(q.grid_rows || []), `Baris ${(q.grid_rows || []).length + 1}`] } : q))
   }
   function removeGridRow(idx, rowIdx) {
     setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, grid_rows: (q.grid_rows || []).filter((_, ri) => ri !== rowIdx) } : q))
@@ -171,7 +736,7 @@ export default function CreateExam() {
     }))
   }
   function addGridColumn(idx) {
-    setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, grid_columns: [...(q.grid_columns || []), ''] } : q))
+    setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, grid_columns: [...(q.grid_columns || []), `Kolom ${(q.grid_columns || []).length + 1}`] } : q))
   }
   function removeGridColumn(idx, colIdx) {
     setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, grid_columns: (q.grid_columns || []).filter((_, ci) => ci !== colIdx) } : q))
@@ -185,22 +750,175 @@ export default function CreateExam() {
     }))
   }
 
-  // Survey option helpers (dynamic options for MCQ/CHECKBOXES/DROPDOWN in survey mode)
-  function addSurveyOption(idx) {
-    setQuestionItems(prev => prev.map((q, i) => {
-      if (i !== idx) return q
-      const keys = Object.keys(q.options || {})
-      const nextKey = `opt_${keys.length + 1}`
-      return { ...q, options: { ...q.options, [nextKey]: '' } }
+  // --- Batch Apply Handlers (Exam Level) ---
+  function applyOptionsCountToAllMcq(targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    let affected = 0
+    setQuestionItems(prev => prev.map(q => {
+      if (['MCQ', 'COMPLEX_MCQ'].includes(q.type)) {
+        affected++
+        const currentKeys = Object.keys(q.options || {})
+        const newOptions = {}
+        for (let c = 0; c < count; c++) {
+          const letter = ALL_LETTERS[c]
+          newOptions[letter] = q.options?.[letter] !== undefined ? q.options[letter] : (q.options?.[currentKeys[c]] || '')
+        }
+        const keptLetters = ALL_LETTERS.slice(0, count)
+        let newCorrect = q.correct_answer
+        if (q.type === 'MCQ') {
+          if (!keptLetters.includes(q.correct_answer)) newCorrect = 'A'
+        } else if (q.type === 'COMPLEX_MCQ') {
+          const currentArr = Array.isArray(q.correct_answer) ? q.correct_answer : []
+          const filtered = currentArr.filter(k => keptLetters.includes(k))
+          newCorrect = filtered.length > 0 ? filtered : ['A']
+        }
+        return { ...q, options: newOptions, correct_answer: newCorrect }
+      }
+      return q
     }))
+    showNotice(`Standar ${count} Opsi (${ALL_LETTERS[0]}-${ALL_LETTERS[count - 1]}) berhasil diterapkan ke ${affected} butir soal Pilihan Ganda!`)
   }
-  function removeSurveyOption(idx, key) {
-    setQuestionItems(prev => prev.map((q, i) => {
-      if (i !== idx) return q
-      const newOptions = { ...q.options }
-      delete newOptions[key]
-      return { ...q, options: newOptions }
+
+  function applyStatementsCountToAllTf(targetCount) {
+    const count = Math.max(1, Math.min(10, targetCount))
+    let affected = 0
+    setQuestionItems(prev => prev.map(q => {
+      if (q.type === 'TRUE_FALSE') {
+        affected++
+        const currentKeys = Object.keys(q.options || {})
+        const newOptions = {}
+        const newAnswers = {}
+        for (let c = 0; c < count; c++) {
+          const key = currentKeys[c] || `stmt_${Date.now()}_${c + 1}`
+          newOptions[key] = q.options?.[key] || ''
+          newAnswers[key] = q.correct_answer?.[key] || 'true'
+        }
+        return { ...q, options: newOptions, correct_answer: newAnswers }
+      }
+      return q
     }))
+    showNotice(`Standar ${count} Pernyataan berhasil diterapkan ke ${affected} butir soal Benar / Salah!`)
+  }
+
+  function applyMatchingCountToAll(targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    let affected = 0
+    setQuestionItems(prev => prev.map(q => {
+      if (q.type === 'MATCHING') {
+        affected++
+        const currentLeft = q.options?.left || {}
+        const currentRight = q.options?.right || {}
+        const currentCorrect = q.correct_answer || {}
+        const newLeft = {}
+        const newRight = {}
+        const newCorrect = {}
+        for (let c = 0; c < count; c++) {
+          const lKey = String(c + 1)
+          const rKey = ALL_LETTERS[c]
+          newLeft[lKey] = currentLeft[lKey] !== undefined ? currentLeft[lKey] : ''
+          newRight[rKey] = currentRight[rKey] !== undefined ? currentRight[rKey] : ''
+          const validRight = ALL_LETTERS.slice(0, count)
+          newCorrect[lKey] = validRight.includes(currentCorrect[lKey]) ? currentCorrect[lKey] : rKey
+        }
+        return { ...q, options: { left: newLeft, right: newRight }, correct_answer: newCorrect }
+      }
+      return q
+    }))
+    showNotice(`Standar ${count} Pasang berhasil diterapkan ke ${affected} butir soal Menjodohkan!`)
+  }
+
+  function applySequencingCountToAll(targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    let affected = 0
+    setQuestionItems(prev => prev.map(q => {
+      if (q.type === 'SEQUENCING') {
+        affected++
+        let items = [...(q.options?.items || [])]
+        if (items.length < count) {
+          while (items.length < count) {
+            items.push({ id: `seq_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, text: '' })
+          }
+        } else {
+          items = items.slice(0, count)
+        }
+        return { ...q, options: { items }, correct_answer: items.map(it => it.id) }
+      }
+      return q
+    }))
+    showNotice(`Standar ${count} Langkah Urutan berhasil diterapkan ke ${affected} butir soal Mengurutkan!`)
+  }
+
+  function applyAgreeDisagreeCountToAll(targetCount) {
+    const count = Math.max(1, Math.min(10, targetCount))
+    let affected = 0
+    setQuestionItems(prev => prev.map(q => {
+      if (q.type === 'AGREE_DISAGREE') {
+        affected++
+        const currentKeys = Object.keys(q.options || {})
+        const newOptions = {}
+        const newAnswers = {}
+        for (let c = 0; c < count; c++) {
+          const key = currentKeys[c] || `stmt_${Date.now()}_${c + 1}`
+          newOptions[key] = q.options?.[key] || ''
+          newAnswers[key] = q.correct_answer?.[key] || 'agree'
+        }
+        return { ...q, options: newOptions, correct_answer: newAnswers }
+      }
+      return q
+    }))
+    showNotice(`Standar ${count} Pernyataan berhasil diterapkan ke ${affected} butir soal Setuju / Tidak Setuju!`)
+  }
+
+  function applySurveyOptionsCountToAll(targetCount) {
+    const count = Math.max(2, Math.min(10, targetCount))
+    let affected = 0
+    setQuestionItems(prev => prev.map(q => {
+      if (['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(q.type)) {
+        affected++
+        const currentKeys = Object.keys(q.options || {})
+        const newOptions = {}
+        for (let c = 0; c < count; c++) {
+          const key = `opt_${c + 1}`
+          newOptions[key] = q.options?.[currentKeys[c]] !== undefined ? q.options[currentKeys[c]] : (q.options?.[key] || '')
+        }
+        return { ...q, options: newOptions }
+      }
+      return q
+    }))
+    showNotice(`Standar ${count} Opsi berhasil diterapkan ke ${affected} pertanyaan pilihan survei!`)
+  }
+
+  function applySurveyGridCountsToAll(rowCount, colCount) {
+    let affected = 0
+    setQuestionItems(prev => prev.map(q => {
+      if (['MCQ_GRID', 'CHECKBOX_GRID'].includes(q.type)) {
+        affected++
+        const rows = [...(q.grid_rows || [])]
+        while (rows.length < rowCount) rows.push(`Baris ${rows.length + 1}`)
+        rows.splice(rowCount)
+        const cols = [...(q.grid_columns || [])]
+        while (cols.length < colCount) cols.push(`Kolom ${cols.length + 1}`)
+        cols.splice(colCount)
+        return { ...q, grid_rows: rows, grid_columns: cols }
+      }
+      return q
+    }))
+    showNotice(`Standar kisi (${rowCount} Baris × ${colCount} Kolom) berhasil diterapkan ke ${affected} kisi survei!`)
+  }
+
+  function applyAllDefaults() {
+    if (!isSurvey) {
+      applyOptionsCountToAllMcq(defaultOptionsCount)
+      applyStatementsCountToAllTf(defaultStatementsCount)
+      applyMatchingCountToAll(defaultMatchingCount)
+      applySequencingCountToAll(defaultSequencingCount)
+      applyAgreeDisagreeCountToAll(defaultAgreeDisagreeCount)
+      showNotice(`Standar opsi & butir soal berhasil diterapkan ke seluruh soal ujian!`)
+    } else {
+      applySurveyOptionsCountToAll(defaultSurveyOptionsCount)
+      applySurveyGridCountsToAll(defaultGridRowsCount, defaultGridColsCount)
+      showNotice(`Standar jumlah opsi survei berhasil diterapkan ke seluruh pertanyaan!`)
+    }
   }
 
   async function handleSave(publish = false) {
@@ -268,6 +986,25 @@ export default function CreateExam() {
         setError(`Kunci jawaban soal no ${q.number} (Benar/Salah) belum diisi semua.`)
         return
       }
+      if (q.type === 'MATCHING') {
+        const leftKeys = Object.keys(q.options?.left || {})
+        const rightKeys = Object.keys(q.options?.right || {})
+        if (leftKeys.length < 2 || rightKeys.length < 2) {
+          setError(`Soal no ${q.number} (Menjodohkan) harus memiliki minimal 2 pasang premis dan jawaban.`)
+          return
+        }
+      }
+      if (q.type === 'SEQUENCING') {
+        const items = q.options?.items || []
+        if (items.length < 2) {
+          setError(`Soal no ${q.number} (Mengurutkan) harus memiliki minimal 2 langkah urutan.`)
+          return
+        }
+      }
+      if (q.type === 'AGREE_DISAGREE' && (!q.correct_answer || Object.keys(q.correct_answer).length === 0)) {
+        setError(`Kunci jawaban soal no ${q.number} (Setuju/Tidak Setuju) belum lengkap.`)
+        return
+      }
     }
 
     // Validate survey scheduling
@@ -289,12 +1026,19 @@ export default function CreateExam() {
         duration_minutes: isSurvey ? 0 : Number(duration),
         passing_grade: isSurvey ? 0 : (Number(passingGrade) || 60),
         target_kelas: targetStr,
-        created_by: user.id,
         status: publish ? 'published' : 'draft',
         mode,
         quiz_timer_type: mode === 'quiz' ? quizTimerType : 'uniform',
         monitoring_level: isSurvey ? 0 : monitoringLevel,
         question_order: isSurvey ? 'ORDER' : questionOrder,
+        default_options_count: Number(defaultOptionsCount) || 4,
+        default_statements_count: Number(defaultStatementsCount) || 3,
+        default_matching_count: Number(defaultMatchingCount) || 3,
+        default_sequencing_count: Number(defaultSequencingCount) || 4,
+        default_agree_disagree_count: Number(defaultAgreeDisagreeCount) || 3,
+        default_survey_options_count: Number(defaultSurveyOptionsCount) || 4,
+        default_grid_rows_count: Number(defaultGridRowsCount) || 3,
+        default_grid_cols_count: Number(defaultGridColsCount) || 3,
         // Survey-specific fields — only included when in survey mode
         // so regular exams work even before the survey migration is run
         ...(isSurvey ? {
@@ -312,6 +1056,7 @@ export default function CreateExam() {
         await exams.update(examId, examData)
         await questions.deleteByExam(examId)
       } else {
+        examData.created_by = user.id
         const { data, error: createErr } = await exams.create(examData)
         if (createErr || !data) {
           throw new Error(createErr?.message || 'Gagal membuat — periksa kolom database.')
@@ -347,7 +1092,8 @@ export default function CreateExam() {
       }))
       await questions.createMany(qRows)
 
-      navigate('/teacher/exams')
+      const returnPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : '/teacher/exams'
+      navigate(returnPath)
     } catch (err) {
       setError('Gagal menyimpan: ' + err.message)
       setSaving(false)
@@ -365,7 +1111,7 @@ export default function CreateExam() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/teacher/exams')}><ChevronLeft size={15} /></button>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate(user?.role === 'SUPERADMIN' ? '/admin/exams' : '/teacher/exams')}><ChevronLeft size={15} /></button>
             <div>
               <h2>{isEdit ? `Edit ${modeLabel}` : `Buat ${modeLabel} Baru`}</h2>
               <p className="text-muted text-sm">{questionItems.length} {isSurvey ? 'pertanyaan' : 'soal'} · Mode: {modeLabel}</p>
@@ -650,21 +1396,21 @@ export default function CreateExam() {
               marginTop: '0.875rem',
               padding: '0.875rem 1rem',
               borderRadius: 8,
-              background: MONITORING_LEVELS[monitoringLevel].colorBg,
-              border: `1px solid ${MONITORING_LEVELS[monitoringLevel].colorBorder}`,
+              background: (MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).colorBg,
+              border: `1px solid ${(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).colorBorder}`,
               fontSize: '0.83rem',
               color: 'var(--text-primary)',
               lineHeight: 1.5,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
                 <MonitoringIcon level={monitoringLevel} size={18} />
-                <strong style={{ color: MONITORING_LEVELS[monitoringLevel].color }}>
-                  {MONITORING_LEVELS[monitoringLevel].name}
-                  {monitoringLevel === 4 && <span style={{ fontSize: '0.72rem', fontWeight: 400, marginLeft: '0.35rem', opacity: 0.8 }}>({MONITORING_LEVELS[4].fullName})</span>}
+                <strong style={{ color: (MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).color }}>
+                  {(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).name}
+                  {monitoringLevel === 4 && MONITORING_LEVELS[4]?.fullName && <span style={{ fontSize: '0.72rem', fontWeight: 400, marginLeft: '0.35rem', opacity: 0.8 }}>({MONITORING_LEVELS[4].fullName})</span>}
                 </strong>
               </div>
               <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-                {MONITORING_LEVELS[monitoringLevel].description}
+                {(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).description}
               </p>
             </div>
 
@@ -823,23 +1569,498 @@ export default function CreateExam() {
           </div>
         </div>
 
+        {/* ═══════════════ EXAM-WIDE OPTIONS SETTINGS ═══════════════ */}
+        <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--accent)' }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.05rem', margin: 0 }}>
+              <Sliders size={18} color="var(--accent)" />
+              Standar Jumlah Opsi & Pernyataan {isSurvey ? 'Survei' : 'Ujian'}
+            </h3>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={applyAllDefaults}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}
+              title="Terapkan seluruh standar default ke semua soal saat ini"
+            >
+              <Zap size={14} /> Terapkan Standar ke Semua Soal
+            </button>
+          </div>
+          <p className="text-muted text-xs" style={{ marginBottom: '1rem' }}>
+            Atur standar jumlah opsi / butir untuk soal baru, atau terapkan ke seluruh butir soal yang sudah ada di paket ini.
+          </p>
+
+          {/* Action Notice banner */}
+          {actionNotice && (
+            <div className="alert alert-success" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', padding: '0.6rem 0.85rem' }}>
+              <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>{actionNotice}</span>
+            </div>
+          )}
+
+          {!isSurvey ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '1rem' }}>
+              {/* MCQ & Complex MCQ default options setting */}
+              <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
+                    Pilihan Ganda & Multi-Jawab
+                  </label>
+                  <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+                    {defaultOptionsCount} Opsi ({ALL_LETTERS[0]}-{ALL_LETTERS[defaultOptionsCount - 1]})
+                  </span>
+                </div>
+                <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
+                  Standar umum: 3 (SD: A-C), 4 (SMP: A-D), 5 (SMA/SMK/UTBK: A-E).
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {[3, 4, 5, 6].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      className={`btn btn-sm ${defaultOptionsCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.78rem' }}
+                      onClick={() => setDefaultOptionsCount(cnt)}
+                    >
+                      {cnt} Opsi ({ALL_LETTERS[0]}-{ALL_LETTERS[cnt - 1]})
+                    </button>
+                  ))}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultOptionsCount(prev => Math.max(2, prev - 1))}
+                      disabled={defaultOptionsCount <= 2}
+                    >-</button>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{defaultOptionsCount}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultOptionsCount(prev => Math.min(10, prev + 1))}
+                      disabled={defaultOptionsCount >= 10}
+                    >+</button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', fontSize: '0.78rem', justifyContent: 'center', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                  onClick={() => applyOptionsCountToAllMcq(defaultOptionsCount)}
+                  disabled={questionItems.filter(q => ['MCQ', 'COMPLEX_MCQ'].includes(q.type)).length === 0}
+                >
+                  <Zap size={13} /> Terapkan ke {questionItems.filter(q => ['MCQ', 'COMPLEX_MCQ'].includes(q.type)).length} Soal PG/Multi
+                </button>
+              </div>
+
+              {/* True/False default statements setting */}
+              <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
+                    Benar / Salah (Pernyataan)
+                  </label>
+                  <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+                    {defaultStatementsCount} Pernyataan
+                  </span>
+                </div>
+                <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
+                  Jumlah baris pernyataan yang dinilai Benar atau Salah per soal.
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {[2, 3, 4, 5].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      className={`btn btn-sm ${defaultStatementsCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.78rem' }}
+                      onClick={() => setDefaultStatementsCount(cnt)}
+                    >
+                      {cnt} Baris
+                    </button>
+                  ))}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultStatementsCount(prev => Math.max(1, prev - 1))}
+                      disabled={defaultStatementsCount <= 1}
+                    >-</button>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{defaultStatementsCount}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultStatementsCount(prev => Math.min(10, prev + 1))}
+                      disabled={defaultStatementsCount >= 10}
+                    >+</button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', fontSize: '0.78rem', justifyContent: 'center', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                  onClick={() => applyStatementsCountToAllTf(defaultStatementsCount)}
+                  disabled={questionItems.filter(q => q.type === 'TRUE_FALSE').length === 0}
+                >
+                  <Zap size={13} /> Terapkan ke {questionItems.filter(q => q.type === 'TRUE_FALSE').length} Soal Benar/Salah
+                </button>
+              </div>
+
+              {/* Matching default pairs setting */}
+              <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
+                    Menjodohkan (Matching)
+                  </label>
+                  <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+                    {defaultMatchingCount} Pasang
+                  </span>
+                </div>
+                <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
+                  Jumlah pasang premis (kiri) & pilihan jawaban (kanan) default.
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {[2, 3, 4, 5].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      className={`btn btn-sm ${defaultMatchingCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.78rem' }}
+                      onClick={() => setDefaultMatchingCount(cnt)}
+                    >
+                      {cnt} Pasang
+                    </button>
+                  ))}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultMatchingCount(prev => Math.max(2, prev - 1))}
+                      disabled={defaultMatchingCount <= 2}
+                    >-</button>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{defaultMatchingCount}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultMatchingCount(prev => Math.min(10, prev + 1))}
+                      disabled={defaultMatchingCount >= 10}
+                    >+</button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', fontSize: '0.78rem', justifyContent: 'center', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                  onClick={() => applyMatchingCountToAll(defaultMatchingCount)}
+                  disabled={questionItems.filter(q => q.type === 'MATCHING').length === 0}
+                >
+                  <Zap size={13} /> Terapkan ke {questionItems.filter(q => q.type === 'MATCHING').length} Soal Menjodohkan
+                </button>
+              </div>
+
+              {/* Sequencing default steps setting */}
+              <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
+                    Mengurutkan (Sequencing)
+                  </label>
+                  <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+                    {defaultSequencingCount} Langkah
+                  </span>
+                </div>
+                <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
+                  Jumlah langkah / tahapan kronologi yang perlu diurutkan siswa.
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {[3, 4, 5, 6].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      className={`btn btn-sm ${defaultSequencingCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.78rem' }}
+                      onClick={() => setDefaultSequencingCount(cnt)}
+                    >
+                      {cnt} Langkah
+                    </button>
+                  ))}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultSequencingCount(prev => Math.max(2, prev - 1))}
+                      disabled={defaultSequencingCount <= 2}
+                    >-</button>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{defaultSequencingCount}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultSequencingCount(prev => Math.min(10, prev + 1))}
+                      disabled={defaultSequencingCount >= 10}
+                    >+</button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', fontSize: '0.78rem', justifyContent: 'center', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                  onClick={() => applySequencingCountToAll(defaultSequencingCount)}
+                  disabled={questionItems.filter(q => q.type === 'SEQUENCING').length === 0}
+                >
+                  <Zap size={13} /> Terapkan ke {questionItems.filter(q => q.type === 'SEQUENCING').length} Soal Mengurutkan
+                </button>
+              </div>
+
+              {/* Agree / Disagree default statements setting */}
+              <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
+                    Setuju / Tidak Setuju
+                  </label>
+                  <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+                    {defaultAgreeDisagreeCount} Pernyataan
+                  </span>
+                </div>
+                <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
+                  Jumlah butir pernyataan opini/evaluasi Setuju atau Tidak Setuju.
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {[2, 3, 4, 5].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      className={`btn btn-sm ${defaultAgreeDisagreeCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.78rem' }}
+                      onClick={() => setDefaultAgreeDisagreeCount(cnt)}
+                    >
+                      {cnt} Baris
+                    </button>
+                  ))}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultAgreeDisagreeCount(prev => Math.max(1, prev - 1))}
+                      disabled={defaultAgreeDisagreeCount <= 1}
+                    >-</button>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{defaultAgreeDisagreeCount}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultAgreeDisagreeCount(prev => Math.min(10, prev + 1))}
+                      disabled={defaultAgreeDisagreeCount >= 10}
+                    >+</button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', fontSize: '0.78rem', justifyContent: 'center', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                  onClick={() => applyAgreeDisagreeCountToAll(defaultAgreeDisagreeCount)}
+                  disabled={questionItems.filter(q => q.type === 'AGREE_DISAGREE').length === 0}
+                >
+                  <Zap size={13} /> Terapkan ke {questionItems.filter(q => q.type === 'AGREE_DISAGREE').length} Soal Setuju/Tidak Setuju
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '1rem' }}>
+              {/* Survey choice options setting */}
+              <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
+                    Pilihan Ganda, Checkbox, & Dropdown
+                  </label>
+                  <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+                    {defaultSurveyOptionsCount} Opsi
+                  </span>
+                </div>
+                <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
+                  Jumlah opsi default untuk butir pertanyaan pilihan baru pada survei.
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {[2, 3, 4, 5].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      className={`btn btn-sm ${defaultSurveyOptionsCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.78rem' }}
+                      onClick={() => setDefaultSurveyOptionsCount(cnt)}
+                    >
+                      {cnt} Opsi
+                    </button>
+                  ))}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultSurveyOptionsCount(prev => Math.max(2, prev - 1))}
+                      disabled={defaultSurveyOptionsCount <= 2}
+                    >-</button>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{defaultSurveyOptionsCount}</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
+                      onClick={() => setDefaultSurveyOptionsCount(prev => Math.min(10, prev + 1))}
+                      disabled={defaultSurveyOptionsCount >= 10}
+                    >+</button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', fontSize: '0.78rem', justifyContent: 'center', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                  onClick={() => applySurveyOptionsCountToAll(defaultSurveyOptionsCount)}
+                  disabled={questionItems.filter(q => ['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(q.type)).length === 0}
+                >
+                  <Zap size={13} /> Terapkan ke {questionItems.filter(q => ['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(q.type)).length} Pertanyaan Pilihan
+                </button>
+              </div>
+
+              {/* Survey grid default rows & cols setting */}
+              <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
+                    Kisi Survei (Baris & Kolom)
+                  </label>
+                  <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+                    {defaultGridRowsCount} Baris × {defaultGridColsCount} Kolom
+                  </span>
+                </div>
+                <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
+                  Ukuran matriks baris pertanyaan dan pilihan kolom kisi survei.
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--navy-mid)', padding: '0.35rem 0.5rem', borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Baris:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.1rem 0.4rem', height: 22 }} onClick={() => setDefaultGridRowsCount(p => Math.max(1, p - 1))}>-</button>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{defaultGridRowsCount}</span>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.1rem 0.4rem', height: 22 }} onClick={() => setDefaultGridRowsCount(p => Math.min(15, p + 1))}>+</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--navy-mid)', padding: '0.35rem 0.5rem', borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Kolom:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.1rem 0.4rem', height: 22 }} onClick={() => setDefaultGridColsCount(p => Math.max(1, p - 1))}>-</button>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{defaultGridColsCount}</span>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.1rem 0.4rem', height: 22 }} onClick={() => setDefaultGridColsCount(p => Math.min(10, p + 1))}>+</button>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', fontSize: '0.78rem', justifyContent: 'center', border: '1px dashed var(--accent)', color: 'var(--accent)' }}
+                  onClick={() => applySurveyGridCountsToAll(defaultGridRowsCount, defaultGridColsCount)}
+                  disabled={questionItems.filter(q => ['MCQ_GRID', 'CHECKBOX_GRID'].includes(q.type)).length === 0}
+                >
+                  <Zap size={13} /> Terapkan ke {questionItems.filter(q => ['MCQ_GRID', 'CHECKBOX_GRID'].includes(q.type)).length} Kisi Survei
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Questions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {questionItems.map((q, idx) => (
+          {questionItems.map((q, idx) => {
+            const currentTypes = isSurvey ? SURVEY_TYPES : EXAM_TYPES
+            return (
             <div key={idx} className="card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <h3 style={{ fontSize: '0.95rem' }}>{isSurvey ? 'Pertanyaan' : 'Soal'} #{q.number}</h3>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   <select className="form-input" style={{ width: 'auto', fontSize: '0.82rem', padding: '0.35rem 0.75rem' }} value={q.type} onChange={e => {
                     const newType = e.target.value
                     const updates = { type: newType }
                     // Initialize options for types that need them
-                    if (['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(newType) && (!q.options || Object.keys(q.options).length === 0)) {
-                      updates.options = isSurvey ? { opt_1: '', opt_2: '' } : { A: '', B: '', C: '', D: '' }
-                    }
-                    if (['MCQ_GRID', 'CHECKBOX_GRID'].includes(newType)) {
-                      if (!q.grid_rows?.length) updates.grid_rows = ['']
-                      if (!q.grid_columns?.length) updates.grid_columns = ['']
+                    if (['MCQ', 'COMPLEX_MCQ'].includes(newType)) {
+                      const currentCount = Object.keys(q.options || {}).length
+                      const count = (currentCount >= 2 && currentCount <= 10) ? currentCount : defaultOptionsCount
+                      const newOpts = {}
+                      for (let c = 0; c < count; c++) {
+                        const letter = ALL_LETTERS[c]
+                        newOpts[letter] = q.options?.[letter] || ''
+                      }
+                      updates.options = newOpts
+                      if (newType === 'MCQ') {
+                        updates.correct_answer = Object.keys(newOpts).includes(q.correct_answer) ? q.correct_answer : 'A'
+                      } else {
+                        const currentArr = Array.isArray(q.correct_answer) ? q.correct_answer : []
+                        const filtered = currentArr.filter(k => Object.keys(newOpts).includes(k))
+                        updates.correct_answer = filtered.length > 0 ? filtered : ['A']
+                      }
+                    } else if (newType === 'TRUE_FALSE') {
+                      const currentCount = Object.keys(q.options || {}).length
+                      const count = (currentCount >= 1 && currentCount <= 10) ? currentCount : defaultStatementsCount
+                      const newOpts = {}
+                      const newAns = {}
+                      const oldKeys = Object.keys(q.options || {})
+                      for (let c = 0; c < count; c++) {
+                        const key = oldKeys[c] || `stmt_${Date.now()}_${c + 1}`
+                        newOpts[key] = q.options?.[key] || ''
+                        newAns[key] = q.correct_answer?.[key] || 'true'
+                      }
+                      updates.options = newOpts
+                      updates.correct_answer = newAns
+                    } else if (newType === 'MATCHING') {
+                      const count = (q.options?.left && Object.keys(q.options.left).length >= 2)
+                        ? Object.keys(q.options.left).length
+                        : defaultMatchingCount
+                      const m = makeMatching(count)
+                      updates.options = m.options
+                      updates.correct_answer = m.correct_answer
+                    } else if (newType === 'SEQUENCING') {
+                      const count = (q.options?.items && q.options.items.length >= 2)
+                        ? q.options.items.length
+                        : defaultSequencingCount
+                      const s = makeSequencing(count)
+                      updates.options = s.options
+                      updates.correct_answer = s.correct_answer
+                    } else if (newType === 'AGREE_DISAGREE') {
+                      const count = (q.options && Object.keys(q.options).length >= 1 && !q.options.left && !q.options.items)
+                        ? Object.keys(q.options).length
+                        : defaultAgreeDisagreeCount
+                      const ad = makeAgreeDisagree(count)
+                      updates.options = ad.options
+                      updates.correct_answer = ad.correct_answer
+                    } else if (['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(newType) && isSurvey) {
+                      const currentCount = Object.keys(q.options || {}).length
+                      const count = (currentCount >= 2 && currentCount <= 10) ? currentCount : defaultSurveyOptionsCount
+                      const newOpts = {}
+                      const oldKeys = Object.keys(q.options || {})
+                      for (let c = 0; c < count; c++) {
+                        const key = `opt_${c + 1}`
+                        newOpts[key] = q.options?.[oldKeys[c]] || ''
+                      }
+                      updates.options = newOpts
+                    } else if (['MCQ_GRID', 'CHECKBOX_GRID'].includes(newType)) {
+                      if (!q.grid_rows?.length) updates.grid_rows = makeGridRows(defaultGridRowsCount)
+                      if (!q.grid_columns?.length) updates.grid_columns = makeGridColumns(defaultGridColsCount)
                     }
                     setQuestionItems(prev => prev.map((item, i) => i === idx ? { ...item, ...updates } : item))
                   }}>
@@ -921,19 +2142,49 @@ export default function CreateExam() {
 
               {/* ═══════════════ SURVEY QUESTION TYPE EDITORS ═══════════════ */}
               {isSurvey && q.type === 'SHORT_ANSWER' && (
-                <div className="alert alert-info text-sm" style={{ opacity: 0.7 }}>
-                  📝 Responden akan melihat kolom teks satu baris untuk menjawab pertanyaan ini.
+                <div className="alert alert-info text-sm" style={{ opacity: 0.85 }}>
+                  📝 Responden akan melihat kolom teks satu baris untuk menjawab pertanyaan ini secara bebas (tanpa opsi pilihan).
                 </div>
               )}
 
               {isSurvey && q.type === 'PARAGRAPH' && (
-                <div className="alert alert-info text-sm" style={{ opacity: 0.7 }}>
-                  📝 Responden akan melihat kolom teks multi-baris (paragraf) untuk jawaban panjang.
+                <div className="alert alert-info text-sm" style={{ opacity: 0.85 }}>
+                  📝 Responden akan melihat kolom teks multi-baris (paragraf) untuk jawaban panjang secara bebas (tanpa opsi pilihan).
                 </div>
               )}
 
               {isSurvey && q.type === 'LINEAR_SCALE' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {/* Scale Presets Toolbar */}
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                    gap: '0.5rem'
+                  }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Rentang Skala Pilihan:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                      {[
+                        { label: '1 - 5 (5 poin)', min: 1, max: 5 },
+                        { label: '1 - 7 (7 poin)', min: 1, max: 7 },
+                        { label: '1 - 10 (10 poin)', min: 1, max: 10 },
+                        { label: '0 - 10 (11 poin)', min: 0, max: 10 },
+                      ].map(preset => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          className={`btn btn-sm ${q.scale_min === preset.min && q.scale_max === preset.max ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
+                          onClick={() => {
+                            updateQuestion(idx, 'scale_min', preset.min)
+                            updateQuestion(idx, 'scale_max', preset.max)
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                     <div className="form-group">
                       <label className="form-label" style={{ fontSize: '0.8rem' }}>Nilai Minimum</label>
@@ -956,8 +2207,8 @@ export default function CreateExam() {
                   </div>
                   {/* Preview */}
                   <div style={{ padding: '0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                    <div className="text-xs text-muted" style={{ marginBottom: '0.5rem' }}>Pratinjau Skala:</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
+                    <div className="text-xs text-muted" style={{ marginBottom: '0.5rem' }}>Pratinjau Skala ({((q.scale_max ?? 5) - (q.scale_min ?? 1) + 1)} Opsi Pilihan):</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                       {q.scale_min_label && <span className="text-xs text-muted">{q.scale_min_label}</span>}
                       {Array.from({ length: (q.scale_max ?? 5) - (q.scale_min ?? 1) + 1 }, (_, i) => (q.scale_min ?? 1) + i).map(v => (
                         <span key={v} style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 600 }}>{v}</span>
@@ -969,149 +2220,805 @@ export default function CreateExam() {
               )}
 
               {/* Grid editors (MCQ_GRID and CHECKBOX_GRID) */}
-              {isSurvey && (q.type === 'MCQ_GRID' || q.type === 'CHECKBOX_GRID') && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div>
-                    <label className="form-label" style={{ fontSize: '0.8rem' }}>Baris (Pernyataan)</label>
-                    {(q.grid_rows || []).map((row, ri) => (
-                      <div key={ri} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.375rem', alignItems: 'center' }}>
-                        <span style={{ width: 20, textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{ri + 1}</span>
-                        <input className="form-input" style={{ flex: 1, fontSize: '0.85rem' }} placeholder={`Pernyataan ${ri + 1}`} value={row} onChange={e => updateGridRow(idx, ri, e.target.value)} />
-                        {(q.grid_rows || []).length > 1 && (
-                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', padding: '0.25rem' }} onClick={() => removeGridRow(idx, ri)}><Trash2 size={13} /></button>
-                        )}
+              {isSurvey && (q.type === 'MCQ_GRID' || q.type === 'CHECKBOX_GRID') && (() => {
+                const rows = q.grid_rows || []
+                const cols = q.grid_columns || []
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Grid Dimensions Toolbar */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Baris:</span>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.15rem 0.45rem', height: 24 }} onClick={() => changeGridRowsCount(idx, rows.length - 1)} disabled={rows.length <= 1}>-</button>
+                            <span style={{ fontWeight: 700, fontSize: '0.82rem', minWidth: 22, textAlign: 'center' }}>{rows.length}</span>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.15rem 0.45rem', height: 24 }} onClick={() => changeGridRowsCount(idx, rows.length + 1)} disabled={rows.length >= 15}>+</button>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Kolom:</span>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.15rem 0.45rem', height: 24 }} onClick={() => changeGridColsCount(idx, cols.length - 1)} disabled={cols.length <= 1}>-</button>
+                            <span style={{ fontWeight: 700, fontSize: '0.82rem', minWidth: 22, textAlign: 'center' }}>{cols.length}</span>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '0.15rem 0.45rem', height: 24 }} onClick={() => changeGridColsCount(idx, cols.length + 1)} disabled={cols.length >= 10}>+</button>
+                          </div>
+                        </div>
                       </div>
-                    ))}
-                    <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => addGridRow(idx)}>
-                      <Plus size={13} /> Tambah Baris
-                    </button>
+                      <span className="text-xs text-muted">Matriks: {rows.length} × {cols.length}</span>
+                    </div>
+
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>Baris (Pernyataan)</label>
+                      {rows.map((row, ri) => (
+                        <div key={ri} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.375rem', alignItems: 'center' }}>
+                          <span style={{ width: 20, textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{ri + 1}</span>
+                          <input className="form-input" style={{ flex: 1, fontSize: '0.85rem' }} placeholder={`Pernyataan ${ri + 1}`} value={row} onChange={e => updateGridRow(idx, ri, e.target.value)} />
+                          {rows.length > 1 && (
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', padding: '0.25rem' }} onClick={() => removeGridRow(idx, ri)}><Trash2 size={13} /></button>
+                          )}
+                        </div>
+                      ))}
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => addGridRow(idx)} disabled={rows.length >= 15}>
+                        <Plus size={13} /> Tambah Baris
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>Kolom (Opsi)</label>
+                      {cols.map((col, ci) => (
+                        <div key={ci} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.375rem', alignItems: 'center' }}>
+                          <span style={{ width: 20, textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{ci + 1}</span>
+                          <input className="form-input" style={{ flex: 1, fontSize: '0.85rem' }} placeholder={`Opsi ${ci + 1}`} value={col} onChange={e => updateGridColumn(idx, ci, e.target.value)} />
+                          {cols.length > 1 && (
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', padding: '0.25rem' }} onClick={() => removeGridColumn(idx, ci)}><Trash2 size={13} /></button>
+                          )}
+                        </div>
+                      ))}
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => addGridColumn(idx)} disabled={cols.length >= 10}>
+                        <Plus size={13} /> Tambah Kolom
+                      </button>
+                    </div>
+                    <div className="text-xs text-muted">
+                      {q.type === 'MCQ_GRID' ? '○ Satu pilihan per baris (radio)' : '☑ Beberapa pilihan per baris (checkbox)'}
+                    </div>
                   </div>
-                  <div>
-                    <label className="form-label" style={{ fontSize: '0.8rem' }}>Kolom (Opsi)</label>
-                    {(q.grid_columns || []).map((col, ci) => (
-                      <div key={ci} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.375rem', alignItems: 'center' }}>
-                        <span style={{ width: 20, textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{ci + 1}</span>
-                        <input className="form-input" style={{ flex: 1, fontSize: '0.85rem' }} placeholder={`Opsi ${ci + 1}`} value={col} onChange={e => updateGridColumn(idx, ci, e.target.value)} />
-                        {(q.grid_columns || []).length > 1 && (
-                          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', padding: '0.25rem' }} onClick={() => removeGridColumn(idx, ci)}><Trash2 size={13} /></button>
-                        )}
-                      </div>
-                    ))}
-                    <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => addGridColumn(idx)}>
-                      <Plus size={13} /> Tambah Kolom
-                    </button>
-                  </div>
-                  <div className="text-xs text-muted">
-                    {q.type === 'MCQ_GRID' ? '○ Satu pilihan per baris (radio)' : '☑ Beberapa pilihan per baris (checkbox)'}
-                  </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* Survey MCQ / CHECKBOXES / DROPDOWN options editor */}
-              {isSurvey && ['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(q.type) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                  {Object.keys(q.options || {}).map((key, i) => (
-                    <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
-                      <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
-                      <input className="form-input" style={{ flex: 1 }} placeholder={`Opsi ${i + 1}`} value={q.options[key] || ''} onChange={e => updateOption(idx, key, e.target.value)} />
-                      {Object.keys(q.options || {}).length > 2 && (
-                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', padding: '0.25rem' }} onClick={() => removeSurveyOption(idx, key)}><Trash2 size={13} /></button>
-                      )}
+              {isSurvey && ['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(q.type) && (() => {
+                const optKeys = Object.keys(q.options || {})
+                const optCount = optKeys.length
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Survey options count toolbar */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Opsi Pertanyaan #{q.number}:</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeSurveyOptionsCount(idx, optCount - 1)}
+                            disabled={optCount <= 2}
+                          >-</button>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{optCount}</span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeSurveyOptionsCount(idx, optCount + 1)}
+                            disabled={optCount >= 10}
+                          >+</button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
+                        {[2, 3, 4, 5].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            className={`btn btn-sm ${optCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
+                            onClick={() => changeSurveyOptionsCount(idx, cnt)}
+                          >
+                            {cnt} Opsi
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                  <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => addSurveyOption(idx)}>
-                    <Plus size={14} /> Tambah Opsi
-                  </button>
-                  {q.type === 'MCQ' && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={q.allow_other || false} onChange={e => updateQuestion(idx, 'allow_other', e.target.checked)} />
-                      Tampilkan opsi "Lainnya" (teks bebas)
-                    </label>
-                  )}
-                  <div className="text-xs text-muted">
-                    {q.type === 'MCQ' ? '○ Responden memilih satu jawaban' : q.type === 'CHECKBOXES' ? '☑ Responden dapat memilih beberapa jawaban' : '▾ Ditampilkan sebagai menu dropdown'}
+
+                    {optKeys.map((key, i) => (
+                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
+                        <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                          {i + 1}
+                        </span>
+                        <input
+                          className="form-input"
+                          style={{ flex: 1 }}
+                          placeholder={`Opsi ${i + 1}`}
+                          value={q.options[key] || ''}
+                          onChange={e => updateOption(idx, key, e.target.value)}
+                        />
+                        {optCount > 2 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                            onClick={() => removeSurveyOption(idx, key)}
+                            title="Hapus opsi ini"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ alignSelf: 'flex-start', fontSize: '0.8rem' }}
+                      onClick={() => addSurveyOption(idx)}
+                      disabled={optCount >= 10}
+                    >
+                      <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Opsi
+                    </button>
+
+                    {q.type === 'MCQ' && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={q.allow_other || false}
+                          onChange={e => updateQuestion(idx, 'allow_other', e.target.checked)}
+                        />
+                        Tampilkan opsi "Lainnya" (teks bebas)
+                      </label>
+                    )}
+                    <div className="text-xs text-muted">
+                      {q.type === 'MCQ' ? '○ Responden memilih satu jawaban' : q.type === 'CHECKBOXES' ? '☑ Responden dapat memilih beberapa jawaban' : '▾ Ditampilkan sebagai menu dropdown'}
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* ═══════════════ EXAM/QUIZ QUESTION TYPE EDITORS ═══════════════ */}
               {/* MCQ / COMPLEX_MCQ options (exam/quiz mode) */}
-              {!isSurvey && (q.type === 'MCQ' || q.type === 'COMPLEX_MCQ') && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                  {OPTION_KEYS.map(key => (
-                    <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
-                      <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{key}</span>
-                      <input className="form-input" style={{ flex: 1 }} placeholder={`Opsi ${key}`} value={q.options?.[key] || ''} onChange={e => updateOption(idx, key, e.target.value)} />
-                      {q.type === 'MCQ' ? (
-                        <input type="radio" checked={q.correct_answer === key} onChange={() => updateQuestion(idx, 'correct_answer', key)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
-                      ) : (
-                        <input type="checkbox" checked={Array.isArray(q.correct_answer) && q.correct_answer.includes(key)} onChange={e => {
-                          const prev = Array.isArray(q.correct_answer) ? q.correct_answer : []
-                          const next = e.target.checked ? [...prev, key] : prev.filter(k => k !== key)
-                          updateQuestion(idx, 'correct_answer', next)
-                        }} style={{ width: 18, height: 18, cursor: 'pointer' }} />
-                      )}
-                    </div>
-                  ))}
-                  <div className="text-xs text-muted" style={{ marginTop: '0.25rem' }}>
-                    {q.type === 'MCQ' ? '○ Pilih satu jawaban benar' : '☑ Centang semua jawaban yang benar'}
-                  </div>
-                </div>
-              )}
-
-              {/* True/False (exam/quiz mode) */}
-              {!isSurvey && q.type === 'TRUE_FALSE' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                  {Object.keys(q.options || {}).map((key, i) => (
-                    <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
-                      <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
-                      <input className="form-input" style={{ flex: 1 }} placeholder={`Pernyataan ${i + 1}`} value={q.options[key]} onChange={e => updateOption(idx, key, e.target.value)} />
-                      
-                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--surface)', padding: '0.25rem 0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem' }}>
-                          <input type="radio" name={`tf_${idx}_${key}`} checked={q.correct_answer?.[key] === 'true'} onChange={() => {
-                            const newAnswer = { ...(q.correct_answer || {}), [key]: 'true' }
-                            updateQuestion(idx, 'correct_answer', newAnswer)
-                          }} /> Benar
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem' }}>
-                          <input type="radio" name={`tf_${idx}_${key}`} checked={q.correct_answer?.[key] === 'false'} onChange={() => {
-                            const newAnswer = { ...(q.correct_answer || {}), [key]: 'false' }
-                            updateQuestion(idx, 'correct_answer', newAnswer)
-                          }} /> Salah
-                        </label>
+              {!isSurvey && (q.type === 'MCQ' || q.type === 'COMPLEX_MCQ') && (() => {
+                const currentKeys = Object.keys(q.options || {})
+                const currentCount = currentKeys.length
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Per-question options count controller toolbar */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Opsi Soal #{q.number}:</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeMcqOptionsCount(idx, currentCount - 1)}
+                            disabled={currentCount <= 2}
+                            title="Kurangi opsi"
+                          >-</button>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{currentCount}</span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeMcqOptionsCount(idx, currentCount + 1)}
+                            disabled={currentCount >= 10}
+                            title="Tambah opsi"
+                          >+</button>
+                        </div>
+                        <span className="text-muted text-xs">
+                          ({ALL_LETTERS[0]} s/d {ALL_LETTERS[currentCount - 1]})
+                        </span>
                       </div>
 
-                      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', padding: '0.25rem' }} onClick={() => {
-                        const newOptions = { ...q.options }
-                        delete newOptions[key]
-                        updateQuestion(idx, 'options', newOptions)
-                        
-                        const newAnswer = { ...q.correct_answer }
-                        delete newAnswer[key]
-                        updateQuestion(idx, 'correct_answer', newAnswer)
-                      }}>
-                        <Trash2 size={14} />
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
+                        {[3, 4, 5, 6].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            className={`btn btn-sm ${currentCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
+                            onClick={() => changeMcqOptionsCount(idx, cnt)}
+                          >
+                            {cnt} Opsi ({ALL_LETTERS[0]}-{ALL_LETTERS[cnt - 1]})
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                  <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', marginTop: '0.25rem' }} onClick={() => {
-                    const newKey = `stmt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
-                    updateOption(idx, newKey, '')
-                    
-                    const newAnswer = { ...(q.correct_answer || {}), [newKey]: 'true' }
-                    updateQuestion(idx, 'correct_answer', newAnswer)
-                  }}>
-                    <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Pernyataan
-                  </button>
-                </div>
-              )}
+
+                    {/* Options list */}
+                    {currentKeys.map(key => (
+                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
+                        <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                          {key}
+                        </span>
+                        <input
+                          className="form-input"
+                          style={{ flex: 1 }}
+                          placeholder={`Opsi ${key}`}
+                          value={q.options?.[key] || ''}
+                          onChange={e => updateOption(idx, key, e.target.value)}
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }} title={q.type === 'MCQ' ? 'Kunci jawaban benar' : 'Centang jika opsi ini benar'}>
+                          {q.type === 'MCQ' ? (
+                            <input
+                              type="radio"
+                              name={`mcq_correct_${idx}`}
+                              checked={q.correct_answer === key}
+                              onChange={() => updateQuestion(idx, 'correct_answer', key)}
+                              style={{ width: 18, height: 18, cursor: 'pointer' }}
+                            />
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={Array.isArray(q.correct_answer) && q.correct_answer.includes(key)}
+                              onChange={e => {
+                                const prev = Array.isArray(q.correct_answer) ? q.correct_answer : []
+                                const next = e.target.checked ? [...prev, key] : prev.filter(k => k !== key)
+                                updateQuestion(idx, 'correct_answer', next)
+                              }}
+                              style={{ width: 18, height: 18, cursor: 'pointer' }}
+                            />
+                          )}
+                        </div>
+                        {currentCount > 2 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                            onClick={() => removeMcqOption(idx, key)}
+                            title={`Hapus opsi ${key}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ alignSelf: 'flex-start', fontSize: '0.8rem' }}
+                        onClick={() => addMcqOption(idx)}
+                        disabled={currentCount >= 10}
+                      >
+                        <Plus size={14} style={{ marginRight: '0.25rem' }} />
+                        Tambah Opsi ({ALL_LETTERS[currentCount] || 'Maksimal'})
+                      </button>
+                      <div className="text-xs text-muted">
+                        {q.type === 'MCQ' ? '○ Pilih satu jawaban benar' : '☑ Centang semua jawaban yang benar'}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* True/False (exam/quiz mode) */}
+              {!isSurvey && q.type === 'TRUE_FALSE' && (() => {
+                const stmtKeys = Object.keys(q.options || {})
+                const stmtCount = stmtKeys.length
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Statements count controller toolbar */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Pernyataan Soal #{q.number}:</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeStatementsCount(idx, stmtCount - 1)}
+                            disabled={stmtCount <= 1}
+                            title="Kurangi pernyataan"
+                          >-</button>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{stmtCount}</span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeStatementsCount(idx, stmtCount + 1)}
+                            disabled={stmtCount >= 10}
+                            title="Tambah pernyataan"
+                          >+</button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
+                        {[2, 3, 4, 5].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            className={`btn btn-sm ${stmtCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
+                            onClick={() => changeStatementsCount(idx, cnt)}
+                          >
+                            {cnt} Baris
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {stmtKeys.map((key, i) => (
+                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
+                        <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                          {i + 1}
+                        </span>
+                        <input
+                          className="form-input"
+                          style={{ flex: 1 }}
+                          placeholder={`Pernyataan ${i + 1}`}
+                          value={q.options[key] || ''}
+                          onChange={e => updateOption(idx, key, e.target.value)}
+                        />
+                        
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--surface)', padding: '0.25rem 0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem' }}>
+                            <input
+                              type="radio"
+                              name={`tf_${idx}_${key}`}
+                              checked={q.correct_answer?.[key] === 'true'}
+                              onChange={() => {
+                                const newAnswer = { ...(q.correct_answer || {}), [key]: 'true' }
+                                updateQuestion(idx, 'correct_answer', newAnswer)
+                              }}
+                            /> Benar
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem' }}>
+                            <input
+                              type="radio"
+                              name={`tf_${idx}_${key}`}
+                              checked={q.correct_answer?.[key] === 'false'}
+                              onChange={() => {
+                                const newAnswer = { ...(q.correct_answer || {}), [key]: 'false' }
+                                updateQuestion(idx, 'correct_answer', newAnswer)
+                              }}
+                            /> Salah
+                          </label>
+                        </div>
+
+                        {stmtCount > 1 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                            onClick={() => removeStatement(idx, key)}
+                            title="Hapus pernyataan ini"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ alignSelf: 'flex-start', marginTop: '0.25rem', fontSize: '0.8rem' }}
+                      onClick={() => addStatement(idx)}
+                      disabled={stmtCount >= 10}
+                    >
+                      <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Pernyataan
+                    </button>
+                  </div>
+                )
+              })()}
+
+              {/* Matching (exam/quiz mode) */}
+              {!isSurvey && q.type === 'MATCHING' && (() => {
+                const leftKeys = Object.keys(q.options?.left || {})
+                const rightKeys = Object.keys(q.options?.right || {})
+                const pairCount = leftKeys.length
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Matching Toolbar */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Pasangan Soal #{q.number}:</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeMatchingCount(idx, pairCount - 1)}
+                            disabled={pairCount <= 2}
+                            title="Kurangi pasangan"
+                          >-</button>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{pairCount}</span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeMatchingCount(idx, pairCount + 1)}
+                            disabled={pairCount >= 10}
+                            title="Tambah pasangan"
+                          >+</button>
+                        </div>
+                        <span className="text-muted text-xs">Pasang</span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
+                        {[2, 3, 4, 5, 6].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            className={`btn btn-sm ${pairCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
+                            onClick={() => changeMatchingCount(idx, cnt)}
+                          >
+                            {cnt} Pasang
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="alert alert-info text-xs" style={{ margin: 0, padding: '0.5rem 0.75rem' }}>
+                      🔗 <strong>Petunjuk Menjodohkan:</strong> Tulis premis / pertanyaan di kolom kiri (1, 2, 3...), dan target jawaban di kolom kanan (A, B, C...). Tentukan kunci pasangan benar pada dropdown di samping setiap premis kiri.
+                    </div>
+
+                    {/* Grid of Left and Right Pairs */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                      {/* Left Column (Premises + Answer Target) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Kolom Kiri (Premis / Soal) & Kunci Jawaban
+                        </div>
+                        {leftKeys.map((lKey, i) => (
+                          <div key={lKey} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--navy-mid)', padding: '0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                              {lKey}
+                            </span>
+                            <input
+                              className="form-input"
+                              style={{ flex: 1, fontSize: '0.82rem', padding: '0.35rem 0.5rem' }}
+                              placeholder={`Premis ${lKey} (cth: Ibu kota Indonesia)`}
+                              value={q.options?.left?.[lKey] || ''}
+                              onChange={e => updateMatchingLeft(idx, lKey, e.target.value)}
+                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gold)' }}>➔ Kunci:</span>
+                              <select
+                                className="form-input"
+                                style={{ width: 62, padding: '0.25rem 0.4rem', fontSize: '0.8rem', fontWeight: 700, borderColor: 'var(--gold)', color: 'var(--gold)' }}
+                                value={q.correct_answer?.[lKey] || rightKeys[i] || 'A'}
+                                onChange={e => updateMatchingAnswer(idx, lKey, e.target.value)}
+                              >
+                                {rightKeys.map(rKey => (
+                                  <option key={rKey} value={rKey}>[{rKey}]</option>
+                                ))}
+                              </select>
+                            </div>
+                            {pairCount > 2 && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                                onClick={() => removeMatchingPair(idx, lKey)}
+                                title="Hapus pasangan ini"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Right Column (Target Answers) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Kolom Kanan (Pilihan Pasangan Jawaban)
+                        </div>
+                        {rightKeys.map((rKey) => (
+                          <div key={rKey} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--navy-mid)', padding: '0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                            <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                              {rKey}
+                            </span>
+                            <input
+                              className="form-input"
+                              style={{ flex: 1, fontSize: '0.82rem', padding: '0.35rem 0.5rem' }}
+                              placeholder={`Jawaban ${rKey} (cth: Jakarta)`}
+                              value={q.options?.right?.[rKey] || ''}
+                              onChange={e => updateMatchingRight(idx, rKey, e.target.value)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ alignSelf: 'flex-start', fontSize: '0.8rem' }}
+                      onClick={() => addMatchingPair(idx)}
+                      disabled={pairCount >= 10}
+                    >
+                      <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Pasangan ({pairCount + 1})
+                    </button>
+                  </div>
+                )
+              })()}
+
+              {/* Sequencing (exam/quiz mode) */}
+              {!isSurvey && q.type === 'SEQUENCING' && (() => {
+                const items = q.options?.items || []
+                const count = items.length
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Sequencing Toolbar */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Langkah Urutan Soal #{q.number}:</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeSequencingCount(idx, count - 1)}
+                            disabled={count <= 2}
+                            title="Kurangi langkah"
+                          >-</button>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{count}</span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeSequencingCount(idx, count + 1)}
+                            disabled={count >= 10}
+                            title="Tambah langkah"
+                          >+</button>
+                        </div>
+                        <span className="text-muted text-xs">Langkah</span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
+                        {[3, 4, 5, 6].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            className={`btn btn-sm ${count === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
+                            onClick={() => changeSequencingCount(idx, cnt)}
+                          >
+                            {cnt} Langkah
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="alert alert-info text-xs" style={{ margin: 0, padding: '0.5rem 0.75rem' }}>
+                      🔀 <strong>Urutan Kunci Jawaban Benar (Kronologis):</strong> Tulis langkah-langkah di bawah ini dalam susunan <strong>URUTAN YANG BENAR</strong> dari atas ke bawah (Langkah 1 s/d Langkah {count}). Gunakan tombol panah ▲/▼ untuk menukar urutan. Sistem akan otomatis mengacak susunannya saat siswa mengerjakan ujian.
+                    </div>
+
+                    {/* Items in chronological order */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {items.map((item, itemIdx) => (
+                        <div key={item.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--surface)', padding: '0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                          <span style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                            {itemIdx + 1}
+                          </span>
+                          <input
+                            className="form-input"
+                            style={{ flex: 1, fontSize: '0.85rem' }}
+                            placeholder={`Langkah ke-${itemIdx + 1} (cth: Kepompong)`}
+                            value={item.text || ''}
+                            onChange={e => updateSequencingText(idx, item.id, e.target.value)}
+                          />
+                          <div style={{ display: 'flex', gap: '0.2rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '0.2rem 0.4rem', height: 26 }}
+                              onClick={() => moveSequencingItem(idx, itemIdx, -1)}
+                              disabled={itemIdx === 0}
+                              title="Pindah ke atas"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '0.2rem 0.4rem', height: 26 }}
+                              onClick={() => moveSequencingItem(idx, itemIdx, 1)}
+                              disabled={itemIdx === count - 1}
+                              title="Pindah ke bawah"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                          {count > 2 && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                              onClick={() => removeSequencingItem(idx, item.id)}
+                              title="Hapus langkah ini"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ alignSelf: 'flex-start', fontSize: '0.8rem' }}
+                      onClick={() => addSequencingItem(idx)}
+                      disabled={count >= 10}
+                    >
+                      <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Langkah ({count + 1})
+                    </button>
+                  </div>
+                )
+              })()}
+
+              {/* Agree / Disagree (exam/quiz mode) */}
+              {!isSurvey && q.type === 'AGREE_DISAGREE' && (() => {
+                const stmtKeys = Object.keys(q.options || {})
+                const stmtCount = stmtKeys.length
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Agree Disagree Toolbar */}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Pernyataan Soal #{q.number}:</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeAgreeDisagreeCount(idx, stmtCount - 1)}
+                            disabled={stmtCount <= 1}
+                            title="Kurangi pernyataan"
+                          >-</button>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{stmtCount}</span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
+                            onClick={() => changeAgreeDisagreeCount(idx, stmtCount + 1)}
+                            disabled={stmtCount >= 10}
+                            title="Tambah pernyataan"
+                          >+</button>
+                        </div>
+                        <span className="text-muted text-xs">Pernyataan</span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
+                        {[2, 3, 4, 5].map(cnt => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            className={`btn btn-sm ${stmtCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
+                            onClick={() => changeAgreeDisagreeCount(idx, cnt)}
+                          >
+                            {cnt} Baris
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="alert alert-info text-xs" style={{ margin: 0, padding: '0.5rem 0.75rem' }}>
+                      👍👎 <strong>Petunjuk Setuju / Tidak Setuju:</strong> Tulis pernyataan pada kolom teks, lalu pilih kunci jawaban yang diharapkan (Setuju atau Tidak Setuju).
+                    </div>
+
+                    {stmtKeys.map((key, i) => (
+                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
+                        <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                          {i + 1}
+                        </span>
+                        <input
+                          className="form-input"
+                          style={{ flex: 1 }}
+                          placeholder={`Pernyataan ${i + 1}`}
+                          value={q.options?.[key] || ''}
+                          onChange={e => updateOption(idx, key, e.target.value)}
+                        />
+                        
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--surface)', padding: '0.25rem 0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem', color: q.correct_answer?.[key] === 'agree' ? 'var(--success)' : 'inherit', fontWeight: q.correct_answer?.[key] === 'agree' ? 700 : 400 }}>
+                            <input
+                              type="radio"
+                              name={`ad_${idx}_${key}`}
+                              checked={q.correct_answer?.[key] === 'agree'}
+                              onChange={() => {
+                                const newAnswer = { ...(q.correct_answer || {}), [key]: 'agree' }
+                                updateQuestion(idx, 'correct_answer', newAnswer)
+                              }}
+                            /> 👍 Setuju
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem', color: q.correct_answer?.[key] === 'disagree' ? 'var(--danger)' : 'inherit', fontWeight: q.correct_answer?.[key] === 'disagree' ? 700 : 400 }}>
+                            <input
+                              type="radio"
+                              name={`ad_${idx}_${key}`}
+                              checked={q.correct_answer?.[key] === 'disagree'}
+                              onChange={() => {
+                                const newAnswer = { ...(q.correct_answer || {}), [key]: 'disagree' }
+                                updateQuestion(idx, 'correct_answer', newAnswer)
+                              }}
+                            /> 👎 Tidak Setuju
+                          </label>
+                        </div>
+
+                        {stmtCount > 1 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                            onClick={() => removeAgreeDisagreeStatement(idx, key)}
+                            title="Hapus pernyataan ini"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ alignSelf: 'flex-start', marginTop: '0.25rem', fontSize: '0.8rem' }}
+                      onClick={() => addAgreeDisagreeStatement(idx)}
+                      disabled={stmtCount >= 10}
+                    >
+                      <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Pernyataan ({stmtCount + 1})
+                    </button>
+                  </div>
+                )
+              })()}
 
               {!isSurvey && q.type === 'ESSAY' && (
-                <div className="alert alert-info text-sm">Soal esai tidak memiliki kunci jawaban otomatis. Guru menilai secara manual.</div>
+                <div className="alert alert-info text-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>📝 Soal Esai / Uraian: Siswa mengetik jawaban teks secara bebas tanpa opsi pilihan. Guru menilai skor secara manual di menu Hasil Ujian.</span>
+                </div>
               )}
             </div>
-          ))}
+          )})}
 
           <button className="btn btn-ghost" onClick={addQuestion} style={{ borderStyle: 'dashed', borderWidth: 2 }}>
             <Plus size={16} /> Tambah {isSurvey ? 'Pertanyaan' : 'Soal'}

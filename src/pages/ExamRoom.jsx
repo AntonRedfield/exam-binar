@@ -8,6 +8,9 @@ import { useFaceDetection } from '../hooks/useFaceDetection'
 import QuestionMCQ from '../components/exam/QuestionMCQ'
 import QuestionComplexMCQ from '../components/exam/QuestionComplexMCQ'
 import QuestionTrueFalse from '../components/exam/QuestionTrueFalse'
+import QuestionMatching from '../components/exam/QuestionMatching'
+import QuestionSequencing from '../components/exam/QuestionSequencing'
+import QuestionAgreeDisagree from '../components/exam/QuestionAgreeDisagree'
 import QuestionEssay from '../components/exam/QuestionEssay'
 import Timer from '../components/exam/Timer'
 import QuestionNavigator from '../components/exam/QuestionNavigator'
@@ -72,9 +75,12 @@ function formatCorrectAnswer(correct, qType) {
   if (qType === 'COMPLEX_MCQ' && Array.isArray(correct)) {
     return correct.join(', ');
   }
-  if (qType === 'TRUE_FALSE' && typeof correct === 'object') {
+  if (qType === 'SEQUENCING' && Array.isArray(correct)) {
+    return correct.map((c, i) => `${i + 1}. ${c}`).join(' → ');
+  }
+  if ((qType === 'TRUE_FALSE' || qType === 'AGREE_DISAGREE' || qType === 'MATCHING') && typeof correct === 'object') {
     return Object.entries(correct)
-      .map(([k, v]) => `${k}: ${v}`)
+      .map(([k, v]) => `${k} → ${v}`)
       .join(' | ');
   }
   return String(correct);
@@ -587,6 +593,9 @@ export default function ExamRoom() {
                     {q.type === 'MCQ' && <QuestionMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
                     {q.type === 'COMPLEX_MCQ' && <QuestionComplexMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
                     {q.type === 'TRUE_FALSE' && <QuestionTrueFalse question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
+                    {q.type === 'MATCHING' && <QuestionMatching question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
+                    {q.type === 'SEQUENCING' && <QuestionSequencing question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
+                    {q.type === 'AGREE_DISAGREE' && <QuestionAgreeDisagree question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
                     {q.type === 'ESSAY' && <QuestionEssay value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
                   </>
                 )}
@@ -737,6 +746,14 @@ export default function ExamRoom() {
 }
 
 function QuestionTypeBadge({ type }) {
-  const labels = { MCQ: 'Pilihan Ganda', COMPLEX_MCQ: 'Multi-Jawab', TRUE_FALSE: 'Benar/Salah', ESSAY: 'Esai' }
+  const labels = {
+    MCQ: 'Pilihan Ganda',
+    COMPLEX_MCQ: 'Multi-Jawab',
+    TRUE_FALSE: 'Benar/Salah',
+    MATCHING: 'Menjodohkan',
+    SEQUENCING: 'Mengurutkan',
+    AGREE_DISAGREE: 'Setuju/Tidak Setuju',
+    ESSAY: 'Esai'
+  }
   return <span className="question-type-badge">{labels[type] || type}</span>
 }

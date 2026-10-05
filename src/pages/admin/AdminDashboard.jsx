@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
+import { localDb } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { Users, BookOpen, BarChart2, Activity, Plus, ArrowRight, AlertTriangle, GraduationCap, TrendingUp, School } from 'lucide-react'
 
@@ -14,55 +14,62 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     async function load() {
-      const [
-        { count: totalUsers },
-        { count: totalTeachers },
-        { count: totalExams },
-        { count: totalSessions },
-        { count: activeExams },
-        { data: recentResults },
-        { data: latestExams }
-      ] = await Promise.all([
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'USER'),
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'TEACHER'),
-        supabase.from('exams').select('*', { count: 'exact', head: true }),
-        supabase.from('exam_sessions').select('*', { count: 'exact', head: true }),
-        supabase.from('exams').select('*', { count: 'exact', head: true }).eq('status', 'published'),
-        supabase.from('results').select('auto_score, max_auto_score, violation_count').limit(200),
-        supabase.from('exams').select('*, users(name)').order('created_at', { ascending: false }).limit(5),
-      ])
+      try {
+        const adminData = await localDb.getAdminStats()
+        const {
+          profiles: allProfiles,
+          totalExams,
+          activeExams,
+          totalSessions,
+          recentResults,
+          latestExams
+        } = adminData
 
-      // Fetch class breakdown
-      const { data: allStudents } = await supabase.from('users').select('kelas').eq('role', 'USER')
-      const classMap = {}
-      if (allStudents) {
-        allStudents.forEach(s => {
-          const k = s.kelas || 'Tanpa Kelas'
+        const totalUsers = allProfiles.filter(p => p.username?.startsWith('partner.') || p.role === 'student').length
+        const totalTeachers = allProfiles.filter(p => p.role === 'teacher' || (p.username && !p.username.startsWith('partner.') && p.username !== 'super_admin' && p.username !== 'admin')).length
+
+        // Fetch class breakdown
+        const classMap = {}
+        allProfiles.filter(p => p.username?.startsWith('partner.') || p.class_section).forEach(s => {
+          const k = s.class_section || 'Tanpa Kelas'
           classMap[k] = (classMap[k] || 0) + 1
         })
-      }
-      const classSorted = Object.entries(classMap)
-        .sort(([a], [b]) => a.localeCompare(b, 'id', { numeric: true }))
-        .map(([name, count]) => ({ name, count }))
-      setClassBreakdown(classSorted)
+        const classSorted = Object.entries(classMap)
+          .sort(([a], [b]) => a.localeCompare(b, 'id', { numeric: true }))
+          .map(([name, count]) => ({ name, count }))
+        setClassBreakdown(classSorted)
 
-      let avgScore = 0
-      let totalViolations = 0
-      const distrib = [0, 0, 0, 0, 0]
-      if (recentResults?.length) {
-        const pcts = recentResults.map(r => r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0)
-        avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
-        totalViolations = recentResults.reduce((sum, r) => sum + (r.violation_count || 0), 0)
-        recentResults.forEach(r => {
-          const pct = r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0
-          const idx = Math.min(4, Math.floor(pct / 20))
-          distrib[idx]++
+        let avgScore = 0
+        let totalViolations = 0
+        const distrib = [0, 0, 0, 0, 0]
+        if (recentResults?.length) {
+          const pcts = recentResults.map(r => r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0)
+          avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
+          totalViolations = recentResults.reduce((sum, r) => sum + (r.violation_count || 0), 0)
+          recentResults.forEach(r => {
+            const pct = r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0
+            const idx = Math.min(4, Math.floor(pct / 20))
+            distrib[idx]++
+          })
+        }
+
+        setStats({
+          totalUsers,
+          totalTeachers,
+          totalExams,
+          totalSessions,
+          activeExams,
+          avgScore,
+          totalViolations,
+          distrib
         })
+        setRecentExams(latestExams || [])
+      } catch (err) {
+        console.error("Dashboard load error:", err)
+        setStats({ totalUsers: 0, totalTeachers: 0, totalExams: 0, totalSessions: 0, activeExams: 0, avgScore: 0, totalViolations: 0, distrib: [0, 0, 0, 0, 0] })
+      } finally {
+        setLoading(false)
       }
-
-      setStats({ totalUsers, totalTeachers, totalExams, totalSessions, activeExams, avgScore, totalViolations, distrib })
-      setRecentExams(latestExams || [])
-      setLoading(false)
     }
     load()
   }, [])

@@ -1,13 +1,13 @@
 import { useEffect, useState, useRef } from 'react'
 import { users } from '../../lib/db'
-import { getCurrentUser } from '../../lib/auth'
+import { getCurrentUser, mapAppRole, mapDbRole } from '../../lib/auth'
 import { Plus, Edit2, Trash2, X, Save, Eye, EyeOff, Upload, FileText } from 'lucide-react'
 
-const EMPTY_FORM = { username: '', password: '', name: '', kelas: '', role: 'USER' }
+const EMPTY_FORM = { email: '', full_name: '', kelas: '', role: 'USER', phone_number: '' }
 
 export default function UserManagement() {
   const currentUser = getCurrentUser()
-  const isTeacher = currentUser?.role === 'TEACHER'
+  const isTeacher = currentUser?.role === 'MODERATOR'
 
   const [tab, setTab] = useState('USER') // USER | TEACHER | SUPERADMIN
   const [userList, setUserList] = useState([])
@@ -33,6 +33,11 @@ export default function UserManagement() {
   const [visiblePasswords, setVisiblePasswords] = useState({})
   const [selectedIds, setSelectedIds] = useState(new Set())
 
+  // Filters State
+  const [classList, setClassList] = useState([])
+  const [selectedClass, setSelectedClass] = useState('')
+  const [selectedRole, setSelectedRole] = useState('')
+
   async function load() {
     setSelectedIds(new Set())
     const { data } = await users.listByRole(tab)
@@ -42,15 +47,30 @@ export default function UserManagement() {
 
   useEffect(() => { setLoading(true); load() }, [tab])
 
+  useEffect(() => {
+    async function loadClasses() {
+      const { data } = await users.getDistinctKelas()
+      setClassList(data || [])
+    }
+    loadClasses()
+  }, [])
+
   function openCreate() {
-    setForm({ ...EMPTY_FORM, role: tab })
+    const defaultRole = tab === 'USER' ? 'student' : (tab === 'MODERATOR' ? 'teacher' : 'admin')
+    setForm({ ...EMPTY_FORM, role: defaultRole })
     setIsEdit(false)
     setError('')
     setShowModal(true)
   }
 
   function openEdit(user) {
-    setForm({ username: user.username, password: user.password || '', name: user.name, kelas: user.kelas || '', role: user.role })
+    setForm({
+      email: user.email || '',
+      full_name: user.full_name || '',
+      kelas: user.kelas || '',
+      role: user.role,
+      phone_number: user.phone_number || '',
+    })
     setOldId(user.id)
     setIsEdit(true)
     setError('')
@@ -58,14 +78,24 @@ export default function UserManagement() {
   }
 
   async function handleSave() {
-    if (!form.username.trim() || !form.name.trim()) { setError('Username dan Nama wajib diisi.'); return }
+    if (!form.full_name.trim()) { setError('Nama wajib diisi.'); return }
     setSaving(true); setError('')
     try {
-      if (isEdit) {
-        await users.update(oldId, { username: form.username.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
-      } else {
-        await users.create({ username: form.username.trim(), password: form.password || null, name: form.name, kelas: form.kelas || null, role: form.role })
+      const saveData = { 
+        full_name: form.full_name.trim(), 
+        role: form.role, 
+        kelas: form.kelas || null,
+        phone_number: form.phone_number || null 
       }
+      
+      const res = isEdit 
+        ? await users.update(oldId, saveData)
+        : await users.create(saveData)
+        
+      if (res?.error) {
+        throw new Error(res.error.message || 'Gagal menyimpan data ke database.')
+      }
+      
       setShowModal(false)
       await load()
     } catch (err) {
@@ -77,8 +107,12 @@ export default function UserManagement() {
 
   async function handleDelete(userId) {
     if (!confirm(`Hapus pengguna "${userId}"? Tindakan ini tidak bisa dibatalkan.`)) return
-    await users.delete(userId)
-    await load()
+    const { error } = await users.delete(userId)
+    if (error) {
+      alert(`Gagal menghapus pengguna: ${error.message}`)
+    } else {
+      await load()
+    }
   }
 
   async function handleBulkDelete() {
@@ -87,8 +121,11 @@ export default function UserManagement() {
     
     setLoading(true)
     try {
-      // Run deletion in parallel
-      await Promise.all(Array.from(selectedIds).map(id => users.delete(id)))
+      const results = await Promise.all(Array.from(selectedIds).map(id => users.delete(id)))
+      const failed = results.filter(r => r.error)
+      if (failed.length > 0) {
+        alert(`Gagal menghapus ${failed.length} pengguna.`)
+      }
       await load()
     } catch (err) {
       console.error("Bulk delete error:", err)
@@ -146,14 +183,14 @@ export default function UserManagement() {
       if (cols.length < 2) continue // skip bad rows that don't even have Username & Name
       
       const username = cols[0]?.trim().toLowerCase() || ''
-      const name = cols[1]?.trim() || ''
+      const full_name = cols[1]?.trim() || ''
       const kelas = cols[2]?.trim() || null
-      const password = cols[3]?.trim() || null
 
-      if (!username || !name) continue // Username and Name are mandatory
+      if (!full_name) continue // Name is mandatory
 
       try {
-        await users.create({ username, name, kelas, password, role: tab })
+        const dbRole = mapAppRole(tab)
+        await users.create({ full_name, role: dbRole })
         successCount++
       } catch (err) {
         errors.push(`Baris ${i + 1} (${username}): ${err.message}`)
@@ -168,13 +205,25 @@ export default function UserManagement() {
     }
   }
 
-  const filtered = userList.filter(u =>
-    u.name?.toLowerCase().includes(search.toLowerCase()) ||
-    u.username?.toLowerCase().includes(search.toLowerCase()) ||
-    u.kelas?.toLowerCase().includes(search.toLowerCase())
-  ).sort((a, b) => {
-    const aVal = String(a[sortConfig.key] || '').toLowerCase()
-    const bVal = String(b[sortConfig.key] || '').toLowerCase()
+  const filtered = userList.filter(u => {
+    const matchesSearch = u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+                          u.username?.toLowerCase().includes(search.toLowerCase())
+    const matchesClass = !selectedClass || u.kelas === selectedClass
+    const matchesRole = !selectedRole || u.role === selectedRole
+
+    return matchesSearch && matchesClass && matchesRole
+  }).sort((a, b) => {
+    let aVal, bVal
+    if (sortConfig.key === 'name') {
+      aVal = (a.full_name || '').toLowerCase()
+      bVal = (b.full_name || '').toLowerCase()
+    } else if (sortConfig.key === 'kelas') {
+      aVal = (a.classes?.name || '').toLowerCase()
+      bVal = (b.classes?.name || '').toLowerCase()
+    } else {
+      aVal = String(a[sortConfig.key] || '').toLowerCase()
+      bVal = String(b[sortConfig.key] || '').toLowerCase()
+    }
     if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
     if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
     return 0
@@ -203,15 +252,40 @@ export default function UserManagement() {
       </div>
       <div className="page-body">
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {isTeacher ? (
             <button className="btn btn-primary btn-sm">Siswa</button>
           ) : (
-            [['USER', 'Siswa'], ['TEACHER', 'Guru'], ['SUPERADMIN', 'Admin']].map(([val, label]) => (
-              <button key={val} className={`btn ${tab === val ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => setTab(val)}>{label}</button>
+            [['USER', 'Siswa'], ['MODERATOR', 'Guru'], ['SUPERADMIN', 'Admin']].map(([val, label]) => (
+              <button key={val} className={`btn ${tab === val ? 'btn-primary' : 'btn-ghost'} btn-sm`} onClick={() => { setTab(val); setSelectedRole(''); }}>{label}</button>
             ))
           )}
-          <input className="form-input" style={{ marginLeft: 'auto', width: 220 }} placeholder="Cari nama / username / kelas..." value={search} onChange={e => setSearch(e.target.value)} />
+
+          <select 
+            className="form-input" 
+            style={{ width: 150, marginLeft: isTeacher ? 'auto' : '1rem' }} 
+            value={selectedClass} 
+            onChange={e => setSelectedClass(e.target.value)}
+          >
+            <option value="">Semua Kelas</option>
+            {classList.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+          </select>
+
+          {tab === 'USER' && (
+            <select 
+              className="form-input" 
+              style={{ width: 150 }} 
+              value={selectedRole} 
+              onChange={e => setSelectedRole(e.target.value)}
+            >
+              <option value="">Semua Role</option>
+              <option value="student">Siswa</option>
+              <option value="parent">Wali Murid</option>
+              <option value="officer">Officer</option>
+            </select>
+          )}
+
+          <input className="form-input" style={{ marginLeft: tab === 'USER' ? '0' : 'auto', width: 220 }} placeholder="Cari nama / username..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
 
         <div className="card" style={{ padding: 0 }}>
@@ -229,16 +303,13 @@ export default function UserManagement() {
                       />
                     </th>
                   )}
-                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('username')}>
-                    Username {sortConfig.key === 'username' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                  </th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
                     Nama {sortConfig.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('kelas')}>
                     Kelas {sortConfig.key === 'kelas' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
-                  <th>Password</th>
+                  <th>Role</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
@@ -257,23 +328,17 @@ export default function UserManagement() {
                         />
                       </td>
                     )}
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{u.username}</td>
-                    <td style={{ fontWeight: 600 }}>{u.name}</td>
+                    <td style={{ fontWeight: 600 }}>{u.full_name}</td>
                     <td>{u.kelas || '—'}</td>
-                    <td className="text-muted text-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      {u.password ? (
-                        <>
-                          <span style={{ fontFamily: visiblePasswords[u.id] ? 'monospace' : 'inherit' }}>
-                            {visiblePasswords[u.id] ? u.password : '••••••'}
-                          </span>
-                          <button className="btn btn-ghost btn-sm" style={{ padding: '0.2rem' }} onClick={() => togglePassword(u.id)} title={visiblePasswords[u.id] ? "Sembunyikan password" : "Lihat password"}>
-                            {visiblePasswords[u.id] ? <EyeOff size={13} /> : <Eye size={13} />}
-                          </button>
-                        </>
-                      ) : (
-                        <em>Tanpa password</em>
-                      )}
+                    <td>
+                      <span className="badge badge-outline" style={{
+                        textTransform: 'capitalize',
+                        borderColor: u.role === 'admin' ? 'var(--danger)' : u.role === 'teacher' ? 'var(--accent)' : 'var(--border)'
+                      }}>
+                        {u.role === 'student' ? 'Siswa' : u.role === 'parent' ? 'Wali Murid' : u.role === 'teacher' ? 'Guru' : u.role === 'admin' ? 'Admin' : u.role}
+                      </span>
                     </td>
+
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => openEdit(u)}><Edit2 size={13} /></button>
@@ -297,35 +362,35 @@ export default function UserManagement() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="form-group">
-                <label className="form-label">Username</label>
-                <input className="form-input" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value.toLowerCase() }))} placeholder="cth: budi.090812@murid.binar" />
-              </div>
-              <div className="form-group">
                 <label className="form-label">Nama Lengkap</label>
-                <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nama Lengkap" />
+                <input className="form-input" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Nama Lengkap" />
               </div>
               <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
-                  <label className="form-label">Kelas</label>
-                  <input className="form-input" value={form.kelas} onChange={e => setForm(f => ({ ...f, kelas: e.target.value }))} placeholder="cth: 9A" />
+                  <label className="form-label">Telepon</label>
+                  <input className="form-input" value={form.phone_number} onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))} placeholder="cth: 08123456789" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Role</label>
-                  <select className="form-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} disabled={isTeacher}>
-                    <option value="USER">Siswa</option>
+                  <select className="form-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                    <option value="student">Siswa</option>
+                    <option value="parent">Wali Murid</option>
+                    <option value="officer">Officer</option>
                     {!isTeacher && (
                       <>
-                        <option value="TEACHER">Guru</option>
-                        <option value="SUPERADMIN">Superadmin</option>
+                        <option value="teacher">Guru</option>
+                        <option value="admin">Superadmin</option>
                       </>
                     )}
                   </select>
                 </div>
               </div>
-              <div className="form-group">
-                <label className="form-label">Password {form.role === 'USER' ? '(Opsional untuk siswa)' : ''}</label>
-                <input className="form-input" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Kosongkan jika ID-only" />
-              </div>
+              {(form.role === 'student' || form.role === 'parent') && (
+                <div className="form-group">
+                  <label className="form-label">Kelas</label>
+                  <input className="form-input" value={form.kelas} onChange={e => setForm(f => ({ ...f, kelas: e.target.value }))} placeholder="cth: 7A, 8B" />
+                </div>
+              )}
               {error && <div className="alert alert-error">{error}</div>}
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setShowModal(false)}>Batal</button>

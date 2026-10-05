@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { exams } from '../../lib/db'
-import { Edit2, Activity, BarChart2, Trash2, Globe, Lock } from 'lucide-react'
+import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock } from 'lucide-react'
 
 export default function ExamOversight() {
   const navigate = useNavigate()
@@ -31,8 +31,15 @@ export default function ExamOversight() {
   return (
     <>
       <div className="page-header">
-        <h2>Semua Ujian</h2>
-        <p className="text-muted text-sm">{examList.length} ujian dari seluruh guru</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h2>Semua Ujian</h2>
+            <p className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>{examList.length} ujian dari seluruh guru</p>
+          </div>
+          <Link to="/admin/create" className="btn btn-gold">
+            <Plus size={16} /> Buat Ujian
+          </Link>
+        </div>
       </div>
       <div className="page-body">
         {loading ? (
@@ -75,7 +82,7 @@ export default function ExamOversight() {
                       <td className="text-muted text-sm">{new Date(exam.created_at).toLocaleDateString('id-ID')}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/edit/${exam.id}`)} title="Edit"><Edit2 size={13} /></button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/admin/edit/${exam.id}`)} title="Edit"><Edit2 size={13} /></button>
                           <button className="btn btn-ghost btn-sm" onClick={() => togglePublish(exam)} title="Toggle status">
                             {exam.status === 'published' ? <Lock size={13} /> : <Globe size={13} />}
                           </button>

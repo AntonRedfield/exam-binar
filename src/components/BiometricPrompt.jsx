@@ -57,9 +57,9 @@ export default function BiometricPrompt() {
     try {
       await registerBiometric(user)
 
-      // Sync passkey status to Supabase
+      // Sync passkey status
       await updatePasskeyStatus(user.id, true).catch(err => {
-        console.warn('[FastLogin] Failed to sync passkey status to server:', err)
+        console.warn('[FastLogin] Failed to sync passkey status:', err)
       })
 
       setStep('success')

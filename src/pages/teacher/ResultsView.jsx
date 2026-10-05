@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results, sessions, questions } from '../../lib/db'
-import { supabase } from '../../lib/supabase'
 import { gradeExam } from '../../lib/grader'
 import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2 } from 'lucide-react'
 
@@ -196,8 +195,8 @@ export default function ResultsView() {
                   return (
                     <tr key={r.id}>
                       <td className="text-muted no-print">{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>{r.users?.name || r.users?.username || 'Siswa Dihapus'}</td>
-                      <td>{r.users?.kelas}</td>
+                      <td style={{ fontWeight: 600 }}>{r.users?.full_name || 'Siswa Dihapus'}</td>
+                      <td>{r.users?.classes?.name}</td>
                       <td className="no-print">{r.auto_score}</td>
                       <td className="no-print">
                         <div className="no-print">

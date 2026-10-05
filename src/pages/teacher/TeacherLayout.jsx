@@ -89,7 +89,7 @@ export default function TeacherLayout() {
 
         <div className="sidebar-footer">
           <div style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.25rem' }}>{user?.name}</div>
-          <div className="text-muted text-xs" style={{ marginBottom: '0.75rem' }}>{user?.id}</div>
+          <div className="text-muted text-xs" style={{ marginBottom: '0.75rem' }}>Guru</div>
           
           <button className="btn btn-ghost btn-sm w-full" style={{ marginBottom: '0.5rem', justifyContent: 'flex-start' }} onClick={() => setShowModal(true)}>
             <KeyRound size={14} style={{ marginRight: '0.5rem' }} /> Ubah Password

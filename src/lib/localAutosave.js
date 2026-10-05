@@ -1,6 +1,6 @@
 // ─── IndexedDB Local Autosave for Survey Answers ──────────────────────────────
 // Saves survey progress locally every ~25 seconds as a safety net.
-// If the user accidentally closes the tab before Supabase syncs, answers are
+// If the user accidentally closes the tab before session syncs, answers are
 // recovered from IndexedDB on next visit.
 
 const DB_NAME = 'binar_survey_autosave'
@@ -50,7 +50,7 @@ export async function saveLocal(userId, examId, answers) {
     })
   } catch (err) {
     // IndexedDB may be unavailable (e.g. private browsing in some browsers).
-    // Fail silently — the Supabase autosave is the primary mechanism.
+    // Fail silently — the local session autosave is the primary mechanism.
     console.warn('[LocalAutosave] save failed:', err)
   }
 }

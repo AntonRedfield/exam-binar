@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../../lib/supabase'
+import { localDb } from '../../lib/db'
 
 export default function Analytics() {
   const [stats, setStats] = useState(null)
@@ -7,19 +7,13 @@ export default function Analytics() {
 
   useEffect(() => {
     async function load() {
-      const [
-        { count: totalUsers },
-        { count: totalTeachers },
-        { count: totalExams },
-        { count: totalSessions },
-        { data: recentResults }
-      ] = await Promise.all([
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'USER'),
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'TEACHER'),
-        supabase.from('exams').select('*', { count: 'exact', head: true }),
-        supabase.from('exam_sessions').select('*', { count: 'exact', head: true }),
-        supabase.from('results').select('auto_score, max_auto_score, violation_count').limit(200),
-      ])
+      const {
+        totalUsers,
+        totalTeachers,
+        totalExams,
+        totalSessions,
+        recentResults
+      } = await localDb.getAnalyticsStats()
 
       let avgScore = 0
       let totalViolations = 0

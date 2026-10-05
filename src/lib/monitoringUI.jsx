@@ -15,7 +15,7 @@ export function MonitoringIcon({ level, size = 24, className = '' }) {
   const src = LEVEL_LOGOS[level]
   if (!src) return null
 
-  // STRIX SCARS (Level 4) gets a 230% upscale as it's the special top-tier level
+  // STRIX (Level 4) gets a 230% upscale as it's the special top-tier level
   const finalSize = level === 4 ? Math.round(size * 2.3) : size
 
   return (
