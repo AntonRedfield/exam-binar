@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   avatar_url TEXT,
   class_id UUID REFERENCES public.classes(id) ON DELETE SET NULL,
   class_section VARCHAR(50),
+  active_session_id TEXT,
+  last_login_at TIMESTAMPTZ,
+  last_login_device TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

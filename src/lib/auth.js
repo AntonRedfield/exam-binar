@@ -9,7 +9,16 @@
  *   Level 2 = Officer (USER)     | Level 1 = Student/Parent (USER)
  */
 
-import { supabase, isSupabaseConfigured } from './supabase'
+import { supabase, isSupabaseConfigured } from './supabase.js'
+import {
+  registerActiveSession,
+  clearActiveSession,
+  isSingleSessionEnforced,
+  getLocalSessionToken,
+  setLocalSessionToken
+} from './sessionGuard.js'
+
+export { isSingleSessionEnforced, getLocalSessionToken, setLocalSessionToken }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -177,15 +186,21 @@ export async function login(username, password) {
     }
   }
 
+  // Register active session for Level 1 & 2 users (Level 3 & 4 remain unrestricted)
+  const activeSessionToken = await registerActiveSession(data.user.id, level)
+
   const session = {
     access_token: data.session.access_token,
     refresh_token: data.session.refresh_token,
     user: sessionUser,
     expires_at: data.session.expires_at ? data.session.expires_at * 1000 : Date.now() + 86400000 * 7,
+    active_session_token: activeSessionToken,
   }
 
   try {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
+    // Clear any previous kickout reason on fresh login
+    sessionStorage.removeItem('binar_kickout_reason')
   } catch (err) {
     console.error('[Auth] Failed to write session to localStorage:', err)
   }
@@ -204,7 +219,19 @@ export async function login(username, password) {
 
 // ─── Logout ─────────────────────────────────────────────────────────────────
 
-export async function logout() {
+export async function logout(reason = null) {
+  const currentUser = getCurrentUser()
+  if (currentUser) {
+    try {
+      // Clear active_session_id in DB if voluntary logout
+      if (!reason) {
+        await clearActiveSession(currentUser.id, currentUser.level)
+      }
+    } catch (e) {
+      console.warn('[Auth] clearActiveSession error:', e)
+    }
+  }
+
   if (isSupabaseConfigured && supabase) {
     try {
       await supabase.auth.signOut()
@@ -215,6 +242,11 @@ export async function logout() {
 
   try {
     localStorage.removeItem(AUTH_STORAGE_KEY)
+    if (reason) {
+      sessionStorage.setItem('binar_kickout_reason', reason)
+    } else {
+      sessionStorage.removeItem('binar_kickout_reason')
+    }
   } catch (err) {
     console.warn('[Auth] Failed to clear session:', err)
   }

@@ -1,15 +1,27 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { login, getUserLevel } from '../lib/auth'
-import { Eye, EyeOff, AlertCircle, LogIn, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, AlertTriangle, LogIn, Loader2 } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [kickoutWarning, setKickoutWarning] = useState(false)
+
+  useEffect(() => {
+    try {
+      const reason = searchParams.get('reason') || sessionStorage.getItem('binar_kickout_reason')
+      if (reason === 'concurrent_session' || reason === 'other_device' || reason === 'other_window') {
+        setKickoutWarning(true)
+        sessionStorage.removeItem('binar_kickout_reason')
+      }
+    } catch (e) {}
+  }, [searchParams])
 
   // ─── Form Submit ───
   async function handleSubmit(e) {
@@ -67,6 +79,27 @@ export default function Login() {
             Sekolah Nasional Terintegrasi 10 Kupang
           </h1>
         </div>
+
+        {kickoutWarning && (
+          <div style={{
+            marginBottom: '1.25rem',
+            padding: '0.85rem 1rem',
+            borderRadius: 'var(--radius-sm)',
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.75rem',
+            color: '#b91c1c',
+            textAlign: 'left'
+          }}>
+            <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--danger)' }} />
+            <div style={{ fontSize: '0.82rem', lineHeight: 1.45 }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.15rem' }}>Sesi Anda Telah Berakhir</div>
+              Akun Anda telah login di perangkat atau jendela lain. Akun Siswa &amp; Petugas (Level 1 &amp; 2) dibatasi hanya 1 login aktif dalam satu waktu.
+            </div>
+          </div>
+        )}
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="login-form" autoComplete="off">

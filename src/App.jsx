@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { getSession, getUserRole, getUserLevel, onAuthStateChange, _syncCurrentUser, getCurrentUser } from './lib/auth'
+import { getSession, getUserRole, getUserLevel, onAuthStateChange, _syncCurrentUser, getCurrentUser, logout } from './lib/auth'
+import { startSessionGuard } from './lib/sessionGuard'
 
 // ─── Page Imports ───────────────────────────────────────────────────────────
 import Login from './pages/Login'
@@ -64,6 +65,22 @@ function AuthProvider({ children }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // 3. Strict single active session watcher for Level 1 & Level 2 users
+  useEffect(() => {
+    if (!session?.user) return
+    const stopGuard = startSessionGuard(
+      {
+        id: session.user.id,
+        level: session.level,
+        session: session.session,
+      },
+      (reason) => {
+        logout(reason)
+      }
+    )
+    return () => stopGuard()
+  }, [session?.user?.id, session?.level])
 
   // Show loading spinner while session is being determined
   if (session === undefined) {
