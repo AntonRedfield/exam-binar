@@ -22,44 +22,56 @@ export default function StudentHome() {
 
   useEffect(() => {
     async function load() {
-      setLoading(true)
-      const { data: allExams } = await exams.list()
-      if (!allExams) { setLoading(false); return }
-
-      // Filter exams: show if no target_kelas, target_kelas is 'all', or student's class starts with one of the target strings
-      const relevant = allExams.filter(e => {
-        if (!e.target_kelas || e.target_kelas === 'all') return true
-        if (!user.kelas) return false
-        const targets = e.target_kelas.split(',')
-        return targets.some(t => user.kelas.startsWith(t))
-      })
-
-      // Load sessions and results for each exam
-      const sMap = {}
-      const rMap = {}
-      const visibleExams = []
-      
-      for (const exam of relevant) {
-        let isVisible = exam.status === 'published'
-        const { data: sess } = await sessions.get(user.id, exam.id)
-        if (sess) {
-          sMap[exam.id] = sess
-          isVisible = true // Always show if they have a session/result
-        }
-        
-        if (isVisible) {
-          visibleExams.push(exam)
-          const { data: result } = await results.get(user.id, exam.id)
-          if (result) rMap[exam.id] = result
-        }
+      if (!user?.id) {
+        setLoading(false)
+        return
       }
-      setExamList(visibleExams)
-      setSessionMap(sMap)
-      setResultMap(rMap)
-      setLoading(false)
+
+      setLoading(true)
+      try {
+        const { data: allExams } = await exams.list()
+        if (!allExams) return
+
+        // Filter exams: show if no target_kelas, target_kelas is 'all', officer (Level 2), or student's class starts with one of the target strings
+        const isOfficer = user.level === 2 || user.role === 'officer' || user.dbRole === 'officer'
+        const relevant = allExams.filter(e => {
+          if (!e.target_kelas || e.target_kelas === 'all') return true
+          if (isOfficer) return true
+          if (!user.kelas) return false
+          const targets = e.target_kelas.split(',').map(t => t.trim())
+          return targets.some(t => user.kelas.startsWith(t) || user.kelas === t)
+        })
+
+        // Load sessions and results for each exam
+        const sMap = {}
+        const rMap = {}
+        const visibleExams = []
+        
+        for (const exam of relevant) {
+          let isVisible = exam.status === 'published'
+          const { data: sess } = await sessions.get(user.id, exam.id)
+          if (sess) {
+            sMap[exam.id] = sess
+            isVisible = true // Always show if they have a session/result
+          }
+          
+          if (isVisible) {
+            visibleExams.push(exam)
+            const { data: result } = await results.get(user.id, exam.id)
+            if (result) rMap[exam.id] = result
+          }
+        }
+        setExamList(visibleExams)
+        setSessionMap(sMap)
+        setResultMap(rMap)
+      } catch (err) {
+        console.error('[StudentHome] Error loading exams:', err)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
-  }, [user.id, user.kelas])
+  }, [user?.id, user?.kelas, user?.level])
 
   function handleExamClick(exam) {
     const session = sessionMap[exam.id]

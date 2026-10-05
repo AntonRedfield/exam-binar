@@ -625,6 +625,37 @@ export const results = {
     return { data: created, error: null }
   },
 
+  get: async (studentIdOrExamId, examIdOrStudentId) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
+    // Support both get(studentId, examId) and get(examId, studentId)
+    const { data, error } = await supabase
+      .from('results')
+      .select('*')
+      .or(`and(student_id.eq.${studentIdOrExamId},exam_id.eq.${examIdOrStudentId}),and(student_id.eq.${examIdOrStudentId},exam_id.eq.${studentIdOrExamId})`)
+      .maybeSingle()
+
+    if (error) return { data: null, error }
+    return { data: data || null, error: null }
+  },
+
+  update: async (id, data) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    const updatePayload = { ...data }
+    if (updatePayload.breakdown && typeof updatePayload.breakdown !== 'string') {
+      updatePayload.breakdown = JSON.stringify(updatePayload.breakdown)
+    }
+
+    const { data: updated, error } = await supabase
+      .from('results')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) return { data: null, error }
+    return { data: updated, error: null }
+  },
+
   getByExamAndStudent: async (examId, studentId) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
     const { data, error } = await supabase

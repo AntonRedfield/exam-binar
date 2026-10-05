@@ -280,7 +280,8 @@ DECLARE
 BEGIN
   SELECT id INTO v_user_id FROM auth.users WHERE email = p_email OR raw_user_meta_data->>'username' = p_username;
   
-  v_enc_pass := extensions.crypt(p_password, extensions.gen_salt('bf'));
+  -- Use cost 10 for standard Supabase GoTrue bcrypt compatibility
+  v_enc_pass := extensions.crypt(p_password, extensions.gen_salt('bf', 10));
 
   IF v_user_id IS NULL THEN
     v_user_id := gen_random_uuid();
