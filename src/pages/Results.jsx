@@ -110,7 +110,7 @@ export default function Results() {
           </div>
         )}
         <div className="app-footer">
-          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+          Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
         </div>
       </div>
     </div>

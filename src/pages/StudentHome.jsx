@@ -105,15 +105,17 @@ export default function StudentHome() {
     <div style={{ minHeight: '100vh', background: 'var(--navy)' }}>
       {/* Header */}
       <header className="student-header" style={{ background: 'var(--glass)', borderBottom: '1px solid var(--border)', padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: '1.25rem', color: '#1b3361' }}>
-              BOLOS
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.2rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1b3361', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              Sistem Asesmen Terpadu
             </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '-0.1rem' }} className="text-muted">
-              (BINAR Online Lecture Operational System)
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <img src={`${import.meta.env.BASE_URL}logo-snt.png`} alt="Logo SNT 10 Kupang" style={{ height: 42, width: 42, objectFit: 'contain' }} />
+              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: '1.15rem', color: '#1b3361' }}>
+                SNT 10 Kupang
+              </span>
+            </div>
           </div>
         </div>
         <div className="student-header-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -208,7 +210,7 @@ export default function StudentHome() {
         )}
       </main>
       <div className="app-footer">
-        Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+        Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
       </div>
       <BiometricPrompt />
     </div>

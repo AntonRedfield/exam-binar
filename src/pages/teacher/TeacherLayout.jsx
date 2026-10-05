@@ -51,12 +51,15 @@ export default function TeacherLayout() {
       </button>
       <div className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} onClick={() => setSidebarOpen(false)} />
       <nav className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-logo">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <h2 style={{ marginBottom: 0 }}>BOLOS <span className="logo-accent">Guru</span></h2>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(BINAR Online Lecture Operational System)</span>
+        <div className="sidebar-logo" style={{ padding: '1rem 0.75rem', textAlign: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1b3361', letterSpacing: '0.03em', textTransform: 'uppercase' }}>
+              Sistem Asesmen Terpadu
+            </span>
+            <img src={`${import.meta.env.BASE_URL}logo-snt.png`} alt="Logo SNT 10 Kupang" style={{ height: 60, width: 60, objectFit: 'contain' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#1b3361' }}>SNT 10 Kupang</span>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#dfae34', background: 'rgba(223, 174, 52, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Guru</span>
             </div>
           </div>
         </div>
@@ -102,7 +105,7 @@ export default function TeacherLayout() {
       <div className="main-content">
         <Outlet />
         <div className="app-footer">
-          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+          Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
         </div>
       </div>
 

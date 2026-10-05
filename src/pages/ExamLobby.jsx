@@ -132,9 +132,31 @@ export default function ExamLobby() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)', padding: '1rem' }}>
       <div style={{ maxWidth: 560, width: '100%' }}>
-        {/* Header icon */}
+        {/* Header brand & icon */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 160, objectFit: 'contain', margin: '0 auto 1rem' }} />
+          <div style={{
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            color: '#1b3361',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            marginBottom: '0.65rem'
+          }}>
+            Sistem Asesmen Terpadu
+          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}logo-snt.png`}
+            alt="Logo SNT 10 Kupang"
+            style={{ height: 100, width: 100, objectFit: 'contain', margin: '0 auto 0.65rem' }}
+          />
+          <div style={{
+            fontSize: '1.25rem',
+            fontWeight: 800,
+            color: '#1b3361',
+            marginBottom: '1rem'
+          }}>
+            SNT 10 Kupang
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
             <h1 style={{ fontSize: '1.5rem', margin: 0 }}>{exam.title}</h1>
             <span className={`badge ${exam.mode === 'quiz' ? 'badge-active' : 'badge-draft'}`} style={{ fontSize: '0.75rem' }}>
@@ -292,7 +314,7 @@ export default function ExamLobby() {
           Masuk sebagai: <strong>{user.name}</strong>
         </p>
         <div className="app-footer">
-          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+          Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
         </div>
       </div>
     </div>

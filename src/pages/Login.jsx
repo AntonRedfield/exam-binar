@@ -53,15 +53,20 @@ export default function Login() {
       <div className="login-card" id="login-card">
         {/* Logo & Branding */}
         <div className="login-header">
-          <div className="login-logo-ring">
+          <div className="brand-top-title">
+            Sistem Asesmen Terpadu
+          </div>
+          <div className="login-logo-ring" style={{ width: '100px', height: '100px', margin: '0 auto 0.75rem', padding: '6px' }}>
             <img
-              src={`${import.meta.env.BASE_URL}binar-logo.png`}
-              alt="BINAR Logo"
+              src={`${import.meta.env.BASE_URL}logo-snt.png`}
+              alt="Logo SNT 10 Kupang"
               className="login-logo-img"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             />
           </div>
-          <h1 className="login-title">BOLOS</h1>
-          <p className="login-subtitle">BINAR Online Lecture Operational System</p>
+          <h1 className="login-title" style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1b3361', margin: 0 }}>
+            SNT 10 Kupang
+          </h1>
         </div>
 
         {/* Login Form */}
@@ -144,7 +149,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="login-footer">
-          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+          Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
         </div>
       </div>
     </div>

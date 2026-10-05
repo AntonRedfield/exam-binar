@@ -92,7 +92,7 @@ export default function AdminDashboard() {
     <>
       <div className="page-header">
         <h2>{greeting}, {user?.name || 'Admin'} 👋</h2>
-        <p className="text-muted text-sm">Ringkasan sistem ujian BOLOS</p>
+        <p className="text-muted text-sm">Ringkasan Sistem Asesmen Terpadu SNT 10 Kupang</p>
       </div>
       <div className="page-body">
 

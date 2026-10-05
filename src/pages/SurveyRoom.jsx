@@ -247,7 +247,7 @@ export default function SurveyRoom() {
             Kembali ke Beranda
           </button>
           <div className="app-footer" style={{ marginTop: '2rem' }}>
-            Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+            Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
           </div>
         </div>
       </div>
@@ -346,7 +346,7 @@ export default function SurveyRoom() {
         </div>
 
         <div className="app-footer" style={{ marginTop: '2rem' }}>
-          Dibuat dan Dikembangkan oleh Tim IT BINAR &copy;2025
+          Sistem Asesmen Terpadu SNT 10 Kupang &copy;{new Date().getFullYear()}
         </div>
       </main>
 

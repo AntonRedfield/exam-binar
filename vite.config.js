@@ -12,11 +12,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['binar-logo.png', 'vite.svg'],
+      includeAssets: ['logo-snt.png', 'binar-logo.png', 'vite.svg'],
       manifest: {
-        name: 'BOLOS (BINAR Online Lecture Operational System)',
-        short_name: 'BOLOS',
-        description: 'Aplikasi Ujian Berbasis Komputer — BOLOS',
+        name: 'Sistem Asesmen Terpadu SNT 10 Kupang',
+        short_name: 'SNT 10 Kupang',
+        description: 'Sistem Asesmen Terpadu SNT 10 Kupang',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
@@ -25,7 +25,7 @@ export default defineConfig({
         start_url: base,
         icons: [
           {
-            src: 'binar-logo.png',
+            src: 'logo-snt.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'

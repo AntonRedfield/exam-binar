@@ -283,9 +283,12 @@ export default function SurveyResponses() {
           Tanggal Cetak:<br />
           {new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
-        <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain', marginBottom: '0.5rem' }} />
-        <h1 style={{ margin: 0, fontSize: '1.6rem', fontFamily: "'Inter', sans-serif", color: 'black' }}>Laporan Respons Survei</h1>
-        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'normal', color: 'black' }}>{exam?.title}</h2>
+        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1b3361', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+          Sistem Asesmen Terpadu
+        </div>
+        <img src={`${import.meta.env.BASE_URL}logo-snt.png`} alt="Logo SNT 10 Kupang" style={{ height: 75, objectFit: 'contain', margin: '0.25rem auto' }} />
+        <h1 style={{ margin: '0.25rem 0 0', fontSize: '1.5rem', fontFamily: "'Inter', sans-serif", color: 'black', fontWeight: 800 }}>SNT 10 Kupang</h1>
+        <h2 style={{ margin: '0.25rem 0 0', fontSize: '1.15rem', fontWeight: 'normal', color: 'black' }}>Laporan Respons Survei — {exam?.title}</h2>
         <p style={{ margin: '0.25rem 0 0', fontSize: '10pt', color: '#555' }}>
           {respondedCount} respons · {missingUsers.length} belum mengisi · Tingkat respons: {responsePct}%
           {exam?.survey_valid_until && ` · Batas waktu: ${new Date(exam.survey_valid_until).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}

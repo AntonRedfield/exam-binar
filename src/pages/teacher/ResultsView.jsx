@@ -156,9 +156,12 @@ export default function ResultsView() {
           Tanggal Ujian:<br />
           {exam?.created_at ? new Date(exam.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}
         </div>
-        <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain', marginBottom: '0.5rem' }} />
-        <h1 style={{ margin: 0, fontSize: '1.6rem', fontFamily: "'Inter', sans-serif", color: 'black' }}>BOLOS Exam Result</h1>
-        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'normal', color: 'black' }}>Mata Pelajaran: {exam?.title} — KKM: {passingGrade}</h2>
+        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1b3361', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
+          Sistem Asesmen Terpadu
+        </div>
+        <img src={`${import.meta.env.BASE_URL}logo-snt.png`} alt="Logo SNT 10 Kupang" style={{ height: 75, objectFit: 'contain', margin: '0.25rem auto' }} />
+        <h1 style={{ margin: '0.25rem 0 0', fontSize: '1.5rem', fontFamily: "'Inter', sans-serif", color: 'black', fontWeight: 800 }}>SNT 10 Kupang</h1>
+        <h2 style={{ margin: '0.25rem 0 0', fontSize: '1.15rem', fontWeight: 'normal', color: 'black' }}>Hasil Ujian — Mata Pelajaran: {exam?.title} — KKM: {passingGrade}</h2>
       </div>
       <div className="page-body">
         <div className="card" style={{ padding: 0 }}>

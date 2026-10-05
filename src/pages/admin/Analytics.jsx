@@ -43,7 +43,7 @@ export default function Analytics() {
     <>
       <div className="page-header">
         <h2>Analitik Sekolah</h2>
-        <p className="text-muted text-sm">Data keseluruhan sistem ujian BOLOS</p>
+        <p className="text-muted text-sm">Data keseluruhan Sistem Asesmen Terpadu SNT 10 Kupang</p>
       </div>
       <div className="page-body">
         {/* Stats grid */}
