@@ -1,15 +1,14 @@
 /**
- * Authentication Module — HRBAC Architecture (Hybrid Supabase & Offline-First)
+ * Authentication Module — HRBAC Architecture (Supabase Authentication)
  * 
- * Primary: Supabase Auth with PostgreSQL profiles
- * Fallback: Self-contained local DB authentication
+ * Exclusively uses Supabase Auth with PostgreSQL profiles table.
+ * All test/mock database fallbacks have been removed.
  * 
  * User level mapping:
  *   Level 4 = Admin (SUPERADMIN) | Level 3 = Teacher (MODERATOR)
  *   Level 2 = Officer (USER)     | Level 1 = Student/Parent (USER)
  */
 
-import { users } from './db'
 import { supabase, isSupabaseConfigured } from './supabase'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -105,9 +104,9 @@ export function getRoleLabel(user) {
 // ─── Login ──────────────────────────────────────────────────────────────────
 
 /**
- * Login using username/email + password via Supabase Auth with local fallback.
+ * Login using username/email + password directly against Supabase Auth.
  * 
- * @param {string} username — raw username (e.g., "admin1", "guru-1", "murid-1")
+ * @param {string} username — raw username (e.g., "mordlicht", "ivan", "7a1")
  * @param {string} password — plaintext password
  * @returns {Promise<Object>} — { user, session, level, role }
  */
@@ -119,117 +118,56 @@ export async function login(username, password) {
     throw new Error('Password tidak boleh kosong.')
   }
 
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Koneksi Supabase backend belum siap. Periksa konfigurasi .env')
+  }
+
   const cleanUsername = username.trim().toLowerCase()
   const cleanPassword = password.trim()
   const email = usernameToEmail(cleanUsername)
 
-  // 1. Try Supabase Auth first if configured
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: cleanPassword
-      })
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password: cleanPassword
+  })
 
-      if (!error && data?.user && data?.session) {
-        // Fetch public profile
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .maybeSingle()
-
-        const level = profile?.role_level || (data.user.user_metadata?.level ? Number(data.user.user_metadata.level) : 1)
-        const role = LEVEL_TO_APP_ROLE[level] || 'USER'
-        const dbRole = level === 4 ? 'admin' : (level === 3 ? 'teacher' : (level === 2 ? 'officer' : 'student'))
-
-        const sessionUser = {
-          id: data.user.id,
-          email: data.user.email || email,
-          user_metadata: {
-            full_name: profile?.display_name || profile?.fullname || data.user.user_metadata?.full_name || cleanUsername,
-            display_name: profile?.display_name || profile?.fullname || data.user.user_metadata?.display_name || cleanUsername,
-            role: dbRole,
-            kelas: profile?.class_section || data.user.user_metadata?.kelas || '',
-            class_id: profile?.class_section || data.user.user_metadata?.class_id || '',
-            username: profile?.username || cleanUsername
-          },
-          app_metadata: {
-            role: dbRole,
-            level: level,
-          }
-        }
-
-        const session = {
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-          user: sessionUser,
-          expires_at: data.session.expires_at ? data.session.expires_at * 1000 : Date.now() + 86400000 * 7,
-        }
-
-        try {
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
-        } catch (err) {
-          console.error('[Auth] Failed to write session to localStorage:', err)
-        }
-
-        const sessionData = {
-          user: sessionUser,
-          session,
-          level,
-          role,
-        }
-
-        _syncCurrentUser(sessionData)
-        notifyAuthChange('SIGNED_IN', session)
-        return sessionData
-      }
-    } catch (sbErr) {
-      console.warn('[Auth] Supabase auth attempt failed, falling back to local verification:', sbErr.message)
-    }
-  }
-
-  // 2. Fallback to Local DB authentication
-  const user = await users.getByUsername(cleanUsername)
-
-  if (!user) {
-    throw new Error('Username atau email tidak ditemukan.')
-  }
-
-  const passwordMatches = 
-    user.password === cleanPassword ||
-    user.username.toLowerCase() === cleanPassword.toLowerCase() ||
-    cleanPassword === 'password' ||
-    cleanPassword === 'admin123'
-
-  if (user.password && !passwordMatches) {
+  if (error || !data?.user || !data?.session) {
     throw new Error('Username atau password salah. Silakan coba lagi.')
   }
 
-  const level = user.role === 'admin' ? 4 : (user.role === 'teacher' ? 3 : (user.role === 'officer' ? 2 : 1))
+  // Fetch user profile from Supabase profiles table
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', data.user.id)
+    .maybeSingle()
+
+  const level = profile?.role_level ?? (data.user.user_metadata?.level ? Number(data.user.user_metadata.level) : 1)
   const role = LEVEL_TO_APP_ROLE[level] || 'USER'
+  const dbRole = level === 4 ? 'admin' : (level === 3 ? 'teacher' : (level === 2 ? 'officer' : 'student'))
 
   const sessionUser = {
-    id: user.id,
-    email: user.email || `${user.username}@${EMAIL_DOMAIN}`,
+    id: data.user.id,
+    email: data.user.email || email,
     user_metadata: {
-      full_name: user.full_name || user.name,
-      display_name: user.full_name || user.name,
-      role: user.role,
-      kelas: user.kelas || '',
-      class_id: user.kelas || '',
-      username: user.username
+      full_name: profile?.display_name || profile?.fullname || data.user.user_metadata?.full_name || cleanUsername,
+      display_name: profile?.display_name || profile?.fullname || data.user.user_metadata?.display_name || cleanUsername,
+      role: dbRole,
+      kelas: profile?.class_section || data.user.user_metadata?.kelas || '',
+      class_id: profile?.class_section || data.user.user_metadata?.class_id || '',
+      username: profile?.username || cleanUsername
     },
     app_metadata: {
-      role: user.role,
+      role: dbRole,
       level: level,
     }
   }
 
   const session = {
-    access_token: `mock-jwt-token-${user.id}-${Date.now()}`,
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
     user: sessionUser,
-    expires_at: Date.now() + 86400000 * 7,
+    expires_at: data.session.expires_at ? data.session.expires_at * 1000 : Date.now() + 86400000 * 7,
   }
 
   try {
@@ -247,7 +185,6 @@ export async function login(username, password) {
 
   _syncCurrentUser(sessionData)
   notifyAuthChange('SIGNED_IN', session)
-
   return sessionData
 }
 
@@ -274,7 +211,7 @@ export async function logout() {
 // ─── Session Helpers ────────────────────────────────────────────────────────
 
 /**
- * Get the current Auth session (if any).
+ * Get the current Auth session.
  * @returns {Promise<Object|null>} — { user, session, level, role } or null
  */
 export async function getSession() {
@@ -283,6 +220,19 @@ export async function getSession() {
     if (!raw) return null
     const session = JSON.parse(raw)
     if (!session?.user) return null
+
+    // Purge deprecated test user sessions if any exist in browser
+    const username = (session.user.user_metadata?.username || session.user.email || '').toLowerCase()
+    if (
+      username.startsWith('admin1') ||
+      username.startsWith('admin2') ||
+      username.startsWith('admin3') ||
+      username.startsWith('guru-') ||
+      username.startsWith('murid-')
+    ) {
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+      return null
+    }
 
     // Check expiration
     if (session.expires_at && Date.now() > session.expires_at) {
@@ -340,7 +290,7 @@ export function onAuthStateChange(callback) {
 // ─── Profile Fetching ───────────────────────────────────────────────────────
 
 /**
- * Fetch the user's public profile.
+ * Fetch the user's public profile from Supabase.
  * 
  * @param {string} userId — user id
  * @returns {Promise<Object>} — profile row
@@ -370,20 +320,12 @@ export async function fetchProfile(userId) {
     }
   }
 
-  const { data, error } = await users.getById(userId)
-  if (error || !data) {
-    return {
-      id: userId,
-      display_name: 'Pengguna',
-      username: 'user',
-      role: 'student',
-      class_section: ''
-    }
-  }
   return {
-    ...data,
-    display_name: data.full_name,
-    class_section: data.kelas
+    id: userId,
+    display_name: 'Pengguna',
+    username: 'user',
+    role: 'student',
+    class_section: ''
   }
 }
 
