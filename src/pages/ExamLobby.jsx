@@ -86,15 +86,16 @@ export default function ExamLobby() {
 
       if (!session || session.status === 'reset') {
         if (session) {
-          await sessions.update(session.id, {
+          const { error: upErr } = await sessions.update(session.id, {
             status: 'active',
             end_timestamp: endTimestamp,
             answers: {},
             violation_count: 0,
             current_question: 1,
           })
+          if (upErr) throw new Error(upErr.message)
         } else {
-          await sessions.create({
+          const { error: crErr } = await sessions.create({
             student_id: user.id,
             exam_id: examId,
             variant: 'A',
@@ -104,6 +105,7 @@ export default function ExamLobby() {
             current_question: 1,
             status: 'active',
           })
+          if (crErr) throw new Error(crErr.message)
         }
       }
       navigate(`/exam/${examId}/room`)

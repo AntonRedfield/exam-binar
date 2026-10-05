@@ -461,9 +461,54 @@ export const sessions = {
     return { data: data || [], error: null }
   },
 
-  reset: async (sessionId) => {
-    return sessions.update(sessionId, {
+  get: async (studentId, examId) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
+    const { data, error } = await supabase
+      .from('exam_sessions')
+      .select('*')
+      .eq('exam_id', examId)
+      .eq('student_id', studentId)
+      .maybeSingle()
+    if (error) return { data: null, error }
+    return { data: data || null, error: null }
+  },
+
+  create: async (data) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    const now = new Date().toISOString()
+    const payload = {
+      id: generateId('sess'),
+      variant: 'A',
       status: 'active',
+      answers: {},
+      violation_count: 0,
+      current_question: 1,
+      started_at: now,
+      last_sync: now,
+      ...data,
+    }
+    const { data: created, error } = await supabase
+      .from('exam_sessions')
+      .insert([payload])
+      .select()
+      .single()
+    if (error) {
+      console.error('sessions.create failed:', error)
+      return { data: null, error }
+    }
+    return { data: created, error: null }
+  },
+
+  // Accepts reset(sessionId) or reset(studentId, examId)
+  reset: async (sessionIdOrStudentId, examId) => {
+    let sessionId = sessionIdOrStudentId
+    if (examId) {
+      const { data: existing } = await sessions.get(sessionIdOrStudentId, examId)
+      if (!existing) return { data: null, error: { message: 'Sesi tidak ditemukan' } }
+      sessionId = existing.id
+    }
+    return sessions.update(sessionId, {
+      status: 'reset',
       violation_count: 0,
       answers: {},
       current_question: 1,
