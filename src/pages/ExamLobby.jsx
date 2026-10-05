@@ -149,7 +149,18 @@ export default function ExamLobby() {
           <img
             src={`${import.meta.env.BASE_URL}Logo_SNT.webp`}
             alt="Logo SNT 10 Kupang"
-            style={{ height: 100, width: 100, objectFit: 'contain', margin: '0 auto 0.65rem' }}
+            style={{
+              height: 100,
+              width: 100,
+              objectFit: 'contain',
+              margin: '0 auto 0.65rem',
+              background: '#ffffff',
+              borderRadius: '20px',
+              padding: '8px',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
+              border: '1px solid rgba(27, 51, 97, 0.1)',
+              display: 'block'
+            }}
           />
           <div style={{
             fontSize: '1.25rem',

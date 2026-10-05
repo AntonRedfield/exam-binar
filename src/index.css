@@ -196,6 +196,13 @@ tbody tr:hover { background: var(--glass-light); }
   border-bottom: 1px solid var(--border);
   margin-bottom: 1rem;
 }
+.sidebar-logo img {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(27, 51, 97, 0.1);
+}
 .sidebar-logo h2 { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 1.4rem; font-weight: 800; color: var(--accent); }
 .sidebar-logo .logo-accent { color: var(--gold); }
 .sidebar-nav { flex: 1; padding: 0 0.75rem; }
@@ -1782,12 +1789,19 @@ tbody tr:hover { background: var(--glass-light); }
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #ffffff;
+  border-radius: 50%;
+  padding: 12px;
+  box-shadow: 
+    0 10px 25px -5px rgba(27, 51, 97, 0.15),
+    0 0 0 1px rgba(27, 51, 97, 0.08);
 }
 .login-logo-img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 4px 12px rgba(27, 51, 97, 0.15));
+  border-radius: 50%;
+  filter: drop-shadow(0 4px 12px rgba(27, 51, 97, 0.12));
 }
 .login-title {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1948,6 +1962,7 @@ tbody tr:hover { background: var(--glass-light); }
   .login-logo-wrap {
     width: 100px; height: 100px;
     margin-bottom: 0.75rem;
+    padding: 8px;
   }
   .brand-top-title {
     font-size: 1.5rem;

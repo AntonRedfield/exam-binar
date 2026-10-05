@@ -111,7 +111,20 @@ export default function StudentHome() {
               Sistem Asesmen Terpadu
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <img src={`${import.meta.env.BASE_URL}Logo_SNT.webp`} alt="Logo SNT 10 Kupang" style={{ height: 42, width: 42, objectFit: 'contain' }} />
+              <img
+                src={`${import.meta.env.BASE_URL}Logo_SNT.webp`}
+                alt="Logo SNT 10 Kupang"
+                style={{
+                  height: 42,
+                  width: 42,
+                  objectFit: 'contain',
+                  background: '#ffffff',
+                  borderRadius: '10px',
+                  padding: '3px',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
+                  border: '1px solid rgba(27, 51, 97, 0.1)'
+                }}
+              />
               <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: '1.15rem', color: '#1b3361' }}>
                 SNT 10 Kupang
               </span>

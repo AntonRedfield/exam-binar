@@ -23,7 +23,20 @@ export default function AdminLayout() {
             <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1b3361', letterSpacing: '0.03em', textTransform: 'uppercase' }}>
               Sistem Asesmen Terpadu
             </span>
-            <img src={`${import.meta.env.BASE_URL}Logo_SNT.webp`} alt="Logo SNT 10 Kupang" style={{ height: 60, width: 60, objectFit: 'contain' }} />
+            <img
+              src={`${import.meta.env.BASE_URL}Logo_SNT.webp`}
+              alt="Logo SNT 10 Kupang"
+              style={{
+                height: 60,
+                width: 60,
+                objectFit: 'contain',
+                background: '#ffffff',
+                borderRadius: '14px',
+                padding: '4px',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                border: '1px solid rgba(27, 51, 97, 0.1)'
+              }}
+            />
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#1b3361' }}>SNT 10 Kupang</span>
               <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#dfae34', background: 'rgba(223, 174, 52, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Admin</span>
