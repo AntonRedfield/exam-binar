@@ -159,7 +159,7 @@ export default function ResultsView() {
         <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1b3361', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>
           Sistem Asesmen Terpadu
         </div>
-        <img src={`${import.meta.env.BASE_URL}logo-snt.png`} alt="Logo SNT 10 Kupang" style={{ height: 75, objectFit: 'contain', margin: '0.25rem auto' }} />
+        <img src={`${import.meta.env.BASE_URL}Logo_SNT.webp`} alt="Logo SNT 10 Kupang" style={{ height: 75, objectFit: 'contain', margin: '0.25rem auto' }} />
         <h1 style={{ margin: '0.25rem 0 0', fontSize: '1.5rem', fontFamily: "'Inter', sans-serif", color: 'black', fontWeight: 800 }}>SNT 10 Kupang</h1>
         <h2 style={{ margin: '0.25rem 0 0', fontSize: '1.15rem', fontWeight: 'normal', color: 'black' }}>Hasil Ujian — Mata Pelajaran: {exam?.title} — KKM: {passingGrade}</h2>
       </div>

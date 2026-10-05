@@ -58,7 +58,7 @@ export default function Login() {
           </div>
           <div className="login-logo-ring" style={{ width: '100px', height: '100px', margin: '0 auto 0.75rem', padding: '6px' }}>
             <img
-              src={`${import.meta.env.BASE_URL}logo-snt.png`}
+              src={`${import.meta.env.BASE_URL}Logo_SNT.webp`}
               alt="Logo SNT 10 Kupang"
               className="login-logo-img"
               style={{ width: '100%', height: '100%', objectFit: 'contain' }}

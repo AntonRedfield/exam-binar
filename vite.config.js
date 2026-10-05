@@ -12,7 +12,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo-snt.png', 'binar-logo.png', 'vite.svg'],
+      includeAssets: ['Logo_SNT.webp', 'logo-snt.png', 'binar-logo.png', 'vite.svg'],
       manifest: {
         name: 'Sistem Asesmen Terpadu SNT 10 Kupang',
         short_name: 'SNT 10 Kupang',

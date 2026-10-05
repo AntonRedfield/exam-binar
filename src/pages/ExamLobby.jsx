@@ -145,7 +145,7 @@ export default function ExamLobby() {
             Sistem Asesmen Terpadu
           </div>
           <img
-            src={`${import.meta.env.BASE_URL}logo-snt.png`}
+            src={`${import.meta.env.BASE_URL}Logo_SNT.webp`}
             alt="Logo SNT 10 Kupang"
             style={{ height: 100, width: 100, objectFit: 'contain', margin: '0 auto 0.65rem' }}
           />
