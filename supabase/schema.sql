@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS public.questions (
   question_text TEXT NOT NULL DEFAULT '',
   image_url TEXT,
   options JSONB DEFAULT '{}'::jsonb,
+  option_images JSONB DEFAULT '{}'::jsonb,
   correct_answer JSONB,
   points DECIMAL(5,2) NOT NULL DEFAULT 1.00,
   variant VARCHAR(5) NOT NULL DEFAULT 'A',

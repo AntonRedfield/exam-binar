@@ -171,6 +171,7 @@ Bank butir soal dan kuesioner survei.
 | `question_text` | `TEXT` | **NOT NULL**, Default `''` | `'Tentukan nilai dari f(x) = 2x + 5 jika x = 3'` | Teks narasi pertanyaan |
 | `image_url` | `TEXT` | Nullable | `'https://drive.google.com/file/d/1X9Y.../view'` | **Link Gambar Soal/Diagram** |
 | `options` | `JSONB` | Nullable | `'{"left": {"1": "Indonesia"}, "right": {"A": "Jakarta"}}'` atau `'{"items": [{"id": "s1", "text": "Telur"}]}'` | Objek opsi/premis/pernyataan dalam format JSON |
+| `option_images` | `JSONB` | Nullable, Default `'{}'::jsonb` | `'{"A": "https://drive.google.com/...", "B": "https://..."}'` | **Link Gambar per Opsi Jawaban** (rescale otomatis adaptif) |
 | `correct_answer` | `JSONB` | Nullable | `'A'` atau `'{"1": "A"}'` atau `'["s1", "s2"]'` atau `'{"stmt_1": "agree"}'` | Kunci jawaban benar (otomatis grading proporsional/penuh) |
 | `points` | `DECIMAL(5,2)` | **NOT NULL**, Default `1.00` | `2.50` | Bobot skor jika jawaban benar |
 | `variant` | `VARCHAR(5)` | **NOT NULL**, Default `'A'` | `'A'` | Kode paket soal ('A', 'B', dsb.) |

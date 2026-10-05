@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2 } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon } from 'lucide-react'
+import { getDriveImageUrl } from '../../lib/grader'
 import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
 
@@ -116,14 +117,14 @@ function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCou
   if (isSurvey) {
     return {
       number: n, type: 'SHORT_ANSWER', question_text: '', image_url: '',
-      options: {}, correct_answer: null, points: 0, variant: 'A', time_limit: null,
+      options: {}, option_images: {}, correct_answer: null, points: 0, variant: 'A', time_limit: null,
       scale_min: 1, scale_max: 5, scale_min_label: '', scale_max_label: '',
       grid_rows: ['Baris 1', 'Baris 2', 'Baris 3'], grid_columns: ['Kolom 1', 'Kolom 2', 'Kolom 3'],
       allow_other: false, required: true,
     }
   }
   const opts = makeOptions(defaultOptsCount)
-  return { number: n, type: 'MCQ', question_text: '', image_url: '', options: opts, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
+  return { number: n, type: 'MCQ', question_text: '', image_url: '', options: opts, option_images: {}, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
 }
 
 export default function CreateExam() {
@@ -151,6 +152,7 @@ export default function CreateExam() {
   const [defaultGridRowsCount, setDefaultGridRowsCount] = useState(3)
   const [defaultGridColsCount, setDefaultGridColsCount] = useState(3)
   const [actionNotice, setActionNotice] = useState('')
+  const [openOptionImageInputs, setOpenOptionImageInputs] = useState({})
   const [questionItems, setQuestionItems] = useState([makeQuestion(1, false, 4, 3)])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -318,6 +320,7 @@ export default function CreateExam() {
             options: (['MCQ', 'COMPLEX_MCQ'].includes(q.type) && (!opts || Object.keys(opts).length === 0))
               ? makeOptions(exam?.default_options_count || 4)
               : (opts || {}),
+            option_images: q.option_images || q.options?.option_images || {},
             correct_answer: ans !== undefined ? ans : (q.type === 'MCQ' ? 'A' : null),
             time_limit: q.time_limit || null,
             scale_min: q.scale_min ?? 1,
@@ -366,6 +369,28 @@ export default function CreateExam() {
     setQuestionItems(prev => prev.map((q, i) => i === idx ? { ...q, options: { ...q.options, [key]: value } } : q))
   }
 
+  function toggleOptionImageInput(qIdx, key) {
+    const mapKey = `${qIdx}_${key}`
+    setOpenOptionImageInputs(prev => ({
+      ...prev,
+      [mapKey]: !prev[mapKey]
+    }))
+  }
+
+  function updateOptionImage(idx, key, value) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const newImages = { ...(q.option_images || {}) }
+      const trimmed = value ? value.trim() : ''
+      if (!trimmed) {
+        delete newImages[key]
+      } else {
+        newImages[key] = trimmed
+      }
+      return { ...q, option_images: newImages }
+    }))
+  }
+
   // --- MCQ & COMPLEX_MCQ Helper functions ---
   function changeMcqOptionsCount(idx, targetCount) {
     const count = Math.max(2, Math.min(10, targetCount))
@@ -373,9 +398,15 @@ export default function CreateExam() {
       if (i !== idx) return q
       const currentKeys = Object.keys(q.options || {})
       const newOptions = {}
+      const newOptionImages = {}
       for (let c = 0; c < count; c++) {
         const letter = ALL_LETTERS[c]
         newOptions[letter] = q.options?.[letter] !== undefined ? q.options[letter] : (q.options?.[currentKeys[c]] || '')
+        if (q.option_images?.[letter]) {
+          newOptionImages[letter] = q.option_images[letter]
+        } else if (q.option_images?.[currentKeys[c]]) {
+          newOptionImages[letter] = q.option_images[currentKeys[c]]
+        }
       }
       const keptLetters = ALL_LETTERS.slice(0, count)
       let newCorrect = q.correct_answer
@@ -388,7 +419,7 @@ export default function CreateExam() {
         const filtered = currentArr.filter(k => keptLetters.includes(k))
         newCorrect = filtered.length > 0 ? filtered : ['A']
       }
-      return { ...q, options: newOptions, correct_answer: newCorrect }
+      return { ...q, options: newOptions, option_images: newOptionImages, correct_answer: newCorrect }
     }))
   }
 
@@ -410,9 +441,15 @@ export default function CreateExam() {
       if (removeIndex === -1) return q
       
       const remainingValues = currentKeys.filter(k => k !== letterToRemove).map(k => q.options[k])
+      const remainingImages = currentKeys.filter(k => k !== letterToRemove).map(k => q.option_images?.[k] || null)
       const newOptions = {}
+      const newOptionImages = {}
       remainingValues.forEach((val, vi) => {
-        newOptions[ALL_LETTERS[vi]] = val
+        const ltr = ALL_LETTERS[vi]
+        newOptions[ltr] = val
+        if (remainingImages[vi]) {
+          newOptionImages[ltr] = remainingImages[vi]
+        }
       })
       
       let newCorrect = q.correct_answer
@@ -433,7 +470,7 @@ export default function CreateExam() {
           })
         newCorrect = updated.length > 0 ? updated : ['A']
       }
-      return { ...q, options: newOptions, correct_answer: newCorrect }
+      return { ...q, options: newOptions, option_images: newOptionImages, correct_answer: newCorrect }
     }))
   }
 
@@ -660,11 +697,17 @@ export default function CreateExam() {
       if (i !== idx) return q
       const currentKeys = Object.keys(q.options || {})
       const newOptions = {}
+      const newOptionImages = {}
       for (let c = 0; c < count; c++) {
         const key = `opt_${c + 1}`
         newOptions[key] = q.options?.[currentKeys[c]] !== undefined ? q.options[currentKeys[c]] : (q.options?.[key] || '')
+        if (q.option_images?.[key]) {
+          newOptionImages[key] = q.option_images[key]
+        } else if (q.option_images?.[currentKeys[c]]) {
+          newOptionImages[key] = q.option_images[currentKeys[c]]
+        }
       }
-      return { ...q, options: newOptions }
+      return { ...q, options: newOptions, option_images: newOptionImages }
     }))
   }
 
@@ -684,11 +727,17 @@ export default function CreateExam() {
       const currentKeys = Object.keys(q.options || {})
       if (currentKeys.length <= 2) return q
       const remainingValues = currentKeys.filter(k => k !== keyToRemove).map(k => q.options[k])
+      const remainingImages = currentKeys.filter(k => k !== keyToRemove).map(k => q.option_images?.[k] || null)
       const newOptions = {}
+      const newOptionImages = {}
       remainingValues.forEach((val, vi) => {
-        newOptions[`opt_${vi + 1}`] = val
+        const key = `opt_${vi + 1}`
+        newOptions[key] = val
+        if (remainingImages[vi]) {
+          newOptionImages[key] = remainingImages[vi]
+        }
       })
-      return { ...q, options: newOptions }
+      return { ...q, options: newOptions, option_images: newOptionImages }
     }))
   }
 
@@ -1072,6 +1121,7 @@ export default function CreateExam() {
         question_text: q.question_text || '',
         image_url: q.image_url || null,
         options: (q.type === 'ESSAY' || q.type === 'SHORT_ANSWER' || q.type === 'PARAGRAPH' || q.type === 'LINEAR_SCALE') ? null : (q.options || null),
+        option_images: (q.option_images && Object.keys(q.option_images).length > 0) ? q.option_images : {},
         correct_answer: isSurvey ? null : (q.type === 'ESSAY' ? null : q.correct_answer),
         points: isSurvey ? 0 : (Number(q.points) || 1),
         variant: q.variant || 'A',
@@ -2340,31 +2390,139 @@ export default function CreateExam() {
                       </div>
                     </div>
 
-                    {optKeys.map((key, i) => (
-                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
-                        <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
-                          {i + 1}
-                        </span>
-                        <input
-                          className="form-input"
-                          style={{ flex: 1 }}
-                          placeholder={`Opsi ${i + 1}`}
-                          value={q.options[key] || ''}
-                          onChange={e => updateOption(idx, key, e.target.value)}
-                        />
-                        {optCount > 2 && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ color: 'var(--danger)', padding: '0.25rem' }}
-                            onClick={() => removeSurveyOption(idx, key)}
-                            title="Hapus opsi ini"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                    {optKeys.map((key, i) => {
+                      const hasImage = !!q.option_images?.[key]
+                      const isInputOpen = openOptionImageInputs[`${idx}_${key}`] ?? false
+                      return (
+                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                              {i + 1}
+                            </span>
+                            <input
+                              className="form-input"
+                              style={{ flex: 1 }}
+                              placeholder={`Opsi ${i + 1}`}
+                              value={q.options[key] || ''}
+                              onChange={e => updateOption(idx, key, e.target.value)}
+                            />
+
+                            {/* Plus / Image button beside answer option */}
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${hasImage ? 'btn-primary' : 'btn-ghost'}`}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                height: 36,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                fontSize: '0.75rem',
+                                flexShrink: 0,
+                                border: hasImage ? '1px solid var(--accent)' : '1px solid var(--border)',
+                                background: hasImage ? 'rgba(79, 142, 247, 0.15)' : undefined,
+                                color: hasImage ? 'var(--accent)' : 'var(--text-secondary)'
+                              }}
+                              onClick={() => toggleOptionImageInput(idx, key)}
+                              title={hasImage ? `Kelola Gambar Opsi ${i + 1}` : `Tambah link gambar ke Opsi ${i + 1}`}
+                            >
+                              <Plus size={14} />
+                              <ImageIcon size={14} />
+                              {hasImage && <span style={{ fontWeight: 600 }}>Gambar</span>}
+                            </button>
+
+                            {optCount > 2 && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                                onClick={() => removeSurveyOption(idx, key)}
+                                title="Hapus opsi ini"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Image URL attachment drawer & live adaptive preview */}
+                          {(isInputOpen || hasImage) && (
+                            <div style={{
+                              marginLeft: 32,
+                              padding: '0.5rem 0.75rem',
+                              background: 'var(--navy-mid)',
+                              border: '1px dashed var(--accent)',
+                              borderRadius: 8,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.5rem',
+                            }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}>
+                                  <ImageIcon size={13} /> Link Gambar Opsi {i + 1}:
+                                </span>
+                                <input
+                                  type="url"
+                                  className="form-input"
+                                  style={{ flex: 1, fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 30 }}
+                                  placeholder="Tempel link gambar (Google Drive publik atau URL langsung: https://...)"
+                                  value={q.option_images?.[key] || ''}
+                                  onChange={e => updateOptionImage(idx, key, e.target.value)}
+                                />
+                                {hasImage && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ color: 'var(--danger)', padding: '0.2rem 0.4rem', height: 28, fontSize: '0.75rem' }}
+                                    onClick={() => updateOptionImage(idx, key, '')}
+                                    title="Hapus gambar opsi ini"
+                                  >
+                                    <Trash2 size={13} style={{ marginRight: 2 }} /> Hapus
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.2rem 0.4rem', height: 28, fontSize: '0.75rem' }}
+                                  onClick={() => toggleOptionImageInput(idx, key)}
+                                  title="Tutup form lampiran gambar"
+                                >
+                                  Tutup
+                                </button>
+                              </div>
+
+                              {/* Adaptive Live Preview */}
+                              {hasImage && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                    Pratinjau Gambar Opsi {i + 1} (Adaptif terhadap ukuran layar):
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                    <img
+                                      src={getDriveImageUrl(q.option_images[key])}
+                                      alt={`Pratinjau Opsi ${i + 1}`}
+                                      className="option-image-preview"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none'
+                                        const errEl = e.currentTarget.parentElement?.querySelector('.opt-img-err')
+                                        if (errEl) errEl.style.display = 'block'
+                                      }}
+                                      onLoad={(e) => {
+                                        e.currentTarget.style.display = 'block'
+                                        const errEl = e.currentTarget.parentElement?.querySelector('.opt-img-err')
+                                        if (errEl) errEl.style.display = 'none'
+                                      }}
+                                    />
+                                    <div className="opt-img-err alert alert-warning text-xs" style={{ display: 'none', padding: '0.35rem 0.6rem' }}>
+                                      ⚠️ Gambar tidak dapat dimuat. Pastikan URL valid dan link dapat diakses publik.
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
 
                     <button
                       type="button"
@@ -2449,53 +2607,161 @@ export default function CreateExam() {
                     </div>
 
                     {/* Options list */}
-                    {currentKeys.map(key => (
-                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
-                        <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
-                          {key}
-                        </span>
-                        <input
-                          className="form-input"
-                          style={{ flex: 1 }}
-                          placeholder={`Opsi ${key}`}
-                          value={q.options?.[key] || ''}
-                          onChange={e => updateOption(idx, key, e.target.value)}
-                        />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }} title={q.type === 'MCQ' ? 'Kunci jawaban benar' : 'Centang jika opsi ini benar'}>
-                          {q.type === 'MCQ' ? (
+                    {currentKeys.map(key => {
+                      const hasImage = !!q.option_images?.[key]
+                      const isInputOpen = openOptionImageInputs[`${idx}_${key}`] ?? false
+                      return (
+                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                              {key}
+                            </span>
                             <input
-                              type="radio"
-                              name={`mcq_correct_${idx}`}
-                              checked={q.correct_answer === key}
-                              onChange={() => updateQuestion(idx, 'correct_answer', key)}
-                              style={{ width: 18, height: 18, cursor: 'pointer' }}
+                              className="form-input"
+                              style={{ flex: 1 }}
+                              placeholder={`Opsi ${key}`}
+                              value={q.options?.[key] || ''}
+                              onChange={e => updateOption(idx, key, e.target.value)}
                             />
-                          ) : (
-                            <input
-                              type="checkbox"
-                              checked={Array.isArray(q.correct_answer) && q.correct_answer.includes(key)}
-                              onChange={e => {
-                                const prev = Array.isArray(q.correct_answer) ? q.correct_answer : []
-                                const next = e.target.checked ? [...prev, key] : prev.filter(k => k !== key)
-                                updateQuestion(idx, 'correct_answer', next)
+
+                            {/* Plus / Image button beside answer option */}
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${hasImage ? 'btn-primary' : 'btn-ghost'}`}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                height: 36,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                fontSize: '0.75rem',
+                                flexShrink: 0,
+                                border: hasImage ? '1px solid var(--accent)' : '1px solid var(--border)',
+                                background: hasImage ? 'rgba(79, 142, 247, 0.15)' : undefined,
+                                color: hasImage ? 'var(--accent)' : 'var(--text-secondary)'
                               }}
-                              style={{ width: 18, height: 18, cursor: 'pointer' }}
-                            />
+                              onClick={() => toggleOptionImageInput(idx, key)}
+                              title={hasImage ? `Kelola Gambar Opsi ${key}` : `Tambah link gambar ke Opsi ${key}`}
+                            >
+                              <Plus size={14} />
+                              <ImageIcon size={14} />
+                              {hasImage && <span style={{ fontWeight: 600 }}>Gambar</span>}
+                            </button>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }} title={q.type === 'MCQ' ? 'Kunci jawaban benar' : 'Centang jika opsi ini benar'}>
+                              {q.type === 'MCQ' ? (
+                                <input
+                                  type="radio"
+                                  name={`mcq_correct_${idx}`}
+                                  checked={q.correct_answer === key}
+                                  onChange={() => updateQuestion(idx, 'correct_answer', key)}
+                                  style={{ width: 18, height: 18, cursor: 'pointer' }}
+                                />
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  checked={Array.isArray(q.correct_answer) && q.correct_answer.includes(key)}
+                                  onChange={e => {
+                                    const prev = Array.isArray(q.correct_answer) ? q.correct_answer : []
+                                    const next = e.target.checked ? [...prev, key] : prev.filter(k => k !== key)
+                                    updateQuestion(idx, 'correct_answer', next)
+                                  }}
+                                  style={{ width: 18, height: 18, cursor: 'pointer' }}
+                                />
+                              )}
+                            </div>
+                            {currentCount > 2 && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                                onClick={() => removeMcqOption(idx, key)}
+                                title={`Hapus opsi ${key}`}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Image URL attachment drawer & live adaptive preview */}
+                          {(isInputOpen || hasImage) && (
+                            <div style={{
+                              marginLeft: 32,
+                              padding: '0.5rem 0.75rem',
+                              background: 'var(--navy-mid)',
+                              border: '1px dashed var(--accent)',
+                              borderRadius: 8,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.5rem',
+                            }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}>
+                                  <ImageIcon size={13} /> Link Gambar Opsi {key}:
+                                </span>
+                                <input
+                                  type="url"
+                                  className="form-input"
+                                  style={{ flex: 1, fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 30 }}
+                                  placeholder="Tempel link gambar (Google Drive publik atau URL langsung: https://...)"
+                                  value={q.option_images?.[key] || ''}
+                                  onChange={e => updateOptionImage(idx, key, e.target.value)}
+                                />
+                                {hasImage && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ color: 'var(--danger)', padding: '0.2rem 0.4rem', height: 28, fontSize: '0.75rem' }}
+                                    onClick={() => updateOptionImage(idx, key, '')}
+                                    title="Hapus gambar opsi ini"
+                                  >
+                                    <Trash2 size={13} style={{ marginRight: 2 }} /> Hapus
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.2rem 0.4rem', height: 28, fontSize: '0.75rem' }}
+                                  onClick={() => toggleOptionImageInput(idx, key)}
+                                  title="Tutup form lampiran gambar"
+                                >
+                                  Tutup
+                                </button>
+                              </div>
+
+                              {/* Adaptive Live Preview */}
+                              {hasImage && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                    Pratinjau Gambar Opsi {key} (Adaptif terhadap ukuran layar):
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                    <img
+                                      src={getDriveImageUrl(q.option_images[key])}
+                                      alt={`Pratinjau Opsi ${key}`}
+                                      className="option-image-preview"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none'
+                                        const errEl = e.currentTarget.parentElement?.querySelector('.opt-img-err')
+                                        if (errEl) errEl.style.display = 'block'
+                                      }}
+                                      onLoad={(e) => {
+                                        e.currentTarget.style.display = 'block'
+                                        const errEl = e.currentTarget.parentElement?.querySelector('.opt-img-err')
+                                        if (errEl) errEl.style.display = 'none'
+                                      }}
+                                    />
+                                    <div className="opt-img-err alert alert-warning text-xs" style={{ display: 'none', padding: '0.35rem 0.6rem' }}>
+                                      ⚠️ Gambar tidak dapat dimuat. Pastikan URL valid dan link dapat diakses publik.
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
-                        {currentCount > 2 && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ color: 'var(--danger)', padding: '0.25rem' }}
-                            onClick={() => removeMcqOption(idx, key)}
-                            title={`Hapus opsi ${key}`}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                       <button

@@ -328,7 +328,7 @@ tbody tr:hover { background: var(--glass-light); }
   display: inline-flex;
 }
 .option-btn {
-  display: flex; align-items: center; gap: 0.875rem;
+  display: flex; align-items: flex-start; gap: 0.875rem;
   padding: 0.875rem 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -347,9 +347,92 @@ tbody tr:hover { background: var(--glass-light); }
   display: inline-flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: 0.8rem; flex-shrink: 0;
   background: var(--navy-mid); border: 1px solid var(--border);
+  margin-top: 1px;
 }
 .selected .option-key { background: var(--accent); border-color: var(--accent); color: white; }
 .selected-multi .option-key { background: var(--success); border-color: var(--success); color: white; }
+
+/* ─── Adaptive Option Images ──────────────────────────────────────────────── */
+.option-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.option-text {
+  word-break: break-word;
+  line-height: 1.5;
+}
+.option-image-wrapper {
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 0.35rem;
+  overflow: hidden;
+}
+.option-adaptive-img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 250px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--navy-mid);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: max-height 0.2s ease, transform 0.2s ease;
+}
+.option-adaptive-img:hover {
+  border-color: var(--accent);
+}
+.option-image-preview {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 190px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--navy);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 992px) {
+  .option-adaptive-img {
+    max-height: 210px;
+  }
+  .option-image-preview {
+    max-height: 160px;
+  }
+}
+
+@media (max-width: 768px) {
+  .option-adaptive-img {
+    max-height: 170px;
+  }
+  .option-image-preview {
+    max-height: 140px;
+  }
+}
+
+@media (max-width: 480px) {
+  .option-btn {
+    padding: 0.75rem 0.85rem;
+    gap: 0.65rem;
+  }
+  .option-adaptive-img {
+    max-height: 135px;
+    border-radius: 6px;
+  }
+  .option-image-preview {
+    max-height: 110px;
+  }
+}
 
 .tf-btn {
   flex: 1; padding: 1rem;
