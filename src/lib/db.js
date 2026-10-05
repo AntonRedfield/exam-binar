@@ -10,7 +10,7 @@
  * - Survey Notifications
  */
 
-import { supabase, isSupabaseConfigured } from './supabase'
+import { supabase, isSupabaseConfigured } from './supabase.js'
 
 // ─── Clean up any conflicting legacy local mock storage ─────────────────────
 try {
@@ -212,38 +212,85 @@ export const exams = {
     }
   },
 
+  _fetchProfilesMap: async (creatorIds) => {
+    if (!isSupabaseConfigured || !supabase) return {}
+    const validIds = Array.from(new Set(creatorIds)).filter(Boolean)
+    if (validIds.length === 0) return {}
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, display_name, fullname, username')
+        .in('id', validIds)
+      if (error) {
+        console.warn('[DB] exams._fetchProfilesMap error:', error)
+        return {}
+      }
+      const map = {}
+      for (const p of data || []) {
+        map[p.id] = p
+      }
+      return map
+    } catch (err) {
+      console.warn('[DB] exams._fetchProfilesMap exception:', err)
+      return {}
+    }
+  },
+
   list: async () => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
     const { data, error } = await supabase
       .from('exams')
-      .select('*, profiles:created_by(id, display_name, fullname, username)')
+      .select('*')
       .order('created_at', { ascending: false })
 
-    if (error) return { data: [], error }
-    return { data: (data || []).map(exams._attachRelations), error: null }
+    if (error) {
+      console.error('[DB] exams.list error:', error)
+      return { data: [], error }
+    }
+    const examList = data || []
+    const creatorIds = examList.map(e => e.created_by).filter(Boolean)
+    const profMap = await exams._fetchProfilesMap(creatorIds)
+    const attached = examList.map(e => {
+      const prof = profMap[e.created_by]
+      return exams._attachRelations({ ...e, profiles: prof })
+    })
+    return { data: attached, error: null }
   },
 
   listByTeacher: async (teacherId) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
     const { data, error } = await supabase
       .from('exams')
-      .select('*, profiles:created_by(id, display_name, fullname, username)')
+      .select('*')
       .eq('created_by', teacherId)
       .order('created_at', { ascending: false })
 
-    if (error) return { data: [], error }
-    return { data: (data || []).map(exams._attachRelations), error: null }
+    if (error) {
+      console.error('[DB] exams.listByTeacher error:', error)
+      return { data: [], error }
+    }
+    const examList = data || []
+    const profMap = await exams._fetchProfilesMap([teacherId])
+    const attached = examList.map(e => {
+      const prof = profMap[e.created_by]
+      return exams._attachRelations({ ...e, profiles: prof })
+    })
+    return { data: attached, error: null }
   },
 
   getById: async (id) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
     const { data, error } = await supabase
       .from('exams')
-      .select('*, profiles:created_by(id, display_name, fullname, username)')
+      .select('*')
       .eq('id', id)
       .maybeSingle()
 
     if (error || !data) return { data: null, error: error || { message: 'Ujian tidak ditemukan' } }
+    if (data.created_by) {
+      const profMap = await exams._fetchProfilesMap([data.created_by])
+      data.profiles = profMap[data.created_by] || null
+    }
     return { data: exams._attachRelations(data), error: null }
   },
 
@@ -264,6 +311,10 @@ export const exams = {
       .single()
 
     if (error) return { data: null, error }
+    if (created?.created_by) {
+      const profMap = await exams._fetchProfilesMap([created.created_by])
+      created.profiles = profMap[created.created_by] || null
+    }
     return { data: exams._attachRelations(created), error: null }
   },
 
@@ -277,6 +328,10 @@ export const exams = {
       .single()
 
     if (error) return { data: null, error }
+    if (updated?.created_by) {
+      const profMap = await exams._fetchProfilesMap([updated.created_by])
+      updated.profiles = profMap[updated.created_by] || null
+    }
     return { data: exams._attachRelations(updated), error: null }
   },
 
@@ -290,12 +345,22 @@ export const exams = {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
     const { data, error } = await supabase
       .from('exams')
-      .select('*, profiles:created_by(id, display_name, fullname, username)')
+      .select('*')
       .eq('status', 'published')
       .order('created_at', { ascending: false })
 
-    if (error) return { data: [], error }
-    return { data: (data || []).map(exams._attachRelations), error: null }
+    if (error) {
+      console.error('[DB] exams.listPublished error:', error)
+      return { data: [], error }
+    }
+    const examList = data || []
+    const creatorIds = examList.map(e => e.created_by).filter(Boolean)
+    const profMap = await exams._fetchProfilesMap(creatorIds)
+    const attached = examList.map(e => {
+      const prof = profMap[e.created_by]
+      return exams._attachRelations({ ...e, profiles: prof })
+    })
+    return { data: attached, error: null }
   }
 }
 
@@ -572,27 +637,64 @@ export const results = {
     return { data: data || null, error }
   },
 
+  _fetchStudentProfilesMap: async (studentIds) => {
+    if (!isSupabaseConfigured || !supabase) return {}
+    const validIds = Array.from(new Set(studentIds)).filter(Boolean)
+    if (validIds.length === 0) return {}
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, display_name, fullname, username, class_section')
+        .in('id', validIds)
+      if (error) {
+        console.warn('[DB] results._fetchStudentProfilesMap error:', error)
+        return {}
+      }
+      const map = {}
+      for (const p of data || []) {
+        map[p.id] = p
+      }
+      return map
+    } catch (err) {
+      console.warn('[DB] results._fetchStudentProfilesMap exception:', err)
+      return {}
+    }
+  },
+
   listByExam: async (examId) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
     const { data, error } = await supabase
       .from('results')
-      .select('*, profiles:student_id(id, display_name, fullname, username, class_section)')
+      .select('*')
       .eq('exam_id', examId)
       .order('created_at', { ascending: false })
 
-    if (error) return { data: [], error }
-    return { data: (data || []).map(results._attachRelations), error: null }
+    if (error) {
+      console.error('[DB] results.listByExam error:', error)
+      return { data: [], error }
+    }
+    const studentIds = (data || []).map(r => r.student_id).filter(Boolean)
+    const profMap = await results._fetchStudentProfilesMap(studentIds)
+    const attached = (data || []).map(r => {
+      const p = profMap[r.student_id]
+      return results._attachRelations({ ...r, profiles: p })
+    })
+    return { data: attached, error: null }
   },
 
   getById: async (id) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
     const { data, error } = await supabase
       .from('results')
-      .select('*, profiles:student_id(id, display_name, fullname, username, class_section)')
+      .select('*')
       .eq('id', id)
       .maybeSingle()
 
     if (error || !data) return { data: null, error: error || { message: 'Hasil tidak ditemukan' } }
+    if (data.student_id) {
+      const profMap = await results._fetchStudentProfilesMap([data.student_id])
+      data.profiles = profMap[data.student_id] || null
+    }
     return { data: results._attachRelations(data), error: null }
   },
 
@@ -699,10 +801,14 @@ export const localDb = {
     if (isSupabaseConfigured && supabase && teacherExamIds.length > 0) {
       const [sessRes, resultsRes] = await Promise.all([
         supabase.from('exam_sessions').select('*').in('exam_id', teacherExamIds),
-        supabase.from('results').select('*, profiles:student_id(id, display_name, fullname, username, class_section)').in('exam_id', teacherExamIds)
+        supabase.from('results').select('*').in('exam_id', teacherExamIds)
       ])
       if (sessRes.data) relevantSessions = sessRes.data
-      if (resultsRes.data) relevantResults = resultsRes.data.map(r => results._attachRelations(r))
+      if (resultsRes.data) {
+        const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
+        const profMap = await results._fetchStudentProfilesMap(studentIds)
+        relevantResults = resultsRes.data.map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+      }
     }
 
     const { data: userList } = await users.list()
@@ -740,10 +846,14 @@ export const localDb = {
     if (isSupabaseConfigured && supabase) {
       const [sessRes, resultsRes] = await Promise.all([
         supabase.from('exam_sessions').select('id', { count: 'exact', head: true }),
-        supabase.from('results').select('*, profiles:student_id(id, display_name, fullname, username, class_section)').order('created_at', { ascending: false }).limit(10)
+        supabase.from('results').select('*').order('created_at', { ascending: false }).limit(10)
       ])
       totalSessions = sessRes.count ?? 0
-      if (resultsRes.data) recentResults = resultsRes.data.map(r => results._attachRelations(r))
+      if (resultsRes.data) {
+        const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
+        const profMap = await results._fetchStudentProfilesMap(studentIds)
+        recentResults = resultsRes.data.map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+      }
     }
 
     const sortedExams = [...examItems]
@@ -775,10 +885,14 @@ export const localDb = {
     if (isSupabaseConfigured && supabase) {
       const [sessRes, resultsRes] = await Promise.all([
         supabase.from('exam_sessions').select('id', { count: 'exact', head: true }),
-        supabase.from('results').select('*, profiles:student_id(id, display_name, fullname, username, class_section)').order('created_at', { ascending: false }).limit(20)
+        supabase.from('results').select('*').order('created_at', { ascending: false }).limit(20)
       ])
       totalSessions = sessRes.count ?? 0
-      if (resultsRes.data) recentResults = resultsRes.data.map(r => results._attachRelations(r))
+      if (resultsRes.data) {
+        const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
+        const profMap = await results._fetchStudentProfilesMap(studentIds)
+        recentResults = resultsRes.data.map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+      }
     }
 
     return {

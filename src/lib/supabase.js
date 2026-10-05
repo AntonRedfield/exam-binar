@@ -9,8 +9,8 @@ const DEFAULT_SUPABASE_KEY = 'sb_publishable_t1Ye4udfVDBd8iSJZjQ9HQ_HpebFnks'
 // intentionally NOT read anymore. A stale copy of them on the Vercel deployment
 // pointed the app at a different Supabase project, which made every login fail.
 // To override the project, set these (new) variables instead:
-const supabaseUrl = import.meta.env.VITE_BOLOS_SUPABASE_URL || DEFAULT_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_BOLOS_SUPABASE_KEY || DEFAULT_SUPABASE_KEY
+const supabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BOLOS_SUPABASE_URL) || DEFAULT_SUPABASE_URL
+const supabaseAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BOLOS_SUPABASE_KEY) || DEFAULT_SUPABASE_KEY
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
