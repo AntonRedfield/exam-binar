@@ -56,16 +56,15 @@ export default function Login() {
           <div className="brand-top-title">
             Sistem Asesmen Terpadu
           </div>
-          <div className="login-logo-ring" style={{ width: '100px', height: '100px', margin: '0 auto 0.75rem', padding: '6px' }}>
+          <div className="login-logo-wrap">
             <img
               src={`${import.meta.env.BASE_URL}Logo_SNT.webp`}
-              alt="Logo SNT 10 Kupang"
+              alt="Logo Sekolah Nasional Terintegrasi 10 Kupang"
               className="login-logo-img"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             />
           </div>
-          <h1 className="login-title" style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1b3361', margin: 0 }}>
-            SNT 10 Kupang
+          <h1 className="login-title">
+            Sekolah Nasional Terintegrasi 10 Kupang
           </h1>
         </div>
 
