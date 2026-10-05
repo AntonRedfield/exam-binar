@@ -81,7 +81,7 @@ export default function TeacherDashboard() {
         {/* ── Summary Stats ─────────────────────────────── */}
         <div className="stat-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
           {[
-            { label: 'Total Ujian', value: stats.totalExams, color: '#a78bfa', icon: <BookOpen size={22} /> },
+            { label: 'Total Ujian', value: stats.totalExams, color: '#1b3361', icon: <BookOpen size={22} /> },
             { label: 'Ujian Aktif', value: stats.activeExams, color: 'var(--success)', icon: <Activity size={22} /> },
             { label: 'Draft', value: stats.draftExams, color: 'var(--text-muted)', icon: <FileText size={22} /> },
             { label: 'Total Sesi', value: stats.totalSessions, color: 'var(--accent)', icon: <Zap size={22} /> },
@@ -156,7 +156,7 @@ export default function TeacherDashboard() {
         <div className="dashboard-quicklinks">
           {[
             { label: 'Buat Ujian Baru', desc: 'Buat ujian atau kuis dengan berbagai tipe soal', icon: <Plus size={24} />, color: 'var(--gold-darker)', to: '/teacher/create' },
-            { label: 'Daftar Ujian', desc: 'Kelola semua ujian yang telah dibuat', icon: <BookOpen size={24} />, color: '#a78bfa', to: '/teacher/exams' },
+            { label: 'Daftar Ujian', desc: 'Kelola semua ujian yang telah dibuat', icon: <BookOpen size={24} />, color: '#1b3361', to: '/teacher/exams' },
             { label: 'Kelola Siswa', desc: 'Lihat dan kelola data siswa terdaftar', icon: <Users size={24} />, color: 'var(--accent)', to: '/teacher/students' },
             { label: 'Monitor & Hasil', desc: 'Pantau siswa dan lihat hasil ujian', icon: <Activity size={24} />, color: 'var(--success)', to: '/teacher/exams' },
           ].map(link => (

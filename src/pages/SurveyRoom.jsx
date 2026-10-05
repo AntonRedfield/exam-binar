@@ -234,7 +234,7 @@ export default function SurveyRoom() {
           }}>
             <CheckCircle size={40} color="var(--success)" />
           </div>
-          <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', fontFamily: 'Cambria, "Times New Roman", serif' }}>Terima Kasih!</h1>
+          <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', fontFamily: "'Inter', sans-serif", fontWeight: 700 }}>Terima Kasih!</h1>
           <p className="text-muted" style={{ marginBottom: '1.5rem', fontSize: '0.95rem' }}>
             Jawaban survei "{exam.title}" telah berhasil dikirim.
           </p>
@@ -294,7 +294,7 @@ export default function SurveyRoom() {
       <main style={{ maxWidth: 720, margin: '0 auto', padding: '2rem 1rem' }}>
         {/* Title card */}
         <div className="card survey-title-card" style={{ marginBottom: '1.5rem', borderTop: '4px solid var(--accent)' }}>
-          <h1 style={{ fontSize: '1.35rem', marginBottom: '0.25rem', fontFamily: 'Cambria, "Times New Roman", serif' }}>{exam.title}</h1>
+          <h1 style={{ fontSize: '1.35rem', marginBottom: '0.25rem', fontFamily: "'Inter', sans-serif", fontWeight: 700 }}>{exam.title}</h1>
           {exam.information && (
             <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '0.5rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
               {exam.information}

@@ -284,7 +284,7 @@ export default function SurveyResponses() {
           {new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
         <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain', marginBottom: '0.5rem' }} />
-        <h1 style={{ margin: 0, fontSize: '1.6rem', fontFamily: 'Cambria, "Times New Roman", serif', color: 'black' }}>Laporan Respons Survei</h1>
+        <h1 style={{ margin: 0, fontSize: '1.6rem', fontFamily: "'Inter', sans-serif", color: 'black' }}>Laporan Respons Survei</h1>
         <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'normal', color: 'black' }}>{exam?.title}</h2>
         <p style={{ margin: '0.25rem 0 0', fontSize: '10pt', color: '#555' }}>
           {respondedCount} respons · {missingUsers.length} belum mengisi · Tingkat respons: {responsePct}%

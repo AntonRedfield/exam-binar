@@ -108,7 +108,7 @@ export default function StudentHome() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <img src={`${import.meta.env.BASE_URL}binar-logo.png`} alt="BINAR Logo" style={{ height: 80, objectFit: 'contain' }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontFamily: 'Cambria, "Times New Roman", serif', fontWeight: 700, fontSize: '1.25rem' }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: '1.25rem', color: '#1b3361' }}>
               BOLOS
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '-0.1rem' }} className="text-muted">

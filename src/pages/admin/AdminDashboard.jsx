@@ -101,7 +101,7 @@ export default function AdminDashboard() {
           {[
             { label: 'Total Siswa', value: stats.totalUsers, color: 'var(--accent)', icon: <GraduationCap size={22} /> },
             { label: 'Total Guru', value: stats.totalTeachers, color: 'var(--gold-darker)', icon: <Users size={22} /> },
-            { label: 'Total Ujian', value: stats.totalExams, color: '#a78bfa', icon: <BookOpen size={22} /> },
+            { label: 'Total Ujian', value: stats.totalExams, color: '#1b3361', icon: <BookOpen size={22} /> },
             { label: 'Ujian Aktif', value: stats.activeExams, color: 'var(--success)', icon: <Activity size={22} /> },
             { label: 'Rata-rata Nilai', value: `${stats.avgScore}%`, color: Number(stats.avgScore) >= 60 ? 'var(--success)' : 'var(--danger)', icon: <TrendingUp size={22} /> },
             { label: 'Total Pelanggaran', value: stats.totalViolations, color: 'var(--warning)', icon: <AlertTriangle size={22} /> },
@@ -200,7 +200,7 @@ export default function AdminDashboard() {
         <div className="dashboard-quicklinks">
           {[
             { label: 'Kelola Pengguna', desc: 'Tambah, edit, atau hapus akun siswa & guru', icon: <Users size={24} />, color: 'var(--accent)', to: '/admin/users' },
-            { label: 'Semua Ujian', desc: 'Lihat, publish, atau hapus ujian dari semua guru', icon: <BookOpen size={24} />, color: '#a78bfa', to: '/admin/exams' },
+            { label: 'Semua Ujian', desc: 'Lihat, publish, atau hapus ujian dari semua guru', icon: <BookOpen size={24} />, color: '#1b3361', to: '/admin/exams' },
             { label: 'Analitik Sekolah', desc: 'Statistik lengkap & distribusi nilai', icon: <BarChart2 size={24} />, color: 'var(--gold-darker)', to: '/admin/analytics' },
             { label: 'Dashboard Guru', desc: 'Akses fitur guru: buat ujian, monitor, hasil', icon: <Plus size={24} />, color: 'var(--success)', to: '/teacher/exams' },
           ].map(link => (

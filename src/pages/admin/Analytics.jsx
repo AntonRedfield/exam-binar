@@ -51,7 +51,7 @@ export default function Analytics() {
           {[
             { label: 'Total Siswa', value: stats.totalUsers, color: 'var(--accent)', icon: '🎓' },
             { label: 'Total Guru', value: stats.totalTeachers, color: 'var(--gold-darker)', icon: '👨‍🏫' },
-            { label: 'Total Ujian', value: stats.totalExams, color: '#a78bfa', icon: '📋' },
+            { label: 'Total Ujian', value: stats.totalExams, color: '#1b3361', icon: '📋' },
             { label: 'Total Sesi', value: stats.totalSessions, color: 'var(--success)', icon: '🖥️' },
             { label: 'Rata-rata Nilai', value: `${stats.avgScore}%`, color: stats.avgScore >= 60 ? 'var(--success)' : 'var(--danger)', icon: '📊' },
             { label: 'Total Pelanggaran', value: stats.totalViolations, color: 'var(--warning)', icon: '⚠️' },

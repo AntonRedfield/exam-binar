@@ -458,7 +458,7 @@ export default function ExamRoom() {
       <div className="exam-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           {isQuiz ? <Zap size={18} color="var(--gold)" /> : <BookOpen size={18} color="var(--gold)" />}
-          <span style={{ fontWeight: 700, fontFamily: 'Cambria, "Times New Roman", serif' }}>{exam?.title}</span>
+          <span style={{ fontWeight: 700, fontFamily: "'Inter', sans-serif" }}>{exam?.title}</span>
           {isQuiz && <span className="badge badge-active" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>KUIS</span>}
           {/* Monitoring level badge */}
           <span style={{ ...getMonitoringBadgeStyle(monitorLevel), fontSize: '0.65rem', padding: '0.15rem 0.45rem' }}>
@@ -654,7 +654,7 @@ export default function ExamRoom() {
               color: quizFeedback.status === 'correct' ? 'var(--success)' : quizFeedback.status === 'wrong' ? 'var(--danger)' : 'var(--text)',
               marginBottom: '0.5rem',
               fontWeight: 800,
-              fontFamily: 'Cambria, "Times New Roman", serif'
+              fontFamily: "'Inter', sans-serif"
             }}>
               {quizFeedback.status === 'correct' ? 'Selamat!' : quizFeedback.status === 'wrong' ? 'Salah!' : 'Perhatian'}
             </h2>
@@ -709,7 +709,7 @@ export default function ExamRoom() {
             }}>
               <AlertTriangle size={36} color="var(--danger)" />
             </div>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--danger)', fontFamily: 'Cambria, "Times New Roman", serif' }}>
+            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--danger)', fontFamily: "'Inter', sans-serif" }}>
               Waktu Habis!
             </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '1.5rem' }}>

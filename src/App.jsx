@@ -73,9 +73,9 @@ function AuthProvider({ children }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#f8fafc',
+        background: '#ffffff',
       }}>
-        <div className="spinner" style={{ width: 40, height: 40, borderColor: '#cbd5e1', borderTopColor: '#22c55e' }} />
+        <div className="spinner" style={{ width: 40, height: 40, borderColor: '#e2e8f0', borderTopColor: '#1b3361' }} />
       </div>
     )
   }
