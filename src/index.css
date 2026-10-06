@@ -97,6 +97,199 @@ h3 { font-size: 1.2rem; font-weight: 600; }
   border-bottom: 1px solid var(--border);
 }
 
+/* ─── COLLAPSIBLE CARD SECTIONS (LV.3 & LV.4) ────────────────────────────── */
+.card-collapsible {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-header-clickable {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  margin: -0.35rem -0.6rem 0;
+}
+
+.card-header-clickable:hover {
+  background: rgba(27, 51, 97, 0.04);
+}
+
+.card-header-clickable.collapsed {
+  margin-bottom: 0;
+  padding-bottom: 0.35rem;
+  border-bottom: none;
+}
+
+.card-collapse-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(27, 51, 97, 0.05);
+  color: var(--accent);
+  transition: transform 0.2s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.card-header-clickable:hover .card-collapse-icon {
+  background: rgba(27, 51, 97, 0.1);
+  color: var(--gold-dark);
+}
+
+.card-collapsible-body {
+  animation: fadeInDown 0.2s ease;
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.section-summary-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+/* Upper-Right Card Collapse Toggle Button */
+.btn-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid rgba(27, 51, 97, 0.16);
+  background: #ffffff;
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+.btn-collapse-toggle:hover {
+  background: rgba(27, 51, 97, 0.05);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 2px 5px rgba(27, 51, 97, 0.1);
+  transform: translateY(-1px);
+}
+
+.btn-collapse-toggle:active {
+  transform: translateY(0);
+}
+
+.btn-collapse-toggle.collapsed {
+  background: rgba(27, 51, 97, 0.06);
+  border-color: rgba(27, 51, 97, 0.22);
+  color: var(--accent);
+}
+
+/* ─── MONITORING GUIDE BOX (FORMATTED AS DESKRIPSI APLIKASI) ──────────────── */
+.monitoring-guide-box {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid rgba(27, 51, 97, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.monitoring-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.monitoring-guide-header h4 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.monitoring-guide-card {
+  padding: 1rem;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  margin-bottom: 0.875rem;
+  transition: border-color 0.15s ease;
+}
+
+.monitoring-guide-card:last-child {
+  margin-bottom: 0;
+}
+
+.monitoring-guide-level-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.monitoring-guide-text {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.monitoring-guide-rules-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.monitoring-guide-rule-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: #ffffff;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(27, 51, 97, 0.08);
+}
+
+.monitoring-guide-philosophy {
+  margin-top: 0.6rem;
+  margin-bottom: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(245, 166, 35, 0.08);
+  border-left: 3px solid var(--gold);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: #1e293b;
+}
+
 /* ─── BUTTONS ────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;

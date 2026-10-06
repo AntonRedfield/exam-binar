@@ -18,6 +18,7 @@ import QuestionNavigator from '../components/exam/QuestionNavigator'
 import ViolationWarning from '../components/exam/ViolationWarning'
 import ScreenFreezeOverlay from '../components/exam/ScreenFreezeOverlay'
 import FaceDetectionStatus from '../components/exam/FaceDetectionStatus'
+import ListeningPlayer from '../components/exam/ListeningPlayer'
 import { 
   MONITORING_LEVELS,
   shouldTriggerFreeze,
@@ -600,6 +601,18 @@ export default function ExamRoom() {
                     </div>
                   )}
                 </div>
+
+                {q.audio_url && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <ListeningPlayer
+                      questionId={q.id}
+                      audioUrl={q.audio_url}
+                      studentId={user?.id}
+                      maxPlays={q.max_plays || 1}
+                      allowPause={Boolean(q.allow_pause)}
+                    />
+                  </div>
+                )}
 
                 {q.image_url && (
                   <div style={{ marginBottom: '1rem', textAlign: 'center' }}>

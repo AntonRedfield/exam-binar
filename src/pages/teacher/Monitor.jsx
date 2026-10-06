@@ -16,7 +16,9 @@ import {
   ShieldAlert,
   X,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
@@ -71,6 +73,7 @@ export default function Monitor() {
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
 
   // Exam-level token management state
+  const [isTokenPanelCollapsed, setIsTokenPanelCollapsed] = useState(false)
   const [examTokenCopied, setExamTokenCopied] = useState(false)
   const [isManualExamToken, setIsManualExamToken] = useState(false)
   const [manualExamTokenInput, setManualExamTokenInput] = useState('')
@@ -313,19 +316,23 @@ export default function Monitor() {
         </div>
 
         {/* Exam Returnee Token Management Panel */}
-        <div className="card" style={{
+        <div className={`card card-collapsible ${isTokenPanelCollapsed ? 'collapsed' : ''}`} style={{
           marginBottom: '1.5rem',
           border: '1px solid rgba(27, 51, 97, 0.15)',
           background: 'linear-gradient(135deg, rgba(27, 51, 97, 0.03) 0%, rgba(245, 166, 35, 0.04) 100%)',
           borderRadius: '14px',
-          padding: '1.25rem'
+          padding: isTokenPanelCollapsed ? '0.85rem 1.25rem' : '1.25rem'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
+          <div 
+            className={`card-header-clickable ${isTokenPanelCollapsed ? 'collapsed' : ''}`}
+            onClick={() => setIsTokenPanelCollapsed(prev => !prev)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
               <div style={{
-                width: 44,
-                height: 44,
-                borderRadius: '12px',
+                width: 38,
+                height: 38,
+                borderRadius: '10px',
                 background: '#1b3361',
                 color: '#fff',
                 display: 'flex',
@@ -333,125 +340,153 @@ export default function Monitor() {
                 justifyContent: 'center',
                 flexShrink: 0
               }}>
-                <Key size={22} />
+                <Key size={18} />
               </div>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1b3361' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#1b3361' }}>
                     Token Masuk Kembali (Returnee Token)
                   </h3>
                   <span className="badge badge-gold" style={{ fontSize: '0.68rem' }}>Lv.3 &amp; Lv.4 User</span>
+                  {isTokenPanelCollapsed && (
+                    <span className="section-summary-preview">
+                      {exam?.returnee_token ? `Token: ${exam.returnee_token}` : 'Belum Ada Token'}
+                    </span>
+                  )}
                 </div>
-                <p className="text-muted text-xs" style={{ margin: '0.25rem 0 0', maxWidth: 620, lineHeight: 1.4 }}>
-                  Siswa yang terputus, logout, atau ganti perangkat diwajibkan memasukkan token 6 karakter (angka &amp; huruf kecil) untuk melanjutkan ujian.
-                </p>
+                {!isTokenPanelCollapsed && (
+                  <p className="text-muted text-xs" style={{ margin: '0.25rem 0 0', maxWidth: 620, lineHeight: 1.4 }}>
+                    Siswa yang terputus, logout, atau ganti perangkat diwajibkan memasukkan token 6 karakter (angka &amp; huruf kecil) untuk melanjutkan ujian.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Token Action Controls */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              {exam?.returnee_token ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#ffffff', padding: '0.4rem 0.6rem', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                  <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>Token Ujian:</span>
-                  <span className="token-display-badge">
-                    {exam.returnee_token}
-                  </span>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={handleCopyExamToken}
-                    title="Salin Token"
-                    style={{ padding: '0.25rem 0.5rem' }}
-                  >
-                    {examTokenCopied ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm text-danger"
-                    onClick={handleClearExamToken}
-                    disabled={examTokenLoading}
-                    title="Hapus Token"
-                    style={{ padding: '0.25rem 0.5rem' }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ) : (
-                <span className="badge badge-draft" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}>
-                  Belum ada token ujian aktif
-                </span>
-              )}
-
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={handleAutoGenerateExamToken}
-                disabled={examTokenLoading}
-                title="Generate token acak 6 digit"
-                style={{ background: '#ffffff', border: '1px solid #cbd5e1' }}
-              >
-                <Sparkles size={14} color="#f59e0b" /> Auto-Generate
-              </button>
-
-              <button
-                className={`btn btn-sm ${isManualExamToken ? 'btn-gold' : 'btn-ghost'}`}
-                onClick={() => {
-                  setIsManualExamToken(!isManualExamToken)
-                  setExamTokenError('')
-                  setManualExamTokenInput(exam?.returnee_token || '')
-                }}
-                disabled={examTokenLoading}
-                style={!isManualExamToken ? { background: '#ffffff', border: '1px solid #cbd5e1' } : {}}
-              >
-                <Key size={14} /> {isManualExamToken ? 'Batal Manual' : 'Input Manual'}
-              </button>
-            </div>
+            <button
+              type="button"
+              className={`btn-collapse-toggle ${isTokenPanelCollapsed ? 'collapsed' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsTokenPanelCollapsed(prev => !prev)
+              }}
+              title={isTokenPanelCollapsed ? 'Bentangkan panel token' : 'Ciutkan panel token'}
+            >
+              <span>{isTokenPanelCollapsed ? 'Bentangkan' : 'Ciutkan'}</span>
+              {isTokenPanelCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+            </button>
           </div>
 
-          {/* Manual Input Form */}
-          {isManualExamToken && (
-            <div style={{
-              marginTop: '1rem',
-              padding: '1rem',
-              background: '#ffffff',
-              borderRadius: '10px',
-              border: '1px solid #e2e8f0',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.75rem'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b' }}>
-                  Ketik 6 Karakter Token (0-9, a-z):
-                </span>
-                <input
-                  type="text"
-                  className="token-digit-input"
-                  style={{ maxWidth: 220, padding: '0.4rem 0.6rem', fontSize: '1.2rem' }}
-                  placeholder="contoh: 7b3x9a"
-                  maxLength={6}
-                  value={manualExamTokenInput}
-                  onChange={(e) => {
-                    const clean = sanitizeReturneeToken(e.target.value)
-                    setManualExamTokenInput(clean)
-                    setExamTokenError('')
-                  }}
-                  autoFocus
-                />
-                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                  ({manualExamTokenInput.length}/6)
-                </span>
-                <button
-                  className="btn btn-gold btn-sm"
-                  onClick={handleSaveManualExamToken}
-                  disabled={examTokenLoading || manualExamTokenInput.length !== 6}
-                >
-                  <Check size={14} /> Terapkan Token
-                </button>
+          {!isTokenPanelCollapsed && (
+            <div className="card-collapsible-body" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(27, 51, 97, 0.1)' }}>
+              {/* Token Action Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {exam?.returnee_token ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#ffffff', padding: '0.4rem 0.6rem', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                      <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>Token Ujian:</span>
+                      <span className="token-display-badge">
+                        {exam.returnee_token}
+                      </span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={handleCopyExamToken}
+                        title="Salin Token"
+                        style={{ padding: '0.25rem 0.5rem' }}
+                      >
+                        {examTokenCopied ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm text-danger"
+                        onClick={handleClearExamToken}
+                        disabled={examTokenLoading}
+                        title="Hapus Token"
+                        style={{ padding: '0.25rem 0.5rem' }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="badge badge-draft" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}>
+                      Belum ada token ujian aktif
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={handleAutoGenerateExamToken}
+                    disabled={examTokenLoading}
+                    title="Generate token acak 6 digit"
+                    style={{ background: '#ffffff', border: '1px solid #cbd5e1' }}
+                  >
+                    <Sparkles size={14} color="#f59e0b" /> Auto-Generate
+                  </button>
+
+                  <button
+                    className={`btn btn-sm ${isManualExamToken ? 'btn-gold' : 'btn-ghost'}`}
+                    onClick={() => {
+                      setIsManualExamToken(!isManualExamToken)
+                      setExamTokenError('')
+                      setManualExamTokenInput(exam?.returnee_token || '')
+                    }}
+                    disabled={examTokenLoading}
+                    style={!isManualExamToken ? { background: '#ffffff', border: '1px solid #cbd5e1' } : {}}
+                  >
+                    <Key size={14} /> {isManualExamToken ? 'Batal Manual' : 'Input Manual'}
+                  </button>
+                </div>
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                * Karakter otomatis diubah ke huruf kecil dan simbol dibersihkan. Hanya angka dan huruf alfabet kecil diperbolehkan.
-              </div>
-              {examTokenError && (
-                <div style={{ color: '#ef4444', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <AlertTriangle size={14} /> {examTokenError}
+
+              {/* Manual Input Form */}
+              {isManualExamToken && (
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '1rem',
+                  background: '#ffffff',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b' }}>
+                      Ketik 6 Karakter Token (0-9, a-z):
+                    </span>
+                    <input
+                      type="text"
+                      className="token-digit-input"
+                      style={{ maxWidth: 220, padding: '0.4rem 0.6rem', fontSize: '1.2rem' }}
+                      placeholder="contoh: 7b3x9a"
+                      maxLength={6}
+                      value={manualExamTokenInput}
+                      onChange={(e) => {
+                        const clean = sanitizeReturneeToken(e.target.value)
+                        setManualExamTokenInput(clean)
+                        setExamTokenError('')
+                      }}
+                      autoFocus
+                    />
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                      ({manualExamTokenInput.length}/6)
+                    </span>
+                    <button
+                      className="btn btn-gold btn-sm"
+                      onClick={handleSaveManualExamToken}
+                      disabled={examTokenLoading || manualExamTokenInput.length !== 6}
+                    >
+                      <Check size={14} /> Terapkan Token
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    * Karakter otomatis diubah ke huruf kecil dan simbol dibersihkan. Hanya angka dan huruf alfabet kecil diperbolehkan.
+                  </div>
+                  {examTokenError && (
+                    <div style={{ color: '#ef4444', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <AlertTriangle size={14} /> {examTokenError}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

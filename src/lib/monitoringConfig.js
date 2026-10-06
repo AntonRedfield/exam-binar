@@ -12,13 +12,16 @@ export const MONITORING_LEVELS = {
     restrictions: [],
     hasPenalty: false,
     hasFaceDetection: false,
-    description: 'Tidak terdapat batasan aktivitas maupun sanksi bagi pengguna. Mode ini bersifat bebas dan tanpa pengawasan ketat.',
+    description: 'Tidak terdapat batasan aktivitas maupun sanksi bagi pengguna. Mode ini bersifat bebas dan tanpa pengawasan.',
+    guide: {
+      title: 'Level 1 - Casual Mode',
+      overview: 'Tidak terdapat batasan aktivitas maupun sanksi bagi pengguna. Mode ini bersifat bebas dan tanpa pengawasan.',
+    },
     briefRules: [
       'Tidak terdapat batasan aktivitas maupun sanksi bagi pengguna.',
-      'Mode ini bersifat bebas dan tanpa pengawasan ketat.',
-      'Jawaban disimpan otomatis setiap 10 detik.',
+      'Mode ini bersifat bebas dan tanpa pengawasan.',
     ],
-    teacherInfo: 'Tidak terdapat batasan aktivitas maupun sanksi bagi pengguna. Mode ini bersifat bebas dan tanpa pengawasan ketat.',
+    teacherInfo: 'Tidak terdapat batasan aktivitas maupun sanksi bagi pengguna. Mode ini bersifat bebas dan tanpa pengawasan.',
   },
   2: {
     id: 2,
@@ -30,13 +33,16 @@ export const MONITORING_LEVELS = {
     restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
     hasPenalty: false,
     hasFaceDetection: false,
-    description: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, serta keluar dari aplikasi. Pelanggaran dicatat.',
+    description: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, serta keluar dari aplikasi. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
+    guide: {
+      title: 'Level 2 - Scout Mode',
+      overview: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, serta keluar dari aplikasi. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
+    },
     briefRules: [
       'Pengguna dilarang melakukan klik kanan dan klik ganda.',
       'Dilarang berpindah tab atau jendela.',
       'Dilarang keluar dari aplikasi.',
-      'Setiap pelanggaran akan dicatat oleh sistem.',
-      'Tidak ada sanksi langsung yang diberikan.',
+      'Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
     ],
     teacherInfo: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, serta keluar dari aplikasi. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
   },
@@ -50,16 +56,23 @@ export const MONITORING_LEVELS = {
     restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
     hasPenalty: true,
     hasFaceDetection: false,
-    description: 'Menerapkan larangan aktivitas yang sama dengan Mode Scout. Namun, sistem sanksi berlaku setiap terjadi 3 kali pelanggaran.',
+    description: 'Menerapkan larangan aktivitas yang sama dengan Mode Scout. Namun, sistem sanksi berlaku setiap terjadi 3 kali pelanggaran dalam bentuk pembekuan layar (screen freeze).',
+    guide: {
+      title: 'Level 3 - Vanguard Mode',
+      overview: 'Menerapkan larangan aktivitas yang sama dengan Mode Scout. Namun, sistem sanksi berlaku setiap terjadi 3 kali pelanggaran dalam bentuk pembekuan layar (screen freeze):',
+      rules: [
+        { label: 'Pelanggaran tahap ke-1', desc: 'Pembekuan selama 10 detik.' },
+        { label: 'Pelanggaran tahap ke-2', desc: 'Pembekuan selama 20 detik.' },
+        { label: 'Pelanggaran tahap ke-3', desc: 'Pembekuan selama 30 detik.' },
+        { label: 'Mode Kuis', desc: 'Pembekuan layar selama 5 detik untuk setiap pelanggaran.' },
+      ]
+    },
     briefRules: [
       'Menerapkan larangan aktivitas yang sama dengan Mode Scout.',
-      'Setiap 3 kali pelanggaran memicu sanksi pembekuan layar (screen freeze).',
-      'a. Pelanggaran tahap ke-1: Pembekuan selama 10 detik.',
-      'b. Pelanggaran tahap ke-2: Pembekuan selama 20 detik.',
-      'c. Pelanggaran tahap ke-3: Pembekuan selama 30 detik.',
-      'd. Mode Kuis: Pembekuan layar selama 5 detik untuk setiap pelanggaran.',
+      'Sanksi pembekuan layar berlaku setiap 3 kali pelanggaran.',
+      'Pelanggaran ke-1: 10s, ke-2: 20s, ke-3: 30s. Kuis: 5s per pelanggaran.',
     ],
-    teacherInfo: 'Menerapkan larangan aktivitas yang sama dengan Mode Scout. Namun, sistem sanksi berlaku setiap terjadi 3 kali pelanggaran dalam bentuk pembekuan layar (screen freeze):\na. Pelanggaran tahap ke-1: Pembekuan selama 10 detik.\nb. Pelanggaran tahap ke-2: Pembekuan selama 20 detik.\nc. Pelanggaran tahap ke-3: Pembekuan selama 30 detik.\nd. Mode Kuis: Pembekuan layar selama 5 detik untuk setiap pelanggaran.',
+    teacherInfo: 'Menerapkan larangan aktivitas yang sama dengan Mode Scout. Namun, sistem sanksi berlaku setiap terjadi 3 kali pelanggaran dalam bentuk pembekuan layar (screen freeze):\n• Pelanggaran tahap ke-1: Pembekuan selama 10 detik.\n• Pelanggaran tahap ke-2: Pembekuan selama 20 detik.\n• Pelanggaran tahap ke-3: Pembekuan selama 30 detik.\n• Mode Kuis: Pembekuan layar selama 5 detik untuk setiap pelanggaran.',
     freezeDurations: { exam: 10, quiz: 5 }, // exam: base * offense, quiz: flat
   },
   4: {
@@ -73,14 +86,25 @@ export const MONITORING_LEVELS = {
     hasPenalty: true,
     hasFaceDetection: true,
     fullName: 'Smart Camera Automatic Recognition System',
-    description: 'Tingkatan tertinggi pengawasan berbasis deteksi wajah dengan Smart Camera Automatic Recognition System (STRIX). Terinspirasi dari burung hantu (Strix) sebagai simbol mata yang selalu waspada dan presisi.',
+    description: 'STRIX adalah Bahasa Latin yang berarti burung hantu, yang terkenal akan matanya yang selalu siaga, tetap menatap tajam dan presisi bahkan di malam yang paling gelap. Filosofi itu yang menjadi alasan nama STRIX Kamera pintar ini dibekali deteksi wajah yang tidak pernah lengah, siap mengenali dan memantau siapa pun secara presisi dalam keadaan apapun.',
+    guide: {
+      title: 'Level 4 - STRIX',
+      overview: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.',
+      philosophy: 'STRIX adalah Bahasa Latin yang berarti burung hantu, yang terkenal akan matanya yang selalu siaga, tetap menatap tajam dan presisi bahkan di malam yang paling gelap. Filosofi itu yang menjadi alasan nama STRIX Kamera pintar ini dibekali deteksi wajah yang tidak pernah lengah, siap mengenali dan memantau siapa pun secara presisi dalam keadaan apapun.',
+      rulesTitle: 'Ketentuan Sanksi:',
+      rules: [
+        { label: 'Sanksi penguncian layar', desc: 'Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).' },
+        { label: 'Sanksi pengurangan waktu', desc: 'Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).' },
+        { label: 'Akses Kamera', desc: 'Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.' },
+      ]
+    },
     briefRules: [
-      'Tingkatan tertinggi dengan pengawasan deteksi wajah (Smart Camera Automatic Recognition System).',
-      'Kamera harus selalu aktif. Ujian tidak dapat dimulai tanpa kamera.',
+      'STRIX adalah Bahasa Latin yang berarti burung hantu, terkenal akan matanya yang selalu siaga dan presisi.',
+      'Kamera pintar ini dibekali deteksi wajah yang tidak pernah lengah. Ujian tidak dapat dimulai tanpa kamera.',
       'Sanksi layar: Setiap 3 poin pelanggaran membekukan layar (15s, 30s, 60s+).',
       'Sanksi waktu: Setiap 7 poin mengurangi durasi 5 menit (Ujian) / 20% (Kuis).',
     ],
-    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\nMakna Filosofis: Nama "STRIX" diambil dari bahasa Latin dan Yunani yang berarti burung hantu, simbol mata yang selalu waspada dan tidak berkedip. Dalam sistem pengawasan ini, STRIX diadaptasi sebagai singkatan dari Smart Camera Automatic Recognition System yang mengawasi pandangan pengguna (gaze-tracking) secara presisi menggunakan kamera.\n\nKetentuan Sanksi:\na. Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\nb. Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\nc. Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
+    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\n\nMakna Filosofis: STRIX adalah Bahasa Latin yang berarti burung hantu, yang terkenal akan matanya yang selalu siaga, tetap menatap tajam dan presisi bahkan di malam yang paling gelap. Filosofi itu yang menjadi alasan nama STRIX Kamera pintar ini dibekali deteksi wajah yang tidak pernah lengah, siap mengenali dan memantau siapa pun secara presisi dalam keadaan apapun.\n\nKetentuan Sanksi:\n• Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\n• Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\n• Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
     freezeDurations: { exam: [15, 30, 60], quiz: 5 },
     timeReduction: { exam: 5 * 60, quiz: 0.20 }, // exam: 5 min in seconds, quiz: 20%
     timeReductionInterval: 7, // every 7 violations

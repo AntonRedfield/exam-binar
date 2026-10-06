@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, FileText, Layers, Copy } from 'lucide-react'
 import { getDriveImageUrl } from '../../lib/grader'
 import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
+import QuestionAudioInput from '../../components/admin/QuestionAudioInput'
 
 const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'MATCHING', 'SEQUENCING', 'AGREE_DISAGREE', 'ESSAY']
 const SURVEY_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'LINEAR_SCALE', 'MCQ_GRID', 'CHECKBOX_GRID', 'MCQ', 'CHECKBOXES', 'DROPDOWN']
@@ -117,6 +118,7 @@ function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCou
   if (isSurvey) {
     return {
       number: n, type: 'SHORT_ANSWER', question_text: '', image_url: '',
+      audio_url: '', max_plays: 1, allow_pause: false,
       options: {}, option_images: {}, correct_answer: null, points: 0, variant: 'A', time_limit: null,
       scale_min: 1, scale_max: 5, scale_min_label: '', scale_max_label: '',
       grid_rows: ['Baris 1', 'Baris 2', 'Baris 3'], grid_columns: ['Kolom 1', 'Kolom 2', 'Kolom 3'],
@@ -124,7 +126,7 @@ function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCou
     }
   }
   const opts = makeOptions(defaultOptsCount)
-  return { number: n, type: 'MCQ', question_text: '', image_url: '', options: opts, option_images: {}, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
+  return { number: n, type: 'MCQ', question_text: '', image_url: '', audio_url: '', max_plays: 1, allow_pause: false, options: opts, option_images: {}, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
 }
 
 export default function CreateExam() {
@@ -168,6 +170,55 @@ export default function CreateExam() {
   const [surveyValidFrom, setSurveyValidFrom] = useState('')
   const [surveyValidUntil, setSurveyValidUntil] = useState('')
   const [surveyAllowEdit, setSurveyAllowEdit] = useState(false)
+
+  // ─── Collapsible Sections for Tidy Lv.3 & Lv.4 Controls ───────────────────
+  const [collapsedSections, setCollapsedSections] = useState({
+    mode: false,
+    monitoring: false,
+    info: false,
+    standards: false,
+  })
+  const [collapsedQuestions, setCollapsedQuestions] = useState({})
+
+  function toggleSection(sec) {
+    setCollapsedSections(prev => ({ ...prev, [sec]: !prev[sec] }))
+  }
+
+  function collapseAllSections() {
+    setCollapsedSections({
+      mode: true,
+      monitoring: true,
+      info: true,
+      standards: true,
+    })
+    const qMap = {}
+    questionItems.forEach((_, idx) => { qMap[idx] = true })
+    setCollapsedQuestions(qMap)
+  }
+
+  function expandAllSections() {
+    setCollapsedSections({
+      mode: false,
+      monitoring: false,
+      info: false,
+      standards: false,
+    })
+    setCollapsedQuestions({})
+  }
+
+  function toggleQuestion(idx) {
+    setCollapsedQuestions(prev => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
+  function collapseAllQuestions() {
+    const qMap = {}
+    questionItems.forEach((_, idx) => { qMap[idx] = true })
+    setCollapsedQuestions(qMap)
+  }
+
+  function expandAllQuestions() {
+    setCollapsedQuestions({})
+  }
 
   const isSurvey = mode === 'survey'
 
@@ -317,6 +368,9 @@ export default function CreateExam() {
             ...q,
             question_text: q.question_text || '',
             image_url: q.image_url || '',
+            audio_url: q.audio_url || '',
+            max_plays: q.max_plays || 1,
+            allow_pause: q.allow_pause || false,
             options: (['MCQ', 'COMPLEX_MCQ'].includes(q.type) && (!opts || Object.keys(opts).length === 0))
               ? makeOptions(exam?.default_options_count || 4)
               : (opts || {}),
@@ -1120,6 +1174,9 @@ export default function CreateExam() {
         type: q.type,
         question_text: q.question_text || '',
         image_url: q.image_url || null,
+        audio_url: q.audio_url || null,
+        max_plays: Number(q.max_plays) || 1,
+        allow_pause: Boolean(q.allow_pause),
         options: (q.type === 'ESSAY' || q.type === 'SHORT_ANSWER' || q.type === 'PARAGRAPH' || q.type === 'LINEAR_SCALE') ? null : (q.options || null),
         option_images: (q.option_images && Object.keys(q.option_images).length > 0) ? q.option_images : {},
         correct_answer: isSurvey ? null : (q.type === 'ESSAY' ? null : q.correct_answer),
@@ -1181,200 +1238,277 @@ export default function CreateExam() {
       <div className="page-body">
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
+        {/* ─── Lv.3 & Lv.4 Collapsible Control Toolbar ─── */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          padding: '0.65rem 1rem',
+          background: '#ffffff',
+          borderRadius: '10px',
+          border: '1px solid var(--border)',
+          marginBottom: '1.25rem',
+          boxShadow: '0 1px 4px rgba(27, 51, 97, 0.05)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <span className="badge badge-gold" style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>
+              Kontrol Panel Lv.3 &amp; Lv.4
+            </span>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+              Klik judul tiap bagian untuk menciutkan atau membentangkan konten.
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={collapseAllSections}
+              style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', border: '1px solid var(--border)' }}
+              title="Ciutkan semua bagian agar kontrol ringkas"
+            >
+              <ChevronUp size={14} /> Ciutkan Semua
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={expandAllSections}
+              style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', border: '1px solid var(--border)' }}
+              title="Bentangkan semua bagian"
+            >
+              <ChevronDown size={14} /> Bentangkan Semua
+            </button>
+          </div>
+        </div>
+
         {/* Mode Selector — 3 modes */}
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <div className="card-header"><h3>Mode</h3></div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div className="card card-collapsible" style={{ marginBottom: '1.5rem' }}>
+          <div
+            className={`card-header card-header-clickable ${collapsedSections.mode ? 'collapsed' : ''}`}
+            onClick={() => toggleSection('mode')}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <BookOpen size={18} color="var(--gold)" />
+              <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Mode Pelaksanaan &amp; Waktu</h3>
+              {collapsedSections.mode && (
+                <div className="section-summary-preview">
+                  <span className="badge badge-active">{modeLabel}</span>
+                  <span className="badge badge-outline">
+                    {mode === 'quiz' ? (quizTimerType === 'uniform' ? `${uniformTime} dtk/soal` : 'Timer Fleksibel') : `${duration} Menit`}
+                  </span>
+                </div>
+              )}
+            </div>
             <button
-              className={`btn ${mode === 'exam' ? 'btn-gold' : 'btn-ghost'}`}
-              onClick={() => handleModeChange('exam')}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
+              type="button"
+              className={`btn-collapse-toggle ${collapsedSections.mode ? 'collapsed' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleSection('mode')
+              }}
+              title={collapsedSections.mode ? 'Bentangkan bagian ini' : 'Ciutkan bagian ini'}
             >
-              <BookOpen size={18} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 700 }}>Ujian</div>
-                <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer global, PDF soal</div>
-              </div>
-            </button>
-            <button
-              className={`btn ${mode === 'quiz' ? 'btn-gold' : 'btn-ghost'}`}
-              onClick={() => handleModeChange('quiz')}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
-            >
-              <Zap size={18} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 700 }}>Kuis</div>
-                <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer per soal, maju satu arah</div>
-              </div>
-            </button>
-            <button
-              className={`btn ${mode === 'survey' ? 'btn-gold' : 'btn-ghost'}`}
-              onClick={() => handleModeChange('survey')}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
-            >
-              <ClipboardList size={18} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 700 }}>Survei</div>
-                <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Google Form, tanpa pengawasan</div>
-              </div>
+              <span>{collapsedSections.mode ? 'Bentangkan' : 'Ciutkan'}</span>
+              {collapsedSections.mode ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
             </button>
           </div>
 
-          {/* Exam duration */}
-          {mode === 'exam' && (
-            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
-              <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
-                <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
-                Durasi Ujian
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <Clock size={16} color="var(--gold)" />
-                <input
-                  type="number"
-                  className="form-input"
-                  style={{ width: 100, padding: '0.4rem 0.6rem' }}
-                  value={duration}
-                  onChange={e => setDuration(e.target.value)}
-                  min="1"
-                  max="300"
-                />
-                <span className="text-sm text-muted">menit</span>
-              </div>
-            </div>
-          )}
-
-          {/* Quiz timer type */}
-          {mode === 'quiz' && (
-            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
-              <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
-                <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
-                Pengaturan Waktu Per Soal
-              </label>
-              <div style={{ display: 'flex', gap: '0.625rem' }}>
-                <label style={{
-                  flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  padding: '0.75rem', borderRadius: 8,
-                  border: `2px solid ${quizTimerType === 'uniform' ? 'var(--gold)' : 'var(--border)'}`,
-                  background: quizTimerType === 'uniform' ? 'rgba(245,158,11,0.05)' : 'transparent',
-                  cursor: 'pointer', fontSize: '0.85rem'
-                }}>
-                  <input type="radio" name="quizTimerType" checked={quizTimerType === 'uniform'} onChange={() => setQuizTimerType('uniform')} />
-                  <div>
-                    <div style={{ fontWeight: 600 }}>Waktu Seragam</div>
-                    <div className="text-muted text-xs">Semua soal punya waktu yang sama</div>
+          {!collapsedSections.mode && (
+            <div className="card-collapsible-body" style={{ marginTop: '0.85rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  className={`btn ${mode === 'exam' ? 'btn-gold' : 'btn-ghost'}`}
+                  onClick={() => handleModeChange('exam')}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
+                >
+                  <BookOpen size={18} />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 700 }}>Ujian</div>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer global, PDF soal</div>
                   </div>
-                </label>
-                <label style={{
-                  flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  padding: '0.75rem', borderRadius: 8,
-                  border: `2px solid ${quizTimerType === 'independent' ? 'var(--gold)' : 'var(--border)'}`,
-                  background: quizTimerType === 'independent' ? 'rgba(245,158,11,0.05)' : 'transparent',
-                  cursor: 'pointer', fontSize: '0.85rem'
-                }}>
-                  <input type="radio" name="quizTimerType" checked={quizTimerType === 'independent'} onChange={() => setQuizTimerType('independent')} />
-                  <div>
-                    <div style={{ fontWeight: 600 }}>Waktu Independen</div>
-                    <div className="text-muted text-xs">Setiap soal punya waktu sendiri</div>
+                </button>
+                <button
+                  className={`btn ${mode === 'quiz' ? 'btn-gold' : 'btn-ghost'}`}
+                  onClick={() => handleModeChange('quiz')}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
+                >
+                  <Zap size={18} />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 700 }}>Kuis</div>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer per soal, maju satu arah</div>
                   </div>
-                </label>
-              </div>
-              {quizTimerType === 'uniform' && (
-                <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <Clock size={16} color="var(--gold)" />
-                  <label className="form-label" style={{ margin: 0, whiteSpace: 'nowrap', fontSize: '0.85rem' }}>Waktu per soal:</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    style={{ width: 90, padding: '0.4rem 0.6rem' }}
-                    value={uniformTime}
-                    onChange={e => setUniformTime(Number(e.target.value) || '')}
-                    min="5"
-                    placeholder="30"
-                  />
-                  <span className="text-sm text-muted">detik</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Survey scheduling settings */}
-          {isSurvey && (
-            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
-              <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
-                <Calendar size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
-                Penjadwalan Survei
-              </label>
-              <div style={{ display: 'flex', gap: '0.625rem', marginBottom: '1rem' }}>
-                <label style={{
-                  flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  padding: '0.75rem', borderRadius: 8,
-                  border: `2px solid ${surveyType === 'one_time' ? 'var(--accent)' : 'var(--border)'}`,
-                  background: surveyType === 'one_time' ? 'rgba(79,142,247,0.05)' : 'transparent',
-                  cursor: 'pointer', fontSize: '0.85rem'
-                }}>
-                  <input type="radio" name="surveyType" checked={surveyType === 'one_time'} onChange={() => setSurveyType('one_time')} />
-                  <div>
-                    <div style={{ fontWeight: 600 }}>Satu Kali</div>
-                    <div className="text-muted text-xs">Survei sekali pakai dengan masa berlaku</div>
+                </button>
+                <button
+                  className={`btn ${mode === 'survey' ? 'btn-gold' : 'btn-ghost'}`}
+                  onClick={() => handleModeChange('survey')}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
+                >
+                  <ClipboardList size={18} />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 700 }}>Survei</div>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Google Form, tanpa pengawasan</div>
                   </div>
-                </label>
-                <label style={{
-                  flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  padding: '0.75rem', borderRadius: 8,
-                  border: `2px solid ${surveyType === 'scheduled' ? 'var(--accent)' : 'var(--border)'}`,
-                  background: surveyType === 'scheduled' ? 'rgba(79,142,247,0.05)' : 'transparent',
-                  cursor: 'pointer', fontSize: '0.85rem'
-                }}>
-                  <input type="radio" name="surveyType" checked={surveyType === 'scheduled'} onChange={() => setSurveyType('scheduled')} />
-                  <div>
-                    <div style={{ fontWeight: 600 }}>Terjadwal</div>
-                    <div className="text-muted text-xs">Berulang dengan interval tertentu</div>
-                  </div>
-                </label>
+                </button>
               </div>
 
-              {/* Scheduled survey options */}
-              {surveyType === 'scheduled' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                  <div className="form-group">
-                    <label className="form-label" style={{ fontSize: '0.8rem' }}>
-                      <Repeat size={12} style={{ marginRight: '0.25rem', verticalAlign: '-1px' }} /> Frekuensi
-                    </label>
-                    <select className="form-input" value={surveyRecurrence} onChange={e => setSurveyRecurrence(e.target.value)} style={{ fontSize: '0.85rem' }}>
-                      <option value="daily">Harian</option>
-                      <option value="weekly">Mingguan</option>
-                      <option value="biweekly">2 Minggu Sekali</option>
-                      <option value="monthly">Bulanan</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" style={{ fontSize: '0.8rem' }}>
-                      <Bell size={12} style={{ marginRight: '0.25rem', verticalAlign: '-1px' }} /> Waktu Notifikasi
-                    </label>
-                    <input type="time" className="form-input" value={surveyNotifyTime} onChange={e => setSurveyNotifyTime(e.target.value)} style={{ fontSize: '0.85rem' }} />
+              {/* Exam duration */}
+              {mode === 'exam' && (
+                <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                  <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
+                    <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
+                    Durasi Ujian
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <Clock size={16} color="var(--gold)" />
+                    <input
+                      type="number"
+                      className="form-input"
+                      style={{ width: 100, padding: '0.4rem 0.6rem' }}
+                      value={duration}
+                      onChange={e => setDuration(e.target.value)}
+                      min="1"
+                      max="300"
+                    />
+                    <span className="text-sm text-muted">menit</span>
                   </div>
                 </div>
               )}
 
-              {/* Validity period */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Mulai Berlaku <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
-                  <input type="datetime-local" className="form-input" value={surveyValidFrom} onChange={e => setSurveyValidFrom(e.target.value)} style={{ fontSize: '0.85rem' }} />
+              {/* Quiz timer type */}
+              {mode === 'quiz' && (
+                <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                  <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
+                    <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
+                    Pengaturan Waktu Per Soal
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.625rem' }}>
+                    <label style={{
+                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.75rem', borderRadius: 8,
+                      border: `2px solid ${quizTimerType === 'uniform' ? 'var(--gold)' : 'var(--border)'}`,
+                      background: quizTimerType === 'uniform' ? 'rgba(245,158,11,0.05)' : 'transparent',
+                      cursor: 'pointer', fontSize: '0.85rem'
+                    }}>
+                      <input type="radio" name="quizTimerType" checked={quizTimerType === 'uniform'} onChange={() => setQuizTimerType('uniform')} />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>Waktu Seragam</div>
+                        <div className="text-muted text-xs">Semua soal punya waktu yang sama</div>
+                      </div>
+                    </label>
+                    <label style={{
+                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.75rem', borderRadius: 8,
+                      border: `2px solid ${quizTimerType === 'independent' ? 'var(--gold)' : 'var(--border)'}`,
+                      background: quizTimerType === 'independent' ? 'rgba(245,158,11,0.05)' : 'transparent',
+                      cursor: 'pointer', fontSize: '0.85rem'
+                    }}>
+                      <input type="radio" name="quizTimerType" checked={quizTimerType === 'independent'} onChange={() => setQuizTimerType('independent')} />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>Waktu Independen</div>
+                        <div className="text-muted text-xs">Setiap soal punya waktu sendiri</div>
+                      </div>
+                    </label>
+                  </div>
+                  {quizTimerType === 'uniform' && (
+                    <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <Clock size={16} color="var(--gold)" />
+                      <label className="form-label" style={{ margin: 0, whiteSpace: 'nowrap', fontSize: '0.85rem' }}>Waktu per soal:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        style={{ width: 90, padding: '0.4rem 0.6rem' }}
+                        value={uniformTime}
+                        onChange={e => setUniformTime(Number(e.target.value) || '')}
+                        min="5"
+                        placeholder="30"
+                      />
+                      <span className="text-sm text-muted">detik</span>
+                    </div>
+                  )}
                 </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Batas Waktu <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
-                  <input type="datetime-local" className="form-input" value={surveyValidUntil} onChange={e => setSurveyValidUntil(e.target.value)} style={{ fontSize: '0.85rem' }} />
-                </div>
-              </div>
+              )}
 
-              {/* Allow edit toggle (one_time only) */}
-              {surveyType === 'one_time' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', padding: '0.5rem 0' }}>
-                  <input type="checkbox" checked={surveyAllowEdit} onChange={e => setSurveyAllowEdit(e.target.checked)} />
-                  <Edit3 size={14} />
-                  <span>Izinkan responden mengedit jawaban setelah submit</span>
-                </label>
+              {/* Survey scheduling settings */}
+              {isSurvey && (
+                <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                  <label className="form-label" style={{ marginBottom: '0.625rem', display: 'block' }}>
+                    <Calendar size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
+                    Penjadwalan Survei
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.625rem', marginBottom: '1rem' }}>
+                    <label style={{
+                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.75rem', borderRadius: 8,
+                      border: `2px solid ${surveyType === 'one_time' ? 'var(--accent)' : 'var(--border)'}`,
+                      background: surveyType === 'one_time' ? 'rgba(79,142,247,0.05)' : 'transparent',
+                      cursor: 'pointer', fontSize: '0.85rem'
+                    }}>
+                      <input type="radio" name="surveyType" checked={surveyType === 'one_time'} onChange={() => setSurveyType('one_time')} />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>Satu Kali</div>
+                        <div className="text-muted text-xs">Survei sekali pakai dengan masa berlaku</div>
+                      </div>
+                    </label>
+                    <label style={{
+                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.75rem', borderRadius: 8,
+                      border: `2px solid ${surveyType === 'scheduled' ? 'var(--accent)' : 'var(--border)'}`,
+                      background: surveyType === 'scheduled' ? 'rgba(79,142,247,0.05)' : 'transparent',
+                      cursor: 'pointer', fontSize: '0.85rem'
+                    }}>
+                      <input type="radio" name="surveyType" checked={surveyType === 'scheduled'} onChange={() => setSurveyType('scheduled')} />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>Terjadwal</div>
+                        <div className="text-muted text-xs">Berulang dengan interval tertentu</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Scheduled survey options */}
+                  {surveyType === 'scheduled' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontSize: '0.8rem' }}>
+                          <Repeat size={12} style={{ marginRight: '0.25rem', verticalAlign: '-1px' }} /> Frekuensi
+                        </label>
+                        <select className="form-input" value={surveyRecurrence} onChange={e => setSurveyRecurrence(e.target.value)} style={{ fontSize: '0.85rem' }}>
+                          <option value="daily">Harian</option>
+                          <option value="weekly">Mingguan</option>
+                          <option value="biweekly">2 Minggu Sekali</option>
+                          <option value="monthly">Bulanan</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontSize: '0.8rem' }}>
+                          <Bell size={12} style={{ marginRight: '0.25rem', verticalAlign: '-1px' }} /> Waktu Notifikasi
+                        </label>
+                        <input type="time" className="form-input" value={surveyNotifyTime} onChange={e => setSurveyNotifyTime(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Validity period */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>Mulai Berlaku <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
+                      <input type="datetime-local" className="form-input" value={surveyValidFrom} onChange={e => setSurveyValidFrom(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontSize: '0.8rem' }}>Batas Waktu <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
+                      <input type="datetime-local" className="form-input" value={surveyValidUntil} onChange={e => setSurveyValidUntil(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                    </div>
+                  </div>
+
+                  {/* Allow edit toggle (one_time only) */}
+                  {surveyType === 'one_time' && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', padding: '0.5rem 0' }}>
+                      <input type="checkbox" checked={surveyAllowEdit} onChange={e => setSurveyAllowEdit(e.target.checked)} />
+                      <Edit3 size={14} />
+                      <span>Izinkan responden mengedit jawaban setelah submit</span>
+                    </label>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1382,263 +1516,403 @@ export default function CreateExam() {
 
         {/* Monitoring Level Selector — hidden for surveys */}
         {!isSurvey && (
-          <div className="card" style={{ marginBottom: '1.5rem' }}>
-            <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <MonitoringIcon level={monitoringLevel} size={22} /> Tingkat Pengawasan
-              </h3>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowMonitorInfo(!showMonitorInfo)}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem' }}
-              >
-                <Info size={14} />
-                {showMonitorInfo ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.625rem' }}>
-              {Object.values(MONITORING_LEVELS).map(lvl => (
-                <button
-                  key={lvl.id}
-                  type="button"
-                  onClick={() => setMonitoringLevel(lvl.id)}
-                  className="monitoring-level-card"
-                  style={{
-                    padding: '0.875rem 0.75rem',
-                    borderRadius: 10,
-                    border: `2px solid ${monitoringLevel === lvl.id ? lvl.color : 'var(--border)'}`,
-                    background: monitoringLevel === lvl.id ? lvl.colorBg : 'transparent',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <div style={{
-                    width: 40, height: 40, borderRadius: 10,
-                    background: monitoringLevel === lvl.id ? `${lvl.color}20` : 'var(--navy-light)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'all 0.2s ease',
-                  }}>
-                    <MonitoringIcon level={lvl.id} size={24} />
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.82rem', color: monitoringLevel === lvl.id ? lvl.color : 'var(--text-primary)' }}>
-                      Lv.{lvl.id}
-                    </div>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 600, color: monitoringLevel === lvl.id ? lvl.color : 'var(--text-secondary)' }}>
-                      {lvl.name}
-                    </div>
-                    <div className="text-muted" style={{ fontSize: '0.68rem', marginTop: '0.15rem', lineHeight: 1.3 }}>
-                      {lvl.tagline}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div style={{
-              marginTop: '0.875rem',
-              padding: '0.875rem 1rem',
-              borderRadius: 8,
-              background: (MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).colorBg,
-              border: `1px solid ${(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).colorBorder}`,
-              fontSize: '0.83rem',
-              color: 'var(--text-primary)',
-              lineHeight: 1.5,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
-                <MonitoringIcon level={monitoringLevel} size={18} />
-                <strong style={{ color: (MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).color }}>
-                  {(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).name}
-                  {monitoringLevel === 4 && MONITORING_LEVELS[4]?.fullName && <span style={{ fontSize: '0.72rem', fontWeight: 400, marginLeft: '0.35rem', opacity: 0.8 }}>({MONITORING_LEVELS[4].fullName})</span>}
-                </strong>
+          <div className={`card card-collapsible ${collapsedSections.monitoring ? 'collapsed' : ''}`} style={{ marginBottom: '1.5rem' }}>
+            <div 
+              className={`card-header card-header-clickable ${collapsedSections.monitoring ? 'collapsed' : ''}`}
+              onClick={() => toggleSection('monitoring')}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+                <MonitoringIcon level={monitoringLevel} size={22} />
+                <h3 style={{ margin: 0 }}>Tingkat Pengawasan</h3>
+                {collapsedSections.monitoring && (
+                  <span className="section-summary-preview" style={{ color: (MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).color }}>
+                    Lv.{monitoringLevel} {(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).name}
+                  </span>
+                )}
               </div>
-              <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-                {(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).description}
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {!collapsedSections.monitoring && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowMonitorInfo(!showMonitorInfo)
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.35rem 0.65rem' }}
+                  >
+                    <Info size={14} /> Panduan
+                    {showMonitorInfo ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`btn-collapse-toggle ${collapsedSections.monitoring ? 'collapsed' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleSection('monitoring')
+                  }}
+                  title={collapsedSections.monitoring ? 'Bentangkan bagian ini' : 'Ciutkan bagian ini'}
+                >
+                  <span>{collapsedSections.monitoring ? 'Bentangkan' : 'Ciutkan'}</span>
+                  {collapsedSections.monitoring ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                </button>
+              </div>
             </div>
 
-            {showMonitorInfo && (
-              <div style={{
-                marginTop: '0.75rem',
-                padding: '1rem',
-                borderRadius: 8,
-                background: 'rgba(79,142,247,0.06)',
-                border: '1px solid rgba(79,142,247,0.15)',
-                fontSize: '0.82rem',
-                lineHeight: 1.6,
-              }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent)' }}>
-                  <Info size={15} /> Panduan Tingkat Pengawasan
+            {!collapsedSections.monitoring && (
+              <div className="card-collapsible-body" style={{ marginTop: '0.85rem' }}>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.625rem' }}>
+                  {Object.values(MONITORING_LEVELS).map(lvl => (
+                    <button
+                      key={lvl.id}
+                      type="button"
+                      onClick={() => setMonitoringLevel(lvl.id)}
+                      className="monitoring-level-card"
+                      style={{
+                        padding: '0.875rem 0.75rem',
+                        borderRadius: 10,
+                        border: `2px solid ${monitoringLevel === lvl.id ? lvl.color : 'var(--border)'}`,
+                        background: monitoringLevel === lvl.id ? lvl.colorBg : 'transparent',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 10,
+                        background: monitoringLevel === lvl.id ? `${lvl.color}20` : 'var(--navy-light)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                      }}>
+                        <MonitoringIcon level={lvl.id} size={24} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.82rem', color: monitoringLevel === lvl.id ? lvl.color : 'var(--text-primary)' }}>
+                          Lv.{lvl.id}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', fontWeight: 600, color: monitoringLevel === lvl.id ? lvl.color : 'var(--text-secondary)' }}>
+                          {lvl.name}
+                        </div>
+                        <div className="text-muted" style={{ fontSize: '0.68rem', marginTop: '0.15rem', lineHeight: 1.3 }}>
+                          {lvl.tagline}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-                {Object.values(MONITORING_LEVELS).map(lvl => (
-                  <div key={lvl.id} style={{ marginBottom: '0.625rem', paddingBottom: '0.625rem', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <MonitoringIcon level={lvl.id} size={16} />
-                      <span style={{ color: lvl.color }}>Level {lvl.id} — {lvl.name}</span>
-                    </div>
-                    <p style={{ margin: '0.25rem 0 0', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                      {lvl.teacherInfo}
-                    </p>
+
+                <div style={{
+                  marginTop: '0.875rem',
+                  padding: '0.875rem 1rem',
+                  borderRadius: 8,
+                  background: (MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).colorBg,
+                  border: `1px solid ${(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).colorBorder}`,
+                  fontSize: '0.83rem',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.5,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
+                    <MonitoringIcon level={monitoringLevel} size={18} />
+                    <strong style={{ color: (MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).color }}>
+                      {(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).name}
+                      {monitoringLevel === 4 && MONITORING_LEVELS[4]?.fullName && <span style={{ fontSize: '0.72rem', fontWeight: 400, marginLeft: '0.35rem', opacity: 0.8 }}>({MONITORING_LEVELS[4].fullName})</span>}
+                    </strong>
                   </div>
-                ))}
+                  <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                    {(MONITORING_LEVELS[monitoringLevel] || MONITORING_LEVELS[1]).description}
+                  </p>
+                </div>
+
+                {showMonitorInfo && (
+                  <div className="monitoring-guide-box">
+                    <div className="monitoring-guide-header">
+                      <h4>
+                        <Info size={16} /> Panduan Tingkat Pengawasan
+                      </h4>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                        onClick={() => setShowMonitorInfo(false)}
+                      >
+                        Tutup Panduan
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                      {Object.values(MONITORING_LEVELS).map(lvl => {
+                        const guide = lvl.guide || {}
+                        return (
+                          <div key={lvl.id} className="monitoring-guide-card" style={{ borderLeft: `4px solid ${lvl.color}` }}>
+                            <div className="monitoring-guide-level-title" style={{ color: lvl.color }}>
+                              <MonitoringIcon level={lvl.id} size={18} />
+                              <span>{guide.title || `Level ${lvl.id} - ${lvl.name}`}</span>
+                            </div>
+
+                            {/* Overview / Deskripsi Utama */}
+                            <p className="monitoring-guide-text">
+                              {guide.overview || lvl.description}
+                            </p>
+
+                            {/* Makna Filosofis (Khusus STRIX) */}
+                            {guide.philosophy && (
+                              <div className="monitoring-guide-philosophy">
+                                <strong>Makna Filosofis:</strong> {guide.philosophy}
+                              </div>
+                            )}
+
+                            {/* Ketentuan Sanksi */}
+                            {guide.rules && guide.rules.length > 0 && (
+                              <div style={{ marginTop: '0.625rem' }}>
+                                {guide.rulesTitle && (
+                                  <div style={{ fontWeight: 700, fontSize: '0.82rem', marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                                    {guide.rulesTitle}
+                                  </div>
+                                )}
+                                <div className="monitoring-guide-rules-list">
+                                  {guide.rules.map((r, rIdx) => (
+                                    <div key={rIdx} className="monitoring-guide-rule-item">
+                                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                        {r.label}:
+                                      </span>
+                                      <span>{r.desc}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
         {/* Basic info */}
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <div className="card-header"><h3>Informasi {modeLabel}</h3></div>
-          <div style={{ display: 'grid', gap: '1rem' }}>
-            <div className="form-group">
-              <label className="form-label">Judul {modeLabel}</label>
-              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={
-                isSurvey ? 'cth: Survei Kepuasan Pembelajaran Semester 1' 
-                : mode === 'exam' ? 'cth: Ujian Tengah Semester Matematika' 
-                : 'cth: Kuis Harian Bab 3'
-              } />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Informasi Khusus <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
-              <textarea 
-                className="form-input" 
-                value={information} 
-                onChange={e => setInformation(e.target.value)} 
-                placeholder={isSurvey ? 'cth: Jawaban Anda bersifat anonim dan tidak mempengaruhi nilai' : 'cth: Jika ketahuan mencontek, nilai langsung 0'}
-                style={{ minHeight: '60px', resize: 'vertical' }}
-              />
-              <span className="text-xs text-muted">
-                {isSurvey 
-                  ? 'Informasi ini akan ditampilkan di awal survei sebelum responden memulai.' 
-                  : 'Informasi ini akan ditampilkan di halaman lobi sebelum siswa memulai ujian.'}
-              </span>
-            </div>
-
-            {/* PDF & Question Order — hidden for surveys */}
-            {!isSurvey && (
-              <>
-                <div className="form-group">
-                  <label className="form-label">Link PDF Google Drive <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
-                  <input 
-                    className="form-input" 
-                    value={pdfUrl} 
-                    onChange={e => {
-                      setPdfUrl(e.target.value)
-                      if (e.target.value) setQuestionOrder('ORDER')
-                    }} 
-                    placeholder="https://drive.google.com/file/d/..." 
-                    disabled={questionOrder === 'SHUFFLE'}
-                  />
-                  {questionOrder === 'SHUFFLE' ? (
-                    <span className="text-xs" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
-                      <AlertTriangle size={14} /> PDF tidak dapat digunakan jika fitur Acak Soal (SHUFFLE) diaktifkan.
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted">Kosongkan jika soal ditulis manual di bawah. Pastikan file dapat diakses publik.</span>
-                  )}
-                </div>
-                
-                <div className="form-group">
-                  <label className="form-label">Urutan Soal</label>
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                      <input 
-                        type="radio" 
-                        checked={questionOrder === 'ORDER'} 
-                        onChange={() => setQuestionOrder('ORDER')} 
-                      />
-                      Berurutan (Normal)
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: pdfUrl ? 'not-allowed' : 'pointer', fontSize: '0.9rem', opacity: pdfUrl ? 0.5 : 1 }}>
-                      <input 
-                        type="radio" 
-                        checked={questionOrder === 'SHUFFLE'} 
-                        onChange={() => {
-                          if (!pdfUrl) setQuestionOrder('SHUFFLE')
-                        }} 
-                        disabled={!!pdfUrl}
-                      />
-                      Acak (Shuffle)
-                    </label>
-                  </div>
-                  {pdfUrl && <span className="text-xs text-muted" style={{ display: 'block', marginTop: '0.25rem' }}>Fitur Acak Soal dinonaktifkan karena Anda menggunakan file PDF.</span>}
-                </div>
-              </>
-            )}
-
-            {/* Passing grade — hidden for surveys */}
-            {!isSurvey && (
-              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">KKM (Kriteria Ketuntasan Minimal)</label>
-                  <input type="number" className="form-input" value={passingGrade} onChange={e => setPassingGrade(e.target.value)} min="0" max="100" placeholder="60" />
-                  <span className="text-xs text-muted">Nilai minimum kelulusan (skala 0—100)</span>
-                </div>
-              </div>
-            )}
-
-            {/* Target kelas — shown for all modes */}
-            <div className="form-group">
-              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Target Kelas</span>
-                <span className="text-xs text-muted" style={{ textTransform: 'none', fontWeight: 500 }}>
-                  {targetKelas.length === 0 ? '(Semua Kelas)' : `${targetKelas.length} kelas dipilih`}
+        <div className={`card card-collapsible ${collapsedSections.info ? 'collapsed' : ''}`} style={{ marginBottom: '1.5rem' }}>
+          <div 
+            className={`card-header card-header-clickable ${collapsedSections.info ? 'collapsed' : ''}`}
+            onClick={() => toggleSection('info')}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+              <FileText size={20} color="var(--accent)" />
+              <h3 style={{ margin: 0 }}>Informasi {modeLabel}</h3>
+              {collapsedSections.info && (
+                <span className="section-summary-preview">
+                  {title || '(Belum ada judul)'} • {targetKelas.length === 0 ? 'Semua Kelas' : `${targetKelas.length} Kelas`}
+                  {pdfUrl ? ' • PDF Google Drive' : ''}
+                  {!isSurvey && passingGrade ? ` • KKM ${passingGrade}` : ''}
                 </span>
-              </label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <button 
-                  className={`badge ${targetKelas.length === 0 ? 'badge-active' : 'badge-draft'}`} 
-                  onClick={() => setTargetKelas([])}
-                  style={{ cursor: 'pointer', padding: '0.4rem 0.8rem' }}
-                >
-                  Semua Kelas
-                </button>
-                {dbClasses.length > 0 ? dbClasses.map(k => (
-                  <button 
-                    key={k}
-                    className={`badge ${targetKelas.includes(k) ? 'badge-active' : 'badge-draft'}`} 
-                    onClick={() => {
-                      setTargetKelas(prev => prev.includes(k) ? prev.filter(c => c !== k) : [...prev, k])
-                    }}
-                    style={{ cursor: 'pointer', padding: '0.4rem 0.8rem' }}
-                  >
-                    Kelas {k}
-                  </button>
-                )) : (
-                  <span className="text-muted text-sm" style={{ alignSelf: 'center' }}>Tidak ada data kelas di sistem</span>
+              )}
+            </div>
+            <button
+              type="button"
+              className={`btn-collapse-toggle ${collapsedSections.info ? 'collapsed' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleSection('info')
+              }}
+              title={collapsedSections.info ? 'Bentangkan bagian ini' : 'Ciutkan bagian ini'}
+            >
+              <span>{collapsedSections.info ? 'Bentangkan' : 'Ciutkan'}</span>
+              {collapsedSections.info ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+            </button>
+          </div>
+
+          {!collapsedSections.info && (
+            <div className="card-collapsible-body">
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Judul {modeLabel}</label>
+                  <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder={
+                    isSurvey ? 'cth: Survei Kepuasan Pembelajaran Semester 1' 
+                    : mode === 'exam' ? 'cth: Ujian Tengah Semester Matematika' 
+                    : 'cth: Kuis Harian Bab 3'
+                  } />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Informasi Khusus <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
+                  <textarea 
+                    className="form-input" 
+                    value={information} 
+                    onChange={e => setInformation(e.target.value)} 
+                    placeholder={isSurvey ? 'cth: Jawaban Anda bersifat anonim dan tidak mempengaruhi nilai' : 'cth: Jika ketahuan mencontek, nilai langsung 0'}
+                    style={{ minHeight: '60px', resize: 'vertical' }}
+                  />
+                  <span className="text-xs text-muted">
+                    {isSurvey 
+                      ? 'Informasi ini akan ditampilkan di awal survei sebelum responden memulai.' 
+                      : 'Informasi ini akan ditampilkan di halaman lobi sebelum siswa memulai ujian.'}
+                  </span>
+                </div>
+
+                {/* PDF & Question Order — hidden for surveys */}
+                {!isSurvey && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Link PDF Google Drive <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
+                      <input 
+                        className="form-input" 
+                        value={pdfUrl} 
+                        onChange={e => {
+                          setPdfUrl(e.target.value)
+                          if (e.target.value) setQuestionOrder('ORDER')
+                        }} 
+                        placeholder="https://drive.google.com/file/d/..." 
+                        disabled={questionOrder === 'SHUFFLE'}
+                      />
+                      {questionOrder === 'SHUFFLE' ? (
+                        <span className="text-xs" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                          <AlertTriangle size={14} /> PDF tidak dapat digunakan jika fitur Acak Soal (SHUFFLE) diaktifkan.
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted">Kosongkan jika soal ditulis manual di bawah. Pastikan file dapat diakses publik.</span>
+                      )}
+                    </div>
+                    
+                    <div className="form-group">
+                      <label className="form-label">Urutan Soal</label>
+                      <div style={{ display: 'flex', gap: '1rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                          <input 
+                            type="radio" 
+                            checked={questionOrder === 'ORDER'} 
+                            onChange={() => setQuestionOrder('ORDER')} 
+                          />
+                          Berurutan (Normal)
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: pdfUrl ? 'not-allowed' : 'pointer', fontSize: '0.9rem', opacity: pdfUrl ? 0.5 : 1 }}>
+                          <input 
+                            type="radio" 
+                            checked={questionOrder === 'SHUFFLE'} 
+                            onChange={() => {
+                              if (!pdfUrl) setQuestionOrder('SHUFFLE')
+                            }} 
+                            disabled={!!pdfUrl}
+                          />
+                          Acak (Shuffle)
+                        </label>
+                      </div>
+                      {pdfUrl && <span className="text-xs text-muted" style={{ display: 'block', marginTop: '0.25rem' }}>Fitur Acak Soal dinonaktifkan karena Anda menggunakan file PDF.</span>}
+                    </div>
+                  </>
                 )}
+
+                {/* Passing grade — hidden for surveys */}
+                {!isSurvey && (
+                  <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">KKM (Kriteria Ketuntasan Minimal)</label>
+                      <input type="number" className="form-input" value={passingGrade} onChange={e => setPassingGrade(e.target.value)} min="0" max="100" placeholder="60" />
+                      <span className="text-xs text-muted">Nilai minimum kelulusan (skala 0—100)</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Target kelas — shown for all modes */}
+                <div className="form-group">
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Target Kelas</span>
+                    <span className="text-xs text-muted" style={{ textTransform: 'none', fontWeight: 500 }}>
+                      {targetKelas.length === 0 ? '(Semua Kelas)' : `${targetKelas.length} kelas dipilih`}
+                    </span>
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <button 
+                      className={`badge ${targetKelas.length === 0 ? 'badge-active' : 'badge-draft'}`} 
+                      onClick={() => setTargetKelas([])}
+                      style={{ cursor: 'pointer', padding: '0.4rem 0.8rem' }}
+                    >
+                      Semua Kelas
+                    </button>
+                    {dbClasses.length > 0 ? dbClasses.map(k => (
+                      <button 
+                        key={k}
+                        className={`badge ${targetKelas.includes(k) ? 'badge-active' : 'badge-draft'}`} 
+                        onClick={() => {
+                          setTargetKelas(prev => prev.includes(k) ? prev.filter(c => c !== k) : [...prev, k])
+                        }}
+                        style={{ cursor: 'pointer', padding: '0.4rem 0.8rem' }}
+                      >
+                        Kelas {k}
+                      </button>
+                    )) : (
+                      <span className="text-muted text-sm" style={{ alignSelf: 'center' }}>Tidak ada data kelas di sistem</span>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* ═══════════════ EXAM-WIDE OPTIONS SETTINGS ═══════════════ */}
-        <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--accent)' }}>
-          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.05rem', margin: 0 }}>
+        <div className={`card card-collapsible ${collapsedSections.standards ? 'collapsed' : ''}`} style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--accent)' }}>
+          <div 
+            className={`card-header card-header-clickable ${collapsedSections.standards ? 'collapsed' : ''}`}
+            onClick={() => toggleSection('standards')}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsedSections.standards ? 0 : '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
               <Sliders size={18} color="var(--accent)" />
-              Standar Jumlah Opsi & Pernyataan {isSurvey ? 'Survei' : 'Ujian'}
-            </h3>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={applyAllDefaults}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}
-              title="Terapkan seluruh standar default ke semua soal saat ini"
-            >
-              <Zap size={14} /> Terapkan Standar ke Semua Soal
-            </button>
+              <h3 style={{ margin: 0, fontSize: '1.05rem' }}>
+                Standar Jumlah Opsi & Pernyataan {isSurvey ? 'Survei' : 'Ujian'}
+              </h3>
+              {collapsedSections.standards && (
+                <span className="section-summary-preview">
+                  {!isSurvey 
+                    ? `PG: ${defaultOptionsCount} Opsi • B/S: ${defaultStatementsCount} • Jodoh: ${defaultMatchingCount}` 
+                    : `Pilihan: ${defaultSurveyOptionsCount} Opsi • Kisi: ${defaultGridRowsCount}x${defaultGridColsCount}`}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {!collapsedSections.standards && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    applyAllDefaults()
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}
+                  title="Terapkan seluruh standar default ke semua soal saat ini"
+                >
+                  <Zap size={14} /> Terapkan Standar ke Semua Soal
+                </button>
+              )}
+              <button
+                type="button"
+                className={`btn-collapse-toggle ${collapsedSections.standards ? 'collapsed' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleSection('standards')
+                }}
+                title={collapsedSections.standards ? 'Bentangkan bagian ini' : 'Ciutkan bagian ini'}
+              >
+                <span>{collapsedSections.standards ? 'Bentangkan' : 'Ciutkan'}</span>
+                {collapsedSections.standards ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+              </button>
+            </div>
           </div>
-          <p className="text-muted text-xs" style={{ marginBottom: '1rem' }}>
-            Atur standar jumlah opsi / butir untuk soal baru, atau terapkan ke seluruh butir soal yang sudah ada di paket ini.
-          </p>
+
+          {!collapsedSections.standards && (
+            <div className="card-collapsible-body">
+              <p className="text-muted text-xs" style={{ marginBottom: '1rem' }}>
+                Atur standar jumlah opsi / butir untuk soal baru, atau terapkan ke seluruh butir soal yang sudah ada di paket ini.
+              </p>
 
           {/* Action Notice banner */}
           {actionNotice && (
@@ -2033,17 +2307,119 @@ export default function CreateExam() {
               </div>
             </div>
           )}
+            </div>
+          )}
+        </div>
+
+        {/* Questions Header Toolbar */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          flexWrap: 'wrap', 
+          gap: '0.75rem', 
+          padding: '0.75rem 1.25rem', 
+          background: 'var(--surface)', 
+          borderRadius: 10, 
+          border: '1px solid var(--border)' 
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <Layers size={18} color="var(--accent)" />
+            <h3 style={{ margin: 0, fontSize: '1rem' }}>
+              {isSurvey ? 'Daftar Pertanyaan' : 'Daftar Butir Soal'}
+            </h3>
+            <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
+              {questionItems.length} {isSurvey ? 'Butir' : 'Soal'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={collapseAllQuestions}
+              style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              title="Ciutkan semua butir soal"
+            >
+              <ChevronUp size={14} /> Ciutkan Semua Soal
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={expandAllQuestions}
+              style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              title="Bentangkan semua butir soal"
+            >
+              <ChevronDown size={14} /> Bentangkan Semua Soal
+            </button>
+          </div>
         </div>
 
         {/* Questions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {questionItems.map((q, idx) => {
             const currentTypes = isSurvey ? SURVEY_TYPES : EXAM_TYPES
+            const isQuestionCollapsed = !!collapsedQuestions[idx]
             return (
-            <div key={idx} className="card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <h3 style={{ fontSize: '0.95rem' }}>{isSurvey ? 'Pertanyaan' : 'Soal'} #{q.number}</h3>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div key={idx} className={`card card-collapsible ${isQuestionCollapsed ? 'collapsed' : ''}`} style={{ transition: 'all 0.2s ease' }}>
+              <div 
+                className={`card-header-clickable ${isQuestionCollapsed ? 'collapsed' : ''}`}
+                onClick={() => toggleQuestion(idx)}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  marginBottom: isQuestionCollapsed ? 0 : '1rem', 
+                  flexWrap: 'wrap', 
+                  gap: '0.625rem',
+                  padding: isQuestionCollapsed ? '0.75rem 1rem' : '0 0 0.875rem 0',
+                  borderBottom: isQuestionCollapsed ? 'none' : '1px solid var(--border)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: 1, minWidth: 200, flexWrap: 'wrap' }}>
+                  <div style={{
+                    width: 26, height: 26, borderRadius: 6,
+                    background: isQuestionCollapsed ? 'var(--navy-mid)' : 'var(--accent)',
+                    color: isQuestionCollapsed ? 'var(--accent)' : '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 800, fontSize: '0.82rem', flexShrink: 0
+                  }}>
+                    {q.number}
+                  </div>
+                  <h3 style={{ fontSize: '0.95rem', margin: 0 }}>{isSurvey ? 'Pertanyaan' : 'Soal'} #{q.number}</h3>
+
+                  {isQuestionCollapsed ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', flex: 1 }}>
+                      <span className="badge badge-active" style={{ fontSize: '0.72rem' }}>
+                        {TYPE_LABELS[q.type] || q.type}
+                      </span>
+                      {!isSurvey && (
+                        <span className="badge badge-draft" style={{ fontSize: '0.72rem' }}>
+                          {q.points || 1} Poin
+                        </span>
+                      )}
+                      <span style={{ 
+                        fontSize: '0.8rem', 
+                        color: 'var(--text-secondary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: 380
+                      }}>
+                        {q.question_text ? (q.question_text.length > 55 ? q.question_text.substring(0, 55) + '...' : q.question_text) : '— (Belum ada teks)'}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-muted text-xs" style={{ fontWeight: 400 }}>
+                      ({TYPE_LABELS[q.type] || q.type})
+                    </span>
+                  )}
+                </div>
+
+                <div 
+                  style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}
+                  onClick={e => e.stopPropagation()}
+                >
                   <select className="form-input" style={{ width: 'auto', fontSize: '0.82rem', padding: '0.35rem 0.75rem' }} value={q.type} onChange={e => {
                     const newType = e.target.value
                     const updates = { type: newType }
@@ -2151,10 +2527,36 @@ export default function CreateExam() {
                     </div>
                   )}
                   {questionItems.length > 1 && (
-                    <button className="btn btn-danger btn-sm" onClick={() => removeQuestion(idx)}><Trash2 size={13} /></button>
+                    <button 
+                      type="button" 
+                      className="btn btn-danger btn-sm" 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeQuestion(idx)
+                      }}
+                      title="Hapus soal"
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   )}
+
+                  <button
+                    type="button"
+                    className={`btn-collapse-toggle ${isQuestionCollapsed ? 'collapsed' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleQuestion(idx)
+                    }}
+                    title={isQuestionCollapsed ? 'Bentangkan butir soal ini' : 'Ciutkan butir soal ini'}
+                  >
+                    <span>{isQuestionCollapsed ? 'Bentangkan' : 'Ciutkan'}</span>
+                    {isQuestionCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  </button>
                 </div>
               </div>
+
+              {!isQuestionCollapsed && (
+                <div className="card-collapsible-body">
 
               {/* Question text */}
               <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -2168,25 +2570,141 @@ export default function CreateExam() {
                 />
               </div>
 
-              {/* Question Image Attachment — hidden for surveys */}
+              {/* Media Lampiran Soal (Kiri: Lampiran Gambar, Kanan: Modul Audio Listening) — khusus mode ujian */}
               {!isSurvey && (
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Lampiran Gambar <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
-                  <input
-                    className="form-input"
-                    style={{ fontSize: '0.85rem' }}
-                    value={q.image_url || ''}
-                    onChange={e => updateQuestion(idx, 'image_url', e.target.value)}
-                    placeholder="https://drive.google.com/file/d/..."
-                    disabled={!!pdfUrl}
-                  />
-                  {!!pdfUrl ? (
-                    <span className="text-xs" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
-                      <AlertTriangle size={14} /> Fitur lampiran gambar tidak dapat digunakan jika Anda menggunakan PDF.
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted">Untuk hasil terbaik gunakan webP format, bisa juga menggunakan JPG, PNG atau SVG format. Pastikan link Google Drive dapat diakses publik.</span>
-                  )}
+                <div 
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                    gap: '0.875rem',
+                    marginBottom: '1rem',
+                    alignItems: 'stretch'
+                  }}
+                >
+                  {/* Kolom Kiri: Lampiran Gambar */}
+                  <div
+                    style={{
+                      margin: 0,
+                      padding: '0.875rem 1rem',
+                      background: '#ffffff',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '0.625rem',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    {/* Header */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem', color: 'var(--text-primary)' }}>
+                        <ImageIcon size={15} style={{ color: 'var(--accent)' }} />
+                        Lampiran Gambar <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span>
+                      </label>
+                      {q.image_url ? (
+                        <span className="badge badge-active" style={{ fontSize: '0.7rem' }}>Terlampir</span>
+                      ) : (
+                        <span className="badge badge-draft" style={{ fontSize: '0.7rem' }}>Opsional</span>
+                      )}
+                    </div>
+
+                    {/* Baris Input & Tombol */}
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <input
+                        className="form-input"
+                        style={{ fontSize: '0.82rem', width: '100%', height: '36px', padding: '0.4rem 0.65rem', borderRadius: '6px', flex: 1, minWidth: 0 }}
+                        value={q.image_url || ''}
+                        onChange={e => updateQuestion(idx, 'image_url', e.target.value)}
+                        placeholder="https://drive.google.com/file/d/... atau URL gambar"
+                        disabled={!!pdfUrl}
+                      />
+                      {q.image_url && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => updateQuestion(idx, 'image_url', '')}
+                          style={{
+                            height: '36px',
+                            padding: '0 0.65rem',
+                            fontSize: '0.75rem',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            color: 'var(--danger)',
+                            background: '#ffffff',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            flexShrink: 0
+                          }}
+                          title="Hapus gambar"
+                        >
+                          <Trash2 size={13} />
+                          <span>Hapus</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Baris Info / Status (Seragam tinggi 36px) */}
+                    <div
+                      style={{
+                        height: '36px',
+                        padding: '0 0.65rem',
+                        background: 'var(--navy-light)',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                        fontSize: '0.75rem',
+                        color: 'var(--text-secondary)',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden' }}>
+                        <Info size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {!!pdfUrl ? 'Dinonaktifkan saat lembar PDF aktif.' : 'Format: PNG, JPG, WebP (akses publik).'}
+                        </span>
+                      </div>
+                      {q.image_url && !pdfUrl && (
+                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--success)', flexShrink: 0 }}>
+                          ✓ Siap
+                        </span>
+                      )}
+                    </div>
+
+                    {q.image_url && !pdfUrl && (
+                      <div style={{ padding: '0.4rem', background: 'var(--navy-light)', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'center' }}>
+                        <img 
+                          src={getDriveImageUrl(q.image_url)} 
+                          alt={`Pratinjau Lampiran Gambar Soal ${q.number}`} 
+                          style={{ maxHeight: 90, maxWidth: '100%', objectFit: 'contain', borderRadius: 4, margin: '0 auto' }}
+                          onError={(e) => { e.currentTarget.style.display = 'none' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Kolom Kanan: Modul Audio Listening CBT (TOEFL / IELTS) */}
+                  <div style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
+                    <QuestionAudioInput
+                      questionId={q.id || `temp-q-${idx}`}
+                      initialAudioUrl={q.audio_url || ''}
+                      initialMaxPlays={q.max_plays || 1}
+                      initialAllowPause={Boolean(q.allow_pause)}
+                      onAudioSynced={({ audioUrl, maxPlays, allowPause }) => {
+                        setQuestionItems(prev => prev.map((item, i) => i === idx ? {
+                          ...item,
+                          audio_url: audioUrl,
+                          max_plays: maxPlays,
+                          allow_pause: allowPause
+                        } : item))
+                      }}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -3281,6 +3799,8 @@ export default function CreateExam() {
               {!isSurvey && q.type === 'ESSAY' && (
                 <div className="alert alert-info text-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span>📝 Soal Esai / Uraian: Siswa mengetik jawaban teks secara bebas tanpa opsi pilihan. Guru menilai skor secara manual di menu Hasil Ujian.</span>
+                </div>
+              )}
                 </div>
               )}
             </div>
