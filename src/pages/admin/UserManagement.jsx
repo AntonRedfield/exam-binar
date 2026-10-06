@@ -3,7 +3,7 @@ import { users } from '../../lib/db'
 import { getCurrentUser, mapAppRole, mapDbRole } from '../../lib/auth'
 import { Plus, Edit2, Trash2, X, Save, Eye, EyeOff, Upload, FileText } from 'lucide-react'
 
-const EMPTY_FORM = { email: '', full_name: '', kelas: '', role: 'USER', phone_number: '' }
+const EMPTY_FORM = { email: '', username: '', full_name: '', kelas: '', role: 'USER', phone_number: '' }
 
 export default function UserManagement() {
   const currentUser = getCurrentUser()
@@ -66,6 +66,7 @@ export default function UserManagement() {
   function openEdit(user) {
     setForm({
       email: user.email || '',
+      username: user.username || '',
       full_name: user.full_name || '',
       kelas: user.kelas || '',
       role: user.role,
@@ -83,6 +84,7 @@ export default function UserManagement() {
     try {
       const saveData = { 
         full_name: form.full_name.trim(), 
+        username: form.username ? form.username.trim().toLowerCase() : undefined,
         role: form.role, 
         kelas: form.kelas || null,
         phone_number: form.phone_number || null 
@@ -217,9 +219,12 @@ export default function UserManagement() {
     if (sortConfig.key === 'name') {
       aVal = (a.full_name || '').toLowerCase()
       bVal = (b.full_name || '').toLowerCase()
+    } else if (sortConfig.key === 'username') {
+      aVal = (a.username || '').toLowerCase()
+      bVal = (b.username || '').toLowerCase()
     } else if (sortConfig.key === 'kelas') {
-      aVal = (a.classes?.name || '').toLowerCase()
-      bVal = (b.classes?.name || '').toLowerCase()
+      aVal = (a.classes?.name || a.kelas || '').toLowerCase()
+      bVal = (b.classes?.name || b.kelas || '').toLowerCase()
     } else {
       aVal = String(a[sortConfig.key] || '').toLowerCase()
       bVal = String(b[sortConfig.key] || '').toLowerCase()
@@ -306,6 +311,9 @@ export default function UserManagement() {
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
                     Nama {sortConfig.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
+                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('username')}>
+                    Username / ID {sortConfig.key === 'username' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                  </th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('kelas')}>
                     Kelas {sortConfig.key === 'kelas' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
@@ -315,7 +323,7 @@ export default function UserManagement() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={isTeacher ? 5 : 6} style={{ textAlign: 'center', padding: '2rem' }}><div className="spinner" style={{ width: 24, height: 24, margin: '0 auto' }} /></td></tr>
+                  <tr><td colSpan={isTeacher ? 6 : 7} style={{ textAlign: 'center', padding: '2rem' }}><div className="spinner" style={{ width: 24, height: 24, margin: '0 auto' }} /></td></tr>
                 ) : filtered.map(u => (
                   <tr key={u.id} style={{ background: selectedIds.has(u.id) ? 'rgba(239,68,68,0.05)' : undefined }}>
                     {!isTeacher && (
@@ -329,6 +337,19 @@ export default function UserManagement() {
                       </td>
                     )}
                     <td style={{ fontWeight: 600 }}>{u.full_name}</td>
+                    <td>
+                      <code style={{
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        color: 'var(--gold, #f59e0b)',
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace'
+                      }}>
+                        {u.username || '—'}
+                      </code>
+                    </td>
                     <td>{u.kelas || '—'}</td>
                     <td>
                       <span className="badge badge-outline" style={{
@@ -361,9 +382,15 @@ export default function UserManagement() {
               <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}><X size={15} /></button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group">
-                <label className="form-label">Nama Lengkap</label>
-                <input className="form-input" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Nama Lengkap" />
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Nama Lengkap</label>
+                  <input className="form-input" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Nama Lengkap" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Username / ID Login</label>
+                  <input className="form-input" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value.toLowerCase().replace(/\s/g, '') }))} placeholder="cth: 7a1, budi123" />
+                </div>
               </div>
               <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">

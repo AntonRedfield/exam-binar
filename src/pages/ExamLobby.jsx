@@ -2,9 +2,29 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions } from '../lib/db'
-import { BookOpen, Clock, Users, ShieldAlert, Play, RotateCcw, Zap, Camera, AlertTriangle, CheckCircle, Info } from 'lucide-react'
+import {
+  BookOpen,
+  Clock,
+  Users,
+  ShieldAlert,
+  Play,
+  RotateCcw,
+  Zap,
+  Camera,
+  AlertTriangle,
+  CheckCircle,
+  Info,
+  Lock,
+  Unlock,
+  Key
+} from 'lucide-react'
 import { MONITORING_LEVELS } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
+import {
+  verifyAndUnlockReturnee,
+  sanitizeReturneeToken,
+  markSessionAsReturnee
+} from '../lib/returnee'
 
 export default function ExamLobby() {
   const { examId } = useParams()
@@ -21,6 +41,12 @@ export default function ExamLobby() {
   const [cameraChecking, setCameraChecking] = useState(false)
   const [cameraError, setCameraError] = useState('')
 
+  // Returnee verification state
+  const [returneeTokenInput, setReturneeTokenInput] = useState('')
+  const [verifyingToken, setVerifyingToken] = useState(false)
+  const [returneeError, setReturneeError] = useState('')
+  const [returneeSuccess, setReturneeSuccess] = useState('')
+
   useEffect(() => {
     if (!user) return
     async function load() {
@@ -36,13 +62,25 @@ export default function ExamLobby() {
         return
       }
 
+      let currentSess = sess
+      // Check if student has active session that was interrupted / from outside the room
+      if (sess && sess.status === 'active') {
+        const inRoom = sessionStorage.getItem('binar_exam_active_room') === examId
+        if (sess.returnee_token_required || !inRoom) {
+          if (!sess.returnee_token_required) {
+            await markSessionAsReturnee(sess.id, 'Sesi terputus / login ulang')
+            currentSess = { ...sess, returnee_token_required: true, returnee_reason: 'Sesi terputus / login ulang' }
+          }
+        }
+      }
+
       setExam(examData)
       setQuestionCount(qs?.length || 0)
-      setSession(sess)
+      setSession(currentSess)
       setLoading(false)
     }
     load()
-  }, [examId, user?.id])
+  }, [examId, user?.id, navigate])
 
   const monitorLevel = exam?.monitoring_level || 1
   const levelConfig = MONITORING_LEVELS[monitorLevel] || MONITORING_LEVELS[1]
@@ -76,6 +114,13 @@ export default function ExamLobby() {
       setCameraError('Kamera harus diaktifkan sebelum memulai ujian Level 4.')
       return
     }
+
+    // If session requires returnee token, student cannot directly start
+    if (session?.returnee_token_required) {
+      setReturneeError('Anda berstatus Returnee. Masukkan token dari pengawas untuk melanjutkan.')
+      return
+    }
+
     setStarting(true)
     setError('')
     try {
@@ -92,6 +137,9 @@ export default function ExamLobby() {
             answers: {},
             violation_count: 0,
             current_question: 1,
+            returnee_token_required: false,
+            returnee_token: null,
+            returnee_reason: null
           })
           if (upErr) throw new Error(upErr.message)
         } else {
@@ -104,14 +152,67 @@ export default function ExamLobby() {
             violation_count: 0,
             current_question: 1,
             status: 'active',
+            returnee_token_required: false
           })
           if (crErr) throw new Error(crErr.message)
         }
       }
+
+      sessionStorage.setItem('binar_exam_active_room', examId)
       navigate(`/exam/${examId}/room`)
     } catch (err) {
       setError('Gagal memulai ujian: ' + err.message)
       setStarting(false)
+    }
+  }
+
+  // ─── Returnee Token Verification ───────────────────────────────────────────
+  async function handleVerifyReturneeToken() {
+    if (needsCamera && !cameraGranted) {
+      setCameraError('Kamera harus diaktifkan sebelum memulai ujian Level 4.')
+      return
+    }
+
+    const clean = sanitizeReturneeToken(returneeTokenInput)
+    if (clean.length !== 6) {
+      setReturneeError('Token harus 6 karakter angka dan huruf kecil.')
+      return
+    }
+
+    setVerifyingToken(true)
+    setReturneeError('')
+    setReturneeSuccess('')
+
+    const res = await verifyAndUnlockReturnee({
+      sessionId: session.id,
+      examId,
+      token: clean
+    })
+
+    if (res.success) {
+      setReturneeSuccess('Token valid! Mengalihkan ke ruang ujian...')
+      sessionStorage.setItem('binar_exam_active_room', examId)
+      setSession(prev => prev ? { ...prev, returnee_token_required: false } : prev)
+      setTimeout(() => {
+        navigate(`/exam/${examId}/room`)
+      }, 700)
+    } else {
+      setReturneeError(res.error || 'Token tidak valid.')
+      setVerifyingToken(false)
+    }
+  }
+
+  async function handleRecheckUnlock() {
+    const { data: updatedSess } = await sessions.get(user.id, examId)
+    if (updatedSess && !updatedSess.returnee_token_required) {
+      setSession(updatedSess)
+      setReturneeSuccess('Kunci telah dibuka oleh pengawas! Mengalihkan...')
+      sessionStorage.setItem('binar_exam_active_room', examId)
+      setTimeout(() => {
+        navigate(`/exam/${examId}/room`)
+      }, 700)
+    } else {
+      setReturneeError('Sesi masih terkunci. Silakan masukkan token atau minta pengawas membuka kunci.')
     }
   }
 
@@ -129,6 +230,7 @@ export default function ExamLobby() {
 
   const isDone = session?.status === 'submitted' || session?.status === 'time_up'
   const isActive = session?.status === 'active'
+  const isReturneeRequired = Boolean(isActive && session?.returnee_token_required)
   const canStart = !needsCamera || cameraGranted
 
   return (
@@ -251,6 +353,9 @@ export default function ExamLobby() {
             {exam.mode === 'quiz' && (
               <li style={{ color: 'var(--warning)', fontWeight: 600 }}>Mode Kuis: Anda hanya dapat maju ke soal berikutnya, tidak bisa kembali.</li>
             )}
+            <li style={{ color: '#dc2626', fontWeight: 600 }}>
+              Ketentuan Returnee: Jika Anda keluar atau terdeteksi logout, Anda membutuhkan Token Masuk Kembali dari Pengawas (Guru/Admin) untuk dapat melanjutkan.
+            </li>
             <li>Jawaban disimpan otomatis setiap 10 detik.</li>
           </ul>
         </div>
@@ -300,6 +405,95 @@ export default function ExamLobby() {
         {isDone ? (
           <div className="alert alert-success" style={{ textAlign: 'center', justifyContent: 'center' }}>
             <CheckCircle size={16} /> Anda telah menyelesaikan ujian ini.
+          </div>
+        ) : isReturneeRequired ? (
+          /* Returnee Token Verification Card */
+          <div className="card" style={{
+            marginBottom: '1.25rem',
+            border: '2px solid rgba(239, 68, 68, 0.4)',
+            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.06) 0%, rgba(245, 166, 35, 0.05) 100%)',
+            borderRadius: '14px',
+            padding: '1.5rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.85rem', color: '#dc2626' }}>
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: '10px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Lock size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+                  Status: Peserta Ujian Kembali (Returnee)
+                </h3>
+                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                  Alasan: {session.returnee_reason || 'Logout terdeteksi'}
+                </span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: '#334155', margin: '0 0 1.25rem', lineHeight: 1.5 }}>
+              Sesi ujian Anda terputus atau terdeteksi logout. Untuk dapat kembali ke ruang ujian, masukkan <strong>Token Masuk Kembali (6 Karakter)</strong> dari Pengawas (Guru Level 3 atau Admin Level 4).
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              <input
+                type="text"
+                className="token-digit-input"
+                placeholder="6 digit token"
+                maxLength={6}
+                value={returneeTokenInput}
+                onChange={(e) => {
+                  setReturneeTokenInput(sanitizeReturneeToken(e.target.value))
+                  setReturneeError('')
+                }}
+                disabled={verifyingToken}
+                autoFocus
+              />
+              <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                Hanya angka &amp; alfabet huruf kecil ({returneeTokenInput.length}/6)
+              </span>
+            </div>
+
+            {returneeError && (
+              <div className="alert alert-error" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+                <AlertTriangle size={15} /> {returneeError}
+              </div>
+            )}
+
+            {returneeSuccess && (
+              <div className="alert alert-success" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+                <CheckCircle size={15} /> {returneeSuccess}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <button
+                className="btn btn-gold btn-lg w-full"
+                onClick={handleVerifyReturneeToken}
+                disabled={verifyingToken || returneeTokenInput.length !== 6 || !canStart}
+                style={(!canStart || returneeTokenInput.length !== 6) ? { opacity: 0.6 } : {}}
+              >
+                {verifyingToken ? (
+                  <><div className="spinner" style={{ width: 18, height: 18 }} /> Memverifikasi Token...</>
+                ) : (
+                  <><Unlock size={18} /> Verifikasi Token &amp; Lanjutkan Ujian</>
+                )}
+              </button>
+
+              <button
+                className="btn btn-ghost btn-sm w-full"
+                onClick={handleRecheckUnlock}
+                style={{ fontSize: '0.8rem', color: '#64748b' }}
+              >
+                <RotateCcw size={13} /> Periksa Ulang (Jika Sudah Dibuka Langsung oleh Pengawas)
+              </button>
+            </div>
           </div>
         ) : (
           <button

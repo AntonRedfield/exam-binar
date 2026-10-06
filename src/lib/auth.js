@@ -17,6 +17,7 @@ import {
   getLocalSessionToken,
   setLocalSessionToken
 } from './sessionGuard.js'
+import { markActiveSessionsAsReturnee } from './returnee.js'
 
 export { isSingleSessionEnforced, getLocalSessionToken, setLocalSessionToken }
 
@@ -131,9 +132,24 @@ export async function login(username, password) {
     throw new Error('Koneksi Supabase backend belum siap. Periksa konfigurasi .env')
   }
 
-  const cleanUsername = username.trim().toLowerCase()
+  const cleanUsername = username.trim()
   const cleanPassword = password.trim()
-  const email = usernameToEmail(cleanUsername)
+  let email = usernameToEmail(cleanUsername)
+
+  // ── Pre-login resolution via Supabase RPC ──────────────────────────────
+  // Resolves identifier (username / student ID / NISN / full name / email),
+  // and dynamically synchronizes student password if using default 'password' or student ID
+  try {
+    const { data: prepResult, error: prepError } = await supabase.rpc('prepare_student_login', {
+      p_identifier: cleanUsername,
+      p_password: cleanPassword
+    })
+    if (!prepError && prepResult?.found && prepResult?.email) {
+      email = prepResult.email
+    }
+  } catch (rpcErr) {
+    console.warn('[Auth] prepare_student_login RPC call skipped or failed:', rpcErr?.message)
+  }
 
   let data, error
   try {
@@ -150,7 +166,7 @@ export async function login(username, password) {
     console.error('[Auth] Sign-in failed:', { email, status: error?.status, code: error?.code, message: error?.message })
     const msg = (error?.message || '').toLowerCase()
     if (error?.code === 'invalid_credentials' || msg.includes('invalid login credentials')) {
-      throw new Error('Username atau password salah. Silakan coba lagi.')
+      throw new Error('Username atau password salah. Silakan coba lagi. Untuk siswa: gunakan ID/Username (cth: 7a1, 10a1) dan password (default: password atau ID Anda).')
     }
     if (error?.status === 429 || msg.includes('rate limit')) {
       throw new Error('Terlalu banyak percobaan login. Tunggu beberapa menit lalu coba lagi.')
@@ -222,6 +238,18 @@ export async function login(username, password) {
 export async function logout(reason = null) {
   const currentUser = getCurrentUser()
   if (currentUser) {
+    try {
+      // Mark any active exam session as requiring returnee token
+      const returneeReason = reason === 'other_device'
+        ? 'Terdeteksi login di perangkat lain'
+        : reason === 'other_window'
+        ? 'Terdeteksi membuka tab/jendela lain'
+        : 'Logout terdeteksi'
+      await markActiveSessionsAsReturnee(currentUser.id, returneeReason)
+    } catch (e) {
+      console.warn('[Auth] markActiveSessionsAsReturnee error:', e)
+    }
+
     try {
       // Clear active_session_id in DB if voluntary logout
       if (!reason) {

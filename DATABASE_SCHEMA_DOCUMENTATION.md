@@ -154,6 +154,7 @@ Konfigurasi paket ujian, kuis cepat, dan survei kepuasan/akademik.
 | `default_survey_options_count` | `SMALLINT` | Default `4` | `4` | Jumlah opsi default pertanyaan pilihan survei |
 | `default_grid_rows_count` | `SMALLINT` | Default `3` | `3` | Jumlah baris default kisi survei |
 | `default_grid_cols_count` | `SMALLINT` | Default `3` | `3` | Jumlah kolom default kisi survei |
+| `returnee_token` | `VARCHAR(6)` | Nullable | `'7b3x9a'` | Token masuk kembali tingkat ujian (6 karakter angka & huruf kecil) |
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL**, Default `now()` | `'2026-08-08 09:00:00+07'` | Waktu dibuat |
 | `updated_at` | `TIMESTAMPTZ` | **NOT NULL**, Default `now()` | `'2026-08-08 09:00:00+07'` | Waktu diupdate |
 
@@ -203,6 +204,11 @@ Status pengerjaan ujian secara *live* per siswa (autosave & proctoring).
 | `current_question` | `SMALLINT` | **NOT NULL**, Default `1` | `5` | Nomor soal terakhir yang dibuka |
 | `end_timestamp` | `TIMESTAMPTZ` | Nullable | `'2026-08-08 11:30:00+07'` | Batas waktu server sesi berakhir |
 | `last_sync` | `TIMESTAMPTZ` | **NOT NULL**, Default `now()` | `'2026-08-08 10:45:12+07'` | Heartbeat autosave terakhir |
+| `returnee_token_required` | `BOOLEAN` | **NOT NULL**, Default `false` | `true` | Apakah siswa berstatus returnee dan butuh token |
+| `returnee_token` | `VARCHAR(6)` | Nullable | `'k49m12'` | Token returnee khusus siswa ini (6 karakter angka & huruf kecil) |
+| `returnee_reason` | `VARCHAR(100)` | Nullable | `'Logout terdeteksi'` | Alasan sesi dikunci sebagai returnee |
+| `returnee_unlocked_at` | `TIMESTAMPTZ` | Nullable | `'2026-08-08 10:50:00+07'` | Waktu kunci dibuka oleh pengawas atau token |
+| `exam_auth_token` | `TEXT` | Nullable | `'ds_172..._a9b8'` | Token autentikasi sesi ujian |
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL**, Default `now()` | `'2026-08-08 10:00:00+07'` | Waktu mulai mengerjakan |
 
 ---

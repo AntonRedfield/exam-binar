@@ -161,6 +161,46 @@ select.form-input { cursor: pointer; }
 .badge-pending { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); }
 .badge-gold { background: rgba(245,166,35,0.1); color: var(--gold); border: 1px solid var(--border-gold); }
 .badge-survey { background: rgba(20,184,166,0.1); color: #14b8a6; border: 1px solid rgba(20,184,166,0.3); }
+.badge-returnee { background: rgba(239, 68, 68, 0.12); color: #dc2626; border: 1px solid rgba(220, 38, 38, 0.35); font-weight: 700; }
+
+/* ─── RETURNEE TOKEN ──────────────────────────────────────────────────────── */
+.token-digit-input {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: lowercase;
+  color: #0f172a;
+  border: 2px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.55rem 0.8rem;
+  width: 100%;
+  max-width: 250px;
+  outline: none;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.token-digit-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+.token-display-badge {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  text-transform: lowercase;
+  color: #1e3a8a;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  padding: 0.3rem 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
 
 /* ─── TABLE ──────────────────────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; }
@@ -313,21 +353,73 @@ tbody tr:hover { background: var(--glass-light); }
 
 /* ─── VIOLATION WARNING ───────────────────────────────────────────────────── */
 .violation-overlay {
-  position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+  position: fixed;
+  top: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 9999;
-  background: var(--danger-bg);
-  border: 1px solid rgba(239,68,68,0.5);
+  background: #ffffff !important;
+  color: #1e293b;
+  border: 1.5px solid #ef4444;
+  border-left: 6px solid #ef4444;
   border-radius: var(--radius);
-  padding: 0.875rem 1.5rem;
-  display: flex; align-items: center; gap: 0.75rem;
-
-  box-shadow: 0 8px 32px rgba(239,68,68,0.25);
-  animation: slide-in 0.3s ease;
-  max-width: 480px;
+  padding: 0.85rem 1.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(239, 68, 68, 0.22);
+  animation: slide-in-warning 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 520px;
+  width: max-content;
+  pointer-events: auto;
 }
-@keyframes slide-in {
-  from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
-  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+.violation-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #fee2e2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.violation-icon {
+  color: #dc2626;
+}
+
+.violation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+}
+
+.violation-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: #b91c1c;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.violation-message {
+  font-size: 0.84rem;
+  color: #334155;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+@keyframes slide-in-warning {
+  from {
+    transform: translateX(-50%) translateY(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
 }
 
 /* ─── QUESTION COMPONENTS ─────────────────────────────────────────────────── */
@@ -1205,7 +1297,13 @@ tbody tr:hover { background: var(--glass-light); }
   .timer { font-size: 1.1rem; padding: 0.3rem 0.75rem; }
 
   /* Violation overlay */
-  .violation-overlay { max-width: calc(100vw - 2rem); font-size: 0.82rem; padding: 0.625rem 1rem; }
+  .violation-overlay {
+    top: 5.75rem;
+    max-width: calc(100vw - 2rem);
+    width: calc(100vw - 2rem);
+    font-size: 0.82rem;
+    padding: 0.75rem 1rem;
+  }
 
   /* Form grid: stack on mobile */
   .form-grid-2 { grid-template-columns: 1fr !important; }

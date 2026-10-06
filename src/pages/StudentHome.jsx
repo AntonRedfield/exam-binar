@@ -5,7 +5,8 @@ import { exams, sessions, results } from '../lib/db'
 import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap, ClipboardList } from 'lucide-react'
 import BiometricPrompt from '../components/BiometricPrompt'
 
-function getStatusBadge(status) {
+function getStatusBadge(status, returneeRequired = false) {
+  if (returneeRequired) return <span className="badge badge-returnee">🔒 Returnee</span>
   if (status === 'active') return <span className="badge badge-pending">Sedang Berlangsung</span>
   if (status === 'submitted' || status === 'time_up') return <span className="badge badge-active">Selesai</span>
   if (status === 'reset') return <span className="badge badge-draft">Direset</span>
@@ -207,7 +208,7 @@ export default function StudentHome() {
                       {!isSurvey && exam.mode === 'quiz' && (
                         <span className="badge badge-active" style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>⚡ Kuis</span>
                       )}
-                      {getStatusBadge(session?.status)}
+                      {getStatusBadge(session?.status, session?.returnee_token_required)}
                     </div>
                     <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
                       {isSurvey ? (
@@ -216,7 +217,11 @@ export default function StudentHome() {
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Clock size={13} /> {exam.mode === 'quiz' ? 'Timer per soal' : `${exam.duration_minutes} menit`}</span>
                       )}
                       {scoreNode}
-                      {!isSurvey && isActive && exam.status === 'published' && <span className="text-gold">Klik untuk melanjutkan ujian</span>}
+                      {!isSurvey && isActive && exam.status === 'published' && (
+                        <span className={session?.returnee_token_required ? 'text-danger' : 'text-gold'}>
+                          {session?.returnee_token_required ? '🔒 Status Returnee (Perlu Token)' : 'Klik untuk melanjutkan ujian'}
+                        </span>
+                      )}
                       {!isSurvey && isActive && exam.status !== 'published' && <span className="text-danger">Ujian telah ditutup</span>}
                       {isSurvey && isDone && <span className="text-success">Sudah mengisi</span>}
                       {isSurvey && !session && <span>Belum diisi — klik untuk mengisi</span>}

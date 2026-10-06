@@ -11,6 +11,18 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabase.js'
+import {
+  markSessionAsReturnee,
+  markActiveSessionsAsReturnee,
+  setExamReturneeToken,
+  clearExamReturneeToken,
+  setStudentReturneeToken,
+  unlockStudentReturnee,
+  verifyAndUnlockReturnee,
+  generateReturneeToken,
+  isValidReturneeToken,
+  sanitizeReturneeToken
+} from './returnee.js'
 
 // ─── Clean up any conflicting legacy local mock storage ─────────────────────
 try {
@@ -154,6 +166,9 @@ export const users = {
     if (data.full_name) {
       updatePayload.fullname = data.full_name
       updatePayload.display_name = data.full_name
+    }
+    if (data.username) {
+      updatePayload.username = data.username.trim().toLowerCase()
     }
     if (data.kelas !== undefined) updatePayload.class_section = data.kelas
     if (data.phone_number !== undefined) updatePayload.phone = data.phone_number
@@ -523,7 +538,35 @@ export const sessions = {
       .eq('exam_id', examId)
 
     if (error) return { data: [], error }
-    return { data: data || [], error: null }
+    const sessionList = data || []
+    const studentIds = sessionList.map(s => s.student_id).filter(Boolean)
+    if (studentIds.length > 0) {
+      try {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, display_name, fullname, username, class_section')
+          .in('id', Array.from(new Set(studentIds)))
+
+        const profMap = {}
+        for (const p of profs || []) {
+          profMap[p.id] = p
+        }
+        for (const s of sessionList) {
+          const p = profMap[s.student_id]
+          s.users = {
+            id: s.student_id,
+            name: p?.display_name || p?.fullname || p?.username || 'Siswa',
+            full_name: p?.fullname || p?.display_name || p?.username || 'Siswa',
+            username: p?.username || '',
+            kelas: p?.class_section || '—',
+            classes: { name: p?.class_section || '—' }
+          }
+        }
+      } catch (err) {
+        console.warn('[DB] sessions.listByExam profs error:', err)
+      }
+    }
+    return { data: sessionList, error: null }
   },
 
   get: async (studentId, examId) => {
@@ -577,9 +620,24 @@ export const sessions = {
       violation_count: 0,
       answers: {},
       current_question: 1,
-      started_at: new Date().toISOString()
+      started_at: new Date().toISOString(),
+      returnee_token_required: false,
+      returnee_token: null,
+      returnee_reason: null
     })
-  }
+  },
+
+  // Returnee helpers
+  markReturnee: markSessionAsReturnee,
+  markActiveReturnee: markActiveSessionsAsReturnee,
+  setReturneeToken: setStudentReturneeToken,
+  unlockReturnee: unlockStudentReturnee,
+  verifyReturnee: verifyAndUnlockReturnee,
+  setExamReturneeToken,
+  clearExamReturneeToken,
+  generateReturneeToken,
+  isValidReturneeToken,
+  sanitizeReturneeToken
 }
 
 // ─── RESULTS API ──────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions, results } from '../lib/db'
+import { markSessionAsReturnee } from '../lib/returnee'
 import { gradeExam, getDriveEmbedUrl, getDriveImageUrl } from '../lib/grader'
 import { useAntiCheat } from '../hooks/useAntiCheat'
 import { useFaceDetection } from '../hooks/useFaceDetection'
@@ -128,7 +129,15 @@ export default function ExamRoom() {
         questions.listByExam(examId),
         sessions.get(user.id, examId),
       ])
-      if (!sess || sess.status === 'submitted' || sess.status === 'time_up') {
+      if (!sess || sess.status === 'submitted' || sess.status === 'time_up' || sess.returnee_token_required) {
+        navigate(`/exam/${examId}/lobby`)
+        return
+      }
+
+      // Guard: must have passed lobby unlock
+      const inRoom = sessionStorage.getItem('binar_exam_active_room') === examId
+      if (!inRoom) {
+        await markSessionAsReturnee(sess.id, 'Sesi terputus / akses langsung')
         navigate(`/exam/${examId}/lobby`)
         return
       }
@@ -168,6 +177,32 @@ export default function ExamRoom() {
     }, 10000)
     return () => clearInterval(autoSaveTimer.current)
   }, [session, currentQ])
+
+  // Track active room and mark as Returnee on any exit / unload
+  useEffect(() => {
+    sessionStorage.setItem('binar_exam_active_room', examId)
+
+    const handleRoomUnload = () => {
+      if (!submitLock.current && sessionRef.current?.status === 'active') {
+        sessionStorage.removeItem('binar_exam_active_room')
+        markSessionAsReturnee(sessionRef.current.id, 'Menutup halaman ujian')
+      }
+    }
+
+    window.addEventListener('beforeunload', handleRoomUnload)
+    window.addEventListener('unload', handleRoomUnload)
+    window.addEventListener('pagehide', handleRoomUnload)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleRoomUnload)
+      window.removeEventListener('unload', handleRoomUnload)
+      window.removeEventListener('pagehide', handleRoomUnload)
+      if (!submitLock.current && sessionRef.current?.status === 'active') {
+        sessionStorage.removeItem('binar_exam_active_room')
+        markSessionAsReturnee(sessionRef.current.id, 'Keluar dari ruang ujian')
+      }
+    }
+  }, [examId])
 
   const monitorLevel = exam?.monitoring_level || 1
   const isQuiz = exam?.mode === 'quiz'
@@ -335,6 +370,9 @@ export default function ExamRoom() {
     submitLock.current = true
     setSubmitting(true)
     clearInterval(autoSaveTimer.current)
+    try {
+      sessionStorage.removeItem('binar_exam_active_room')
+    } catch (e) {}
 
     // Stop face detection
     if (monitorLevel === 4) faceDetection.stopCamera()
@@ -434,13 +472,20 @@ export default function ExamRoom() {
       {/* Per-question time warning */}
       {questionTimeWarning && (
         <div style={{
-          position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 9998, background: 'rgba(245,158,11,0.95)', color: '#000',
-          padding: '0.625rem 1.25rem', borderRadius: 10, fontWeight: 700,
-          fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem',
-          boxShadow: '0 4px 20px rgba(245,158,11,0.3)'
+          position: 'fixed', top: '5rem', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9998, background: '#ffffff', color: '#1e293b',
+          border: '1.5px solid #f59e0b', borderLeft: '6px solid #f59e0b',
+          padding: '0.75rem 1.25rem', borderRadius: 'var(--radius)',
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+          boxShadow: '0 12px 32px -4px rgba(0, 0, 0, 0.18), 0 4px 14px rgba(245, 158, 11, 0.2)'
         }}>
-          <AlertTriangle size={18} /> Waktu soal hampir habis!
+          <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <AlertTriangle size={18} color="#d97706" />
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#b45309', marginBottom: '0.1rem' }}>Peringatan Waktu</div>
+            <div style={{ fontSize: '0.82rem', color: '#334155', fontWeight: 500 }}>Waktu soal ini hampir habis!</div>
+          </div>
         </div>
       )}
 
