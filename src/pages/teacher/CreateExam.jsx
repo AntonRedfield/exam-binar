@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, FileText, Layers, Copy } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, Video, FileText, Layers, Copy, Paperclip, Headphones, X } from 'lucide-react'
 import { getDriveImageUrl } from '../../lib/grader'
 import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
 import QuestionAudioInput from '../../components/admin/QuestionAudioInput'
+import QuestionVideoPlayer from '../../components/exam/QuestionVideoPlayer'
 
 const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'MATCHING', 'SEQUENCING', 'AGREE_DISAGREE', 'ESSAY']
 const SURVEY_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'LINEAR_SCALE', 'MCQ_GRID', 'CHECKBOX_GRID', 'MCQ', 'CHECKBOXES', 'DROPDOWN']
@@ -117,7 +118,7 @@ function makeGridColumns(count = 3) {
 function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCount = 3) {
   if (isSurvey) {
     return {
-      number: n, type: 'SHORT_ANSWER', question_text: '', image_url: '',
+      number: n, type: 'SHORT_ANSWER', question_text: '', image_url: '', video_url: '',
       audio_url: '', max_plays: 1, allow_pause: false,
       options: {}, option_images: {}, correct_answer: null, points: 0, variant: 'A', time_limit: null,
       scale_min: 1, scale_max: 5, scale_min_label: '', scale_max_label: '',
@@ -126,7 +127,7 @@ function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCou
     }
   }
   const opts = makeOptions(defaultOptsCount)
-  return { number: n, type: 'MCQ', question_text: '', image_url: '', audio_url: '', max_plays: 1, allow_pause: false, options: opts, option_images: {}, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
+  return { number: n, type: 'MCQ', question_text: '', image_url: '', video_url: '', audio_url: '', max_plays: 1, allow_pause: false, options: opts, option_images: {}, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
 }
 
 export default function CreateExam() {
@@ -171,6 +172,13 @@ export default function CreateExam() {
   const [surveyValidUntil, setSurveyValidUntil] = useState('')
   const [surveyAllowEdit, setSurveyAllowEdit] = useState(false)
 
+  // Unsaved changes tracking & navigation protection
+  const returnPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : '/teacher/exams'
+  const initialSnapshotRef = useRef(null)
+  const isSavedRef = useRef(false)
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false)
+  const [pendingNavPath, setPendingNavPath] = useState(null)
+
   // ─── Collapsible Sections for Tidy Lv.3 & Lv.4 Controls ───────────────────
   const [collapsedSections, setCollapsedSections] = useState({
     mode: false,
@@ -179,6 +187,31 @@ export default function CreateExam() {
     standards: false,
   })
   const [collapsedQuestions, setCollapsedQuestions] = useState({})
+  const [expandedAttachments, setExpandedAttachments] = useState({})
+  const [openOptionSettings, setOpenOptionSettings] = useState({})
+
+  function toggleAttachment(idx) {
+    setExpandedAttachments(prev => {
+      const wasOpen = Boolean(prev[idx])
+      if (wasOpen) {
+        return { ...prev, [idx]: false }
+      }
+      // Automated shrink: auto-shrink any other open question attachments so only one is expanded
+      return { [idx]: true }
+    })
+  }
+
+  function shrinkAttachment(idx) {
+    setExpandedAttachments(prev => ({ ...prev, [idx]: false }))
+  }
+
+  function toggleOptionSettings(key) {
+    setOpenOptionSettings(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  function shrinkOptionSettings(key) {
+    setOpenOptionSettings(prev => ({ ...prev, [key]: false }))
+  }
 
   function toggleSection(sec) {
     setCollapsedSections(prev => ({ ...prev, [sec]: !prev[sec] }))
@@ -194,6 +227,8 @@ export default function CreateExam() {
     const qMap = {}
     questionItems.forEach((_, idx) => { qMap[idx] = true })
     setCollapsedQuestions(qMap)
+    setExpandedAttachments({})
+    setOpenOptionSettings({})
   }
 
   function expandAllSections() {
@@ -207,7 +242,15 @@ export default function CreateExam() {
   }
 
   function toggleQuestion(idx) {
-    setCollapsedQuestions(prev => ({ ...prev, [idx]: !prev[idx] }))
+    setCollapsedQuestions(prev => {
+      const nextCollapsed = !prev[idx]
+      // Automated shrink attachments & option settings when question is collapsed
+      if (nextCollapsed) {
+        setExpandedAttachments(aPrev => ({ ...aPrev, [idx]: false }))
+        setOpenOptionSettings(sPrev => ({ ...sPrev, [idx]: false, [`survey_${idx}`]: false, [`tf_${idx}`]: false }))
+      }
+      return { ...prev, [idx]: nextCollapsed }
+    })
   }
 
   function collapseAllQuestions() {
@@ -368,6 +411,7 @@ export default function CreateExam() {
             ...q,
             question_text: q.question_text || '',
             image_url: q.image_url || '',
+            video_url: q.video_url || '',
             audio_url: q.audio_url || '',
             max_plays: q.max_plays || 1,
             allow_pause: q.allow_pause || false,
@@ -395,6 +439,148 @@ export default function CreateExam() {
     }
     load()
   }, [examId, isEdit])
+
+  // Compute snapshot of current form state for unsaved changes detection
+  const computeSnapshot = useCallback(() => {
+    return JSON.stringify({
+      title: (title || '').trim(),
+      information: (information || '').trim(),
+      pdfUrl: (pdfUrl || '').trim(),
+      duration: Number(duration) || 0,
+      passingGrade: Number(passingGrade) || 0,
+      targetKelas: [...(targetKelas || [])].sort(),
+      mode,
+      quizTimerType,
+      uniformTime: Number(uniformTime) || 0,
+      monitoringLevel,
+      questionOrder,
+      defaultOptionsCount,
+      defaultStatementsCount,
+      defaultMatchingCount,
+      defaultSequencingCount,
+      defaultAgreeDisagreeCount,
+      defaultSurveyOptionsCount,
+      defaultGridRowsCount,
+      defaultGridColsCount,
+      surveyType,
+      surveyRecurrence,
+      surveyNotifyTime,
+      surveyValidFrom,
+      surveyValidUntil,
+      surveyAllowEdit,
+      questions: (questionItems || []).map(q => ({
+        number: q.number,
+        type: q.type,
+        question_text: (q.question_text || '').trim(),
+        image_url: q.image_url || '',
+        video_url: q.video_url || '',
+        audio_url: q.audio_url || '',
+        max_plays: q.max_plays,
+        allow_pause: q.allow_pause,
+        options: q.options || {},
+        option_images: q.option_images || {},
+        correct_answer: q.correct_answer,
+        points: q.points,
+        variant: q.variant,
+        time_limit: q.time_limit,
+        scale_min: q.scale_min,
+        scale_max: q.scale_max,
+        scale_min_label: q.scale_min_label,
+        scale_max_label: q.scale_max_label,
+        grid_rows: q.grid_rows,
+        grid_columns: q.grid_columns,
+        allow_other: q.allow_other,
+        required: q.required,
+      }))
+    })
+  }, [
+    title, information, pdfUrl, duration, passingGrade, targetKelas, mode,
+    quizTimerType, uniformTime, monitoringLevel, questionOrder,
+    defaultOptionsCount, defaultStatementsCount, defaultMatchingCount,
+    defaultSequencingCount, defaultAgreeDisagreeCount, defaultSurveyOptionsCount,
+    defaultGridRowsCount, defaultGridColsCount, surveyType, surveyRecurrence,
+    surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit,
+    questionItems
+  ])
+
+  // Initialize initial snapshot baseline once loading finishes
+  useEffect(() => {
+    if (!loading && initialSnapshotRef.current === null) {
+      initialSnapshotRef.current = computeSnapshot()
+    }
+  }, [loading, computeSnapshot])
+
+  const currentSnapshot = computeSnapshot()
+  const hasUnsavedChanges = Boolean(
+    !loading &&
+    initialSnapshotRef.current !== null &&
+    initialSnapshotRef.current !== currentSnapshot
+  )
+
+  // Prompt before closing / reloading browser tab
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasUnsavedChanges && !saving && !isSavedRef.current) {
+        e.preventDefault()
+        e.returnValue = ''
+        return ''
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [hasUnsavedChanges, saving])
+
+  // Intercept in-app navigation clicks (e.g. sidebar links)
+  useEffect(() => {
+    const handleClickCapture = (e) => {
+      if (!hasUnsavedChanges || isSavedRef.current || saving) return
+      const link = e.target.closest('a')
+      if (link && link.href && !link.hasAttribute('download') && link.target !== '_blank') {
+        const href = link.getAttribute('href')
+        if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+          e.preventDefault()
+          e.stopPropagation()
+          setPendingNavPath(href)
+          setShowUnsavedModal(true)
+        }
+      }
+    }
+    document.addEventListener('click', handleClickCapture, true)
+    return () => {
+      document.removeEventListener('click', handleClickCapture, true)
+    }
+  }, [hasUnsavedChanges, saving])
+
+  // Intercept browser back button
+  useEffect(() => {
+    if (!hasUnsavedChanges || isSavedRef.current) return
+
+    window.history.pushState({ trap: true }, '', window.location.href)
+
+    const handlePopState = () => {
+      if (hasUnsavedChanges && !isSavedRef.current) {
+        window.history.pushState({ trap: true }, '', window.location.href)
+        setPendingNavPath(returnPath)
+        setShowUnsavedModal(true)
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [hasUnsavedChanges, returnPath])
+
+  function handleBackClick() {
+    if (hasUnsavedChanges) {
+      setPendingNavPath(returnPath)
+      setShowUnsavedModal(true)
+    } else {
+      navigate(returnPath)
+    }
+  }
 
   // When mode changes, reset questions to appropriate defaults
   function handleModeChange(newMode) {
@@ -425,10 +611,26 @@ export default function CreateExam() {
 
   function toggleOptionImageInput(qIdx, key) {
     const mapKey = `${qIdx}_${key}`
-    setOpenOptionImageInputs(prev => ({
-      ...prev,
-      [mapKey]: !prev[mapKey]
-    }))
+    setOpenOptionImageInputs(prev => {
+      const wasOpen = Boolean(prev[mapKey])
+      if (wasOpen) {
+        return { ...prev, [mapKey]: false }
+      }
+      // Automated shrink: auto-shrink other open option image drawers in this question
+      const next = {}
+      Object.keys(prev).forEach(k => {
+        if (!k.startsWith(`${qIdx}_`)) {
+          next[k] = prev[k]
+        }
+      })
+      next[mapKey] = true
+      return next
+    })
+  }
+
+  function shrinkOptionImageInput(qIdx, key) {
+    const mapKey = `${qIdx}_${key}`
+    setOpenOptionImageInputs(prev => ({ ...prev, [mapKey]: false }))
   }
 
   function updateOptionImage(idx, key, value) {
@@ -1024,8 +1226,12 @@ export default function CreateExam() {
     }
   }
 
-  async function handleSave(publish = false) {
-    if (!title.trim()) { setError('Judul harus diisi.'); return }
+  async function handleSave(publish = false, customNavPath = null) {
+    if (!title.trim()) {
+      setError(isSurvey ? 'Judul survei harus diisi.' : 'Judul harus diisi.')
+      setShowUnsavedModal(false)
+      return false
+    }
     
     // Validate quiz timers
     if (mode === 'quiz') {
@@ -1174,6 +1380,7 @@ export default function CreateExam() {
         type: q.type,
         question_text: q.question_text || '',
         image_url: q.image_url || null,
+        video_url: q.video_url || null,
         audio_url: q.audio_url || null,
         max_plays: Number(q.max_plays) || 1,
         allow_pause: Boolean(q.allow_pause),
@@ -1199,11 +1406,19 @@ export default function CreateExam() {
       }))
       await questions.createMany(qRows)
 
-      const returnPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : '/teacher/exams'
-      navigate(returnPath)
+      isSavedRef.current = true
+      initialSnapshotRef.current = computeSnapshot()
+      const destination = customNavPath || returnPath
+      if (destination.startsWith('http://') || destination.startsWith('https://')) {
+        window.location.href = destination
+      } else {
+        navigate(destination)
+      }
+      return true
     } catch (err) {
       setError('Gagal menyimpan: ' + err.message)
       setSaving(false)
+      return false
     }
   }
 
@@ -1215,21 +1430,106 @@ export default function CreateExam() {
 
   return (
     <>
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate(user?.role === 'SUPERADMIN' ? '/admin/exams' : '/teacher/exams')}><ChevronLeft size={15} /></button>
+      {/* ─── FROZEN / STICKY ACTION HEADER BAR ─── */}
+      <div className="page-header sticky-exam-header">
+        <div className="sticky-exam-top-row">
+          <div className="sticky-exam-title-group">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={handleBackClick}
+              title="Kembali ke daftar ujian"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}
+            >
+              <ChevronLeft size={16} />
+              <span className="btn-back-text">Kembali</span>
+            </button>
             <div>
-              <h2>{isEdit ? `Edit ${modeLabel}` : `Buat ${modeLabel} Baru`}</h2>
-              <p className="text-muted text-sm">{questionItems.length} {isSurvey ? 'pertanyaan' : 'soal'} · Mode: {modeLabel}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                  {isEdit ? `Edit ${modeLabel}` : `Buat ${modeLabel} Baru`}
+                </h2>
+                {hasUnsavedChanges ? (
+                  <span
+                    className="badge badge-warning"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      padding: '0.15rem 0.55rem',
+                      borderRadius: '999px',
+                      background: '#fef3c7',
+                      color: '#b45309',
+                      border: '1px solid #fde68a'
+                    }}
+                    title="Ada perubahan yang belum disimpan ke server"
+                  >
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#d97706', display: 'inline-block' }} />
+                    Belum Disimpan
+                  </span>
+                ) : (
+                  <span
+                    className="badge badge-success"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      padding: '0.15rem 0.55rem',
+                      borderRadius: '999px',
+                      background: '#ecfdf5',
+                      color: '#047857',
+                      border: '1px solid #a7f3d0'
+                    }}
+                    title="Semua draf dan pengaturan telah tersimpan"
+                  >
+                    <CheckCircle2 size={12} />
+                    Tersimpan
+                  </span>
+                )}
+              </div>
+              <p className="text-muted text-sm" style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem' }}>
+                {questionItems.length} {isSurvey ? 'pertanyaan' : 'soal'} · Mode: {modeLabel} {title ? `· "${title.length > 32 ? title.slice(0, 32) + '...' : title}"` : ''}
+              </p>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button className="btn btn-ghost" onClick={() => handleSave(false)} disabled={saving}>
-              <Save size={15} /> Simpan Draft
+          <div className="sticky-exam-actions">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => handleSave(false)}
+              disabled={saving}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontWeight: 600,
+                border: '1px solid var(--border)',
+                background: '#ffffff',
+              }}
+              title="Simpan sebagai draf agar pekerjaan tidak hilang"
+            >
+              <Save size={15} />
+              <span>{saving ? 'Menyimpan...' : 'Simpan Draft'}</span>
             </button>
-            <button className="btn btn-gold" onClick={() => handleSave(true)} disabled={saving}>
-              {saving ? 'Menyimpan...' : '🚀 Publikasikan'}
+            <button
+              type="button"
+              className="btn btn-gold"
+              onClick={() => handleSave(true)}
+              disabled={saving}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontWeight: 700,
+                boxShadow: '0 2px 10px rgba(223, 174, 52, 0.35)'
+              }}
+              title="Publikasikan ujian sekarang"
+            >
+              <span>{saving ? 'Menyimpan...' : '🚀 Publikasikan'}</span>
             </button>
           </div>
         </div>
@@ -1316,38 +1616,38 @@ export default function CreateExam() {
 
           {!collapsedSections.mode && (
             <div className="card-collapsible-body" style={{ marginTop: '0.85rem' }}>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div className="mode-selector-grid">
                 <button
-                  className={`btn ${mode === 'exam' ? 'btn-gold' : 'btn-ghost'}`}
+                  type="button"
+                  className={`btn ${mode === 'exam' ? 'btn-gold' : 'btn-ghost'} mode-selector-btn`}
                   onClick={() => handleModeChange('exam')}
-                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
                 >
-                  <BookOpen size={18} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontWeight: 700 }}>Ujian</div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer global, PDF soal</div>
+                  <div className="mode-btn-icon"><BookOpen size={20} /></div>
+                  <div className="mode-btn-content">
+                    <div className="mode-btn-title">Ujian</div>
+                    <div className="mode-btn-desc">Timer global, PDF soal</div>
                   </div>
                 </button>
                 <button
-                  className={`btn ${mode === 'quiz' ? 'btn-gold' : 'btn-ghost'}`}
+                  type="button"
+                  className={`btn ${mode === 'quiz' ? 'btn-gold' : 'btn-ghost'} mode-selector-btn`}
                   onClick={() => handleModeChange('quiz')}
-                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
                 >
-                  <Zap size={18} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontWeight: 700 }}>Kuis</div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Timer per soal, maju satu arah</div>
+                  <div className="mode-btn-icon"><Zap size={20} /></div>
+                  <div className="mode-btn-content">
+                    <div className="mode-btn-title">Kuis</div>
+                    <div className="mode-btn-desc">Timer per soal, maju satu arah</div>
                   </div>
                 </button>
                 <button
-                  className={`btn ${mode === 'survey' ? 'btn-gold' : 'btn-ghost'}`}
+                  type="button"
+                  className={`btn ${mode === 'survey' ? 'btn-gold' : 'btn-ghost'} mode-selector-btn`}
                   onClick={() => handleModeChange('survey')}
-                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.875rem' }}
                 >
-                  <ClipboardList size={18} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontWeight: 700 }}>Survei</div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.7, fontWeight: 400 }}>Google Form, tanpa pengawasan</div>
+                  <div className="mode-btn-icon"><ClipboardList size={20} /></div>
+                  <div className="mode-btn-content">
+                    <div className="mode-btn-title">Survei</div>
+                    <div className="mode-btn-desc">Google Form, tanpa pengawasan</div>
                   </div>
                 </button>
               </div>
@@ -1359,7 +1659,7 @@ export default function CreateExam() {
                     <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
                     Durasi Ujian
                   </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <Clock size={16} color="var(--gold)" />
                     <input
                       type="number"
@@ -1382,36 +1682,30 @@ export default function CreateExam() {
                     <Clock size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
                     Pengaturan Waktu Per Soal
                   </label>
-                  <div style={{ display: 'flex', gap: '0.625rem' }}>
-                    <label style={{
-                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                      padding: '0.75rem', borderRadius: 8,
+                  <div className="mode-suboptions-grid">
+                    <label className="mode-suboption-pill" style={{
                       border: `2px solid ${quizTimerType === 'uniform' ? 'var(--gold)' : 'var(--border)'}`,
                       background: quizTimerType === 'uniform' ? 'rgba(245,158,11,0.05)' : 'transparent',
-                      cursor: 'pointer', fontSize: '0.85rem'
                     }}>
                       <input type="radio" name="quizTimerType" checked={quizTimerType === 'uniform'} onChange={() => setQuizTimerType('uniform')} />
-                      <div>
-                        <div style={{ fontWeight: 600 }}>Waktu Seragam</div>
-                        <div className="text-muted text-xs">Semua soal punya waktu yang sama</div>
+                      <div className="pill-text">
+                        <div className="pill-title">Waktu Seragam</div>
+                        <div className="text-muted pill-desc">Semua soal punya waktu yang sama</div>
                       </div>
                     </label>
-                    <label style={{
-                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                      padding: '0.75rem', borderRadius: 8,
+                    <label className="mode-suboption-pill" style={{
                       border: `2px solid ${quizTimerType === 'independent' ? 'var(--gold)' : 'var(--border)'}`,
                       background: quizTimerType === 'independent' ? 'rgba(245,158,11,0.05)' : 'transparent',
-                      cursor: 'pointer', fontSize: '0.85rem'
                     }}>
                       <input type="radio" name="quizTimerType" checked={quizTimerType === 'independent'} onChange={() => setQuizTimerType('independent')} />
-                      <div>
-                        <div style={{ fontWeight: 600 }}>Waktu Independen</div>
-                        <div className="text-muted text-xs">Setiap soal punya waktu sendiri</div>
+                      <div className="pill-text">
+                        <div className="pill-title">Waktu Independen</div>
+                        <div className="text-muted pill-desc">Setiap soal punya waktu sendiri</div>
                       </div>
                     </label>
                   </div>
                   {quizTimerType === 'uniform' && (
-                    <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                       <Clock size={16} color="var(--gold)" />
                       <label className="form-label" style={{ margin: 0, whiteSpace: 'nowrap', fontSize: '0.85rem' }}>Waktu per soal:</label>
                       <input
@@ -1436,38 +1730,32 @@ export default function CreateExam() {
                     <Calendar size={14} style={{ marginRight: '0.375rem', verticalAlign: '-2px' }} />
                     Penjadwalan Survei
                   </label>
-                  <div style={{ display: 'flex', gap: '0.625rem', marginBottom: '1rem' }}>
-                    <label style={{
-                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                      padding: '0.75rem', borderRadius: 8,
+                  <div className="mode-suboptions-grid" style={{ marginBottom: '1rem' }}>
+                    <label className="mode-suboption-pill" style={{
                       border: `2px solid ${surveyType === 'one_time' ? 'var(--accent)' : 'var(--border)'}`,
                       background: surveyType === 'one_time' ? 'rgba(79,142,247,0.05)' : 'transparent',
-                      cursor: 'pointer', fontSize: '0.85rem'
                     }}>
                       <input type="radio" name="surveyType" checked={surveyType === 'one_time'} onChange={() => setSurveyType('one_time')} />
-                      <div>
-                        <div style={{ fontWeight: 600 }}>Satu Kali</div>
-                        <div className="text-muted text-xs">Survei sekali pakai dengan masa berlaku</div>
+                      <div className="pill-text">
+                        <div className="pill-title">Satu Kali</div>
+                        <div className="text-muted pill-desc">Survei sekali pakai dengan masa berlaku</div>
                       </div>
                     </label>
-                    <label style={{
-                      flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem',
-                      padding: '0.75rem', borderRadius: 8,
+                    <label className="mode-suboption-pill" style={{
                       border: `2px solid ${surveyType === 'scheduled' ? 'var(--accent)' : 'var(--border)'}`,
                       background: surveyType === 'scheduled' ? 'rgba(79,142,247,0.05)' : 'transparent',
-                      cursor: 'pointer', fontSize: '0.85rem'
                     }}>
                       <input type="radio" name="surveyType" checked={surveyType === 'scheduled'} onChange={() => setSurveyType('scheduled')} />
-                      <div>
-                        <div style={{ fontWeight: 600 }}>Terjadwal</div>
-                        <div className="text-muted text-xs">Berulang dengan interval tertentu</div>
+                      <div className="pill-text">
+                        <div className="pill-title">Terjadwal</div>
+                        <div className="text-muted pill-desc">Berulang dengan interval tertentu</div>
                       </div>
                     </label>
                   </div>
 
                   {/* Scheduled survey options */}
                   {surveyType === 'scheduled' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: '0.8rem' }}>
                           <Repeat size={12} style={{ marginRight: '0.25rem', verticalAlign: '-1px' }} /> Frekuensi
@@ -1489,7 +1777,7 @@ export default function CreateExam() {
                   )}
 
                   {/* Validity period */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
                     <div className="form-group">
                       <label className="form-label" style={{ fontSize: '0.8rem' }}>Mulai Berlaku <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span></label>
                       <input type="datetime-local" className="form-input" value={surveyValidFrom} onChange={e => setSurveyValidFrom(e.target.value)} style={{ fontSize: '0.85rem' }} />
@@ -1564,7 +1852,7 @@ export default function CreateExam() {
             {!collapsedSections.monitoring && (
               <div className="card-collapsible-body" style={{ marginTop: '0.85rem' }}>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.625rem' }}>
+                <div className="monitoring-level-grid">
                   {Object.values(MONITORING_LEVELS).map(lvl => (
                     <button
                       key={lvl.id}
@@ -1583,6 +1871,8 @@ export default function CreateExam() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: '0.5rem',
+                        minWidth: 0,
+                        boxSizing: 'border-box',
                       }}
                     >
                       <div style={{
@@ -2570,143 +2860,386 @@ export default function CreateExam() {
                 />
               </div>
 
-              {/* Media Lampiran Soal (Kiri: Lampiran Gambar, Kanan: Modul Audio Listening) — khusus mode ujian */}
-              {!isSurvey && (
-                <div 
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-                    gap: '0.875rem',
-                    marginBottom: '1rem',
-                    alignItems: 'stretch'
-                  }}
-                >
-                  {/* Kolom Kiri: Lampiran Gambar */}
-                  <div
-                    style={{
-                      margin: 0,
-                      padding: '0.875rem 1rem',
-                      background: '#ffffff',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '0.625rem',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    {/* Header */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <label style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem', color: 'var(--text-primary)' }}>
-                        <ImageIcon size={15} style={{ color: 'var(--accent)' }} />
-                        Lampiran Gambar <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span>
-                      </label>
-                      {q.image_url ? (
-                        <span className="badge badge-active" style={{ fontSize: '0.7rem' }}>Terlampir</span>
-                      ) : (
-                        <span className="badge badge-draft" style={{ fontSize: '0.7rem' }}>Opsional</span>
-                      )}
-                    </div>
+              {/* Media Lampiran Soal (Kombinasi Gambar, Video & Audio CBT dalam 1 tombol 'Lampirkan File' yang dapat di-expand) */}
+              {!isSurvey && (() => {
+                const isAttachmentOpen = Boolean(expandedAttachments[idx])
+                const hasImg = Boolean(q.image_url)
+                const hasVid = Boolean(q.video_url)
+                const hasAud = Boolean(q.audio_url)
+                const totalAttached = (hasImg ? 1 : 0) + (hasVid ? 1 : 0) + (hasAud ? 1 : 0)
 
-                    {/* Baris Input & Tombol */}
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                      <input
-                        className="form-input"
-                        style={{ fontSize: '0.82rem', width: '100%', height: '36px', padding: '0.4rem 0.65rem', borderRadius: '6px', flex: 1, minWidth: 0 }}
-                        value={q.image_url || ''}
-                        onChange={e => updateQuestion(idx, 'image_url', e.target.value)}
-                        placeholder="https://drive.google.com/file/d/... atau URL gambar"
-                        disabled={!!pdfUrl}
-                      />
-                      {q.image_url && (
+                return (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    {/* Tombol Utama: Lampirkan File */}
+                    <div className={`attachment-toggle-bar ${isAttachmentOpen ? 'is-expanded' : ''} ${totalAttached > 0 ? 'has-attachments' : ''}`}>
+                      <button
+                        type="button"
+                        className="attachment-main-btn"
+                        onClick={() => toggleAttachment(idx)}
+                        title={isAttachmentOpen ? 'Ciutkan lampiran file' : 'Bentangkan lampiran file'}
+                      >
+                        <div className="attachment-icon-bubble">
+                          <Paperclip size={15} />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span className="attachment-title">
+                            Lampirkan File
+                          </span>
+
+                          {totalAttached === 0 ? (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                              (Gambar, Video, atau Audio CBT)
+                            </span>
+                          ) : (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                              {hasImg && (
+                                <span className="attachment-badge-pill" title="Lampiran Gambar aktif">
+                                  <ImageIcon size={11} /> Gambar
+                                </span>
+                              )}
+                              {hasVid && (
+                                <span className="attachment-badge-pill" title="Lampiran Video aktif">
+                                  <Video size={11} /> Video
+                                </span>
+                              )}
+                              {hasAud && (
+                                <span className="attachment-badge-pill" title="Lampiran Audio CBT aktif">
+                                  <Headphones size={11} /> Audio CBT
+                                </span>
+                              )}
+                              <span style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 600, marginLeft: '0.15rem' }}>
+                                • {totalAttached} file terlampir
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+
+                      {/* Tombol Aksi Kanan (Buka / Tutup) */}
+                      <div className="attachment-toggle-action">
                         <button
                           type="button"
                           className="btn btn-ghost"
-                          onClick={() => updateQuestion(idx, 'image_url', '')}
+                          onClick={() => toggleAttachment(idx)}
                           style={{
-                            height: '36px',
-                            padding: '0 0.65rem',
+                            height: '30px',
+                            padding: '0 0.55rem',
                             fontSize: '0.75rem',
                             borderRadius: '6px',
-                            border: '1px solid rgba(239, 68, 68, 0.25)',
-                            color: 'var(--danger)',
-                            background: '#ffffff',
-                            whiteSpace: 'nowrap',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '0.25rem',
-                            flexShrink: 0
+                            gap: '0.35rem',
+                            color: isAttachmentOpen ? 'var(--primary)' : 'var(--text-secondary)',
+                            fontWeight: 600,
+                            cursor: 'pointer'
                           }}
-                          title="Hapus gambar"
                         >
-                          <Trash2 size={13} />
-                          <span>Hapus</span>
+                          <span>{isAttachmentOpen ? 'Tutup Lampiran' : (totalAttached > 0 ? 'Kelola Lampiran' : 'Buka Lampiran')}</span>
+                          {isAttachmentOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         </button>
-                      )}
-                    </div>
-
-                    {/* Baris Info / Status (Seragam tinggi 36px) */}
-                    <div
-                      style={{
-                        height: '36px',
-                        padding: '0 0.65rem',
-                        background: 'var(--navy-light)',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '0.5rem',
-                        fontSize: '0.75rem',
-                        color: 'var(--text-secondary)',
-                        boxSizing: 'border-box'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden' }}>
-                        <Info size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {!!pdfUrl ? 'Dinonaktifkan saat lembar PDF aktif.' : 'Format: PNG, JPG, WebP (akses publik).'}
-                        </span>
                       </div>
-                      {q.image_url && !pdfUrl && (
-                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--success)', flexShrink: 0 }}>
-                          ✓ Siap
-                        </span>
-                      )}
                     </div>
 
-                    {q.image_url && !pdfUrl && (
-                      <div style={{ padding: '0.4rem', background: 'var(--navy-light)', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'center' }}>
-                        <img 
-                          src={getDriveImageUrl(q.image_url)} 
-                          alt={`Pratinjau Lampiran Gambar Soal ${q.number}`} 
-                          style={{ maxHeight: 90, maxWidth: '100%', objectFit: 'contain', borderRadius: 4, margin: '0 auto' }}
-                          onError={(e) => { e.currentTarget.style.display = 'none' }}
-                        />
+                    {/* Panel Terbuka: Menampilkan 3 Tipe Lampiran Soal */}
+                    {isAttachmentOpen && (
+                      <div className="attachment-panel">
+                        {/* Header Panel */}
+                        <div className="attachment-panel-header">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                            <Paperclip size={14} style={{ color: 'var(--accent)' }} />
+                            <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                              3 Tipe Lampiran Soal:
+                            </span>
+                            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                              Pilih tipe media yang ingin ditambahkan (Gambar, Video, atau Audio Listening).
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={() => shrinkAttachment(idx)}
+                            style={{
+                              height: '24px',
+                              padding: '0 0.4rem',
+                              fontSize: '0.72rem',
+                              borderRadius: '4px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.2rem',
+                              color: 'var(--text-muted)'
+                            }}
+                            title="Ciutkan panel lampiran file"
+                          >
+                            <X size={12} />
+                            <span>Ciutkan</span>
+                          </button>
+                        </div>
+
+                        {/* 3 Kolom Lampiran (Gambar, Video, Audio) */}
+                        <div 
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                            gap: '0.875rem',
+                            alignItems: 'stretch'
+                          }}
+                        >
+                          {/* Tipe 1: Lampiran Gambar */}
+                          <div
+                            style={{
+                              margin: 0,
+                              padding: '0.875rem 1rem',
+                              background: '#ffffff',
+                              borderRadius: '8px',
+                              border: q.image_url ? '1.5px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: '0.625rem',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            {/* Header */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <label style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem', color: 'var(--text-primary)' }}>
+                                <ImageIcon size={15} style={{ color: 'var(--accent)' }} />
+                                1. Lampiran Gambar <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span>
+                              </label>
+                              {q.image_url ? (
+                                <span className="badge badge-active" style={{ fontSize: '0.7rem' }}>Terlampir</span>
+                              ) : (
+                                <span className="badge badge-draft" style={{ fontSize: '0.7rem' }}>Kosong</span>
+                              )}
+                            </div>
+
+                            {/* Baris Input & Tombol */}
+                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <input
+                                className="form-input"
+                                style={{ fontSize: '0.82rem', width: '100%', height: '36px', padding: '0.4rem 0.65rem', borderRadius: '6px', flex: 1, minWidth: 0 }}
+                                value={q.image_url || ''}
+                                onChange={e => updateQuestion(idx, 'image_url', e.target.value)}
+                                placeholder="https://drive.google.com/file/d/... atau URL gambar"
+                                disabled={!!pdfUrl}
+                              />
+                              {q.image_url && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost"
+                                  onClick={() => updateQuestion(idx, 'image_url', '')}
+                                  style={{
+                                    height: '36px',
+                                    padding: '0 0.65rem',
+                                    fontSize: '0.75rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                    color: 'var(--danger)',
+                                    background: '#ffffff',
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    flexShrink: 0
+                                  }}
+                                  title="Hapus gambar"
+                                >
+                                  <Trash2 size={13} />
+                                  <span>Hapus</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Baris Info / Status (Seragam tinggi 36px) */}
+                            <div
+                              style={{
+                                height: '36px',
+                                padding: '0 0.65rem',
+                                background: 'var(--navy-light)',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '0.5rem',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-secondary)',
+                                boxSizing: 'border-box'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden' }}>
+                                <Info size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {!!pdfUrl ? 'Dinonaktifkan saat lembar PDF aktif.' : 'Format: PNG, JPG, WebP (akses publik).'}
+                                </span>
+                              </div>
+                              {q.image_url && !pdfUrl && (
+                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--success)', flexShrink: 0 }}>
+                                  ✓ Siap
+                                </span>
+                              )}
+                            </div>
+
+                            {q.image_url && !pdfUrl && (
+                              <div style={{ padding: '0.4rem', background: 'var(--navy-light)', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'center' }}>
+                                <img 
+                                  src={getDriveImageUrl(q.image_url)} 
+                                  alt={`Pratinjau Lampiran Gambar Soal ${q.number}`} 
+                                  style={{ maxHeight: 90, maxWidth: '100%', objectFit: 'contain', borderRadius: 4, margin: '0 auto' }}
+                                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Tipe 2: Lampiran Video */}
+                          <div
+                            style={{
+                              margin: 0,
+                              padding: '0.875rem 1rem',
+                              background: '#ffffff',
+                              borderRadius: '8px',
+                              border: q.video_url ? '1.5px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: '0.625rem',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            {/* Header */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <label style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem', color: 'var(--text-primary)' }}>
+                                <Video size={15} style={{ color: 'var(--accent)' }} />
+                                2. Lampiran Video <span className="text-muted text-xs" style={{ fontWeight: 400 }}>(opsional)</span>
+                              </label>
+                              {q.video_url ? (
+                                <span className="badge badge-active" style={{ fontSize: '0.7rem' }}>Terlampir</span>
+                              ) : (
+                                <span className="badge badge-draft" style={{ fontSize: '0.7rem' }}>Kosong</span>
+                              )}
+                            </div>
+
+                            {/* Baris Input & Tombol */}
+                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <input
+                                className="form-input"
+                                style={{ fontSize: '0.82rem', width: '100%', height: '36px', padding: '0.4rem 0.65rem', borderRadius: '6px', flex: 1, minWidth: 0 }}
+                                value={q.video_url || ''}
+                                onChange={e => updateQuestion(idx, 'video_url', e.target.value)}
+                                placeholder="YouTube, Google Drive, atau URL MP4..."
+                                disabled={!!pdfUrl}
+                              />
+                              {q.video_url && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost"
+                                  onClick={() => updateQuestion(idx, 'video_url', '')}
+                                  style={{
+                                    height: '36px',
+                                    padding: '0 0.65rem',
+                                    fontSize: '0.75rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                    color: 'var(--danger)',
+                                    background: '#ffffff',
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    flexShrink: 0
+                                  }}
+                                  title="Hapus video"
+                                >
+                                  <Trash2 size={13} />
+                                  <span>Hapus</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Baris Info / Status (Seragam tinggi 36px) */}
+                            <div
+                              style={{
+                                height: '36px',
+                                padding: '0 0.65rem',
+                                background: 'var(--navy-light)',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '0.5rem',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-secondary)',
+                                boxSizing: 'border-box'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflow: 'hidden' }}>
+                                <Info size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {!!pdfUrl ? 'Dinonaktifkan saat lembar PDF aktif.' : 'YouTube, Google Drive, Vimeo, MP4.'}
+                                </span>
+                              </div>
+                              {q.video_url && !pdfUrl && (
+                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--success)', flexShrink: 0 }}>
+                                  ✓ Siap
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Pratinjau Video */}
+                            {q.video_url && !pdfUrl && (
+                              <div style={{ padding: '0.4rem', background: 'var(--navy-light)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                                <QuestionVideoPlayer videoUrl={q.video_url} maxHeight={120} showTitle={false} />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Tipe 3: Modul Audio Listening CBT (TOEFL / IELTS) */}
+                          <div style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
+                            <QuestionAudioInput
+                              questionId={q.id || `temp-q-${idx}`}
+                              initialAudioUrl={q.audio_url || ''}
+                              initialMaxPlays={q.max_plays || 1}
+                              initialAllowPause={Boolean(q.allow_pause)}
+                              onAudioSynced={({ audioUrl, maxPlays, allowPause }) => {
+                                setQuestionItems(prev => prev.map((item, i) => i === idx ? {
+                                  ...item,
+                                  audio_url: audioUrl,
+                                  max_plays: maxPlays,
+                                  allow_pause: allowPause
+                                } : item))
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Footer Aksi Panel: Selesai & Ciutkan */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.625rem', borderTop: '1px solid var(--border)' }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => shrinkAttachment(idx)}
+                            style={{
+                              padding: '0.35rem 0.85rem',
+                              fontSize: '0.78rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              borderRadius: '6px'
+                            }}
+                            title="Selesai mengatur lampiran dan ciutkan panel ini"
+                          >
+                            <CheckCircle2 size={13} />
+                            <span>Selesai & Ciutkan Lampiran</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
+                )
+              })()}
 
-                  {/* Kolom Kanan: Modul Audio Listening CBT (TOEFL / IELTS) */}
-                  <div style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
-                    <QuestionAudioInput
-                      questionId={q.id || `temp-q-${idx}`}
-                      initialAudioUrl={q.audio_url || ''}
-                      initialMaxPlays={q.max_plays || 1}
-                      initialAllowPause={Boolean(q.allow_pause)}
-                      onAudioSynced={({ audioUrl, maxPlays, allowPause }) => {
-                        setQuestionItems(prev => prev.map((item, i) => i === idx ? {
-                          ...item,
-                          audio_url: audioUrl,
-                          max_plays: maxPlays,
-                          allow_pause: allowPause
-                        } : item))
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
 
               {/* ═══════════════ SURVEY QUESTION TYPE EDITORS ═══════════════ */}
               {isSurvey && q.type === 'SHORT_ANSWER' && (
@@ -2865,52 +3398,105 @@ export default function CreateExam() {
                 const optCount = optKeys.length
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {/* Survey options count toolbar */}
-                    <div style={{
-                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
-                      gap: '0.5rem'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Opsi Pertanyaan #{q.number}:</span>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeSurveyOptionsCount(idx, optCount - 1)}
-                            disabled={optCount <= 2}
-                          >-</button>
-                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{optCount}</span>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeSurveyOptionsCount(idx, optCount + 1)}
-                            disabled={optCount >= 10}
-                          >+</button>
-                        </div>
-                      </div>
+                    {/* Survey options count toolbar (Automated Shrink / Expand) */}
+                    {(() => {
+                      const isSettingOpen = Boolean(openOptionSettings[`survey_${idx}`])
+                      return (
+                        <div
+                          style={{
+                            background: isSettingOpen ? 'var(--navy-mid)' : 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: '0.45rem 0.75rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Sliders size={13} style={{ color: 'var(--accent)' }} />
+                                Jumlah Opsi Pertanyaan #{q.number}:
+                              </span>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
-                        {[2, 3, 4, 5].map(cnt => (
-                          <button
-                            key={cnt}
-                            type="button"
-                            className={`btn btn-sm ${optCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
-                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
-                            onClick={() => changeSurveyOptionsCount(idx, cnt)}
-                          >
-                            {cnt} Opsi
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                              {/* Stepper ringkas langsung di bar */}
+                              <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 24, fontSize: '0.82rem' }}
+                                  onClick={() => changeSurveyOptionsCount(idx, optCount - 1)}
+                                  disabled={optCount <= 2}
+                                >-</button>
+                                <span style={{ fontWeight: 700, fontSize: '0.82rem', minWidth: 22, textAlign: 'center', color: 'var(--accent)' }}>
+                                  {optCount}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 24, fontSize: '0.82rem' }}
+                                  onClick={() => changeSurveyOptionsCount(idx, optCount + 1)}
+                                  disabled={optCount >= 10}
+                                >+</button>
+                              </div>
+
+                              <span className="text-muted text-xs">
+                                ({optCount} Pilihan)
+                              </span>
+                            </div>
+
+                            {/* Tombol Toggle Preset Cepat */}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => toggleOptionSettings(`survey_${idx}`)}
+                              style={{
+                                height: 24,
+                                padding: '0 0.45rem',
+                                fontSize: '0.74rem',
+                                color: isSettingOpen ? 'var(--primary)' : 'var(--text-secondary)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                              title={isSettingOpen ? 'Ciutkan preset cepat' : 'Buka pilihan preset cepat'}
+                            >
+                              <span>{isSettingOpen ? 'Tutup Preset' : 'Preset Cepat'}</span>
+                              {isSettingOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </button>
+                          </div>
+
+                          {/* Konten Preset Terbuka (Otomatis ciut setelah dipilih) */}
+                          {isSettingOpen && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.35rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--border)' }}>
+                              <span className="text-muted text-xs">Pilih cepat jumlah opsi:</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {[2, 3, 4, 5].map(cnt => (
+                                  <button
+                                    key={cnt}
+                                    type="button"
+                                    className={`btn btn-sm ${optCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                                    style={{ padding: '0.15rem 0.5rem', fontSize: '0.74rem', height: 24, borderRadius: 5 }}
+                                    onClick={() => {
+                                      changeSurveyOptionsCount(idx, cnt)
+                                      shrinkOptionSettings(`survey_${idx}`)
+                                    }}
+                                  >
+                                    {cnt} Opsi
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {optKeys.map((key, i) => {
                       const hasImage = !!q.option_images?.[key]
-                      const isInputOpen = openOptionImageInputs[`${idx}_${key}`] ?? false
+                      const isInputOpen = Boolean(openOptionImageInputs[`${idx}_${key}`])
                       return (
                         <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
                           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -2925,10 +3511,30 @@ export default function CreateExam() {
                               onChange={e => updateOption(idx, key, e.target.value)}
                             />
 
+                            {/* Thumbnail Gambar Terlampir Ringkas (Automated Shrink) */}
+                            {hasImage && !isInputOpen && (
+                              <button
+                                type="button"
+                                className="option-thumb-compact-btn"
+                                onClick={() => toggleOptionImageInput(idx, key)}
+                                title={`Gambar Opsi ${i + 1} terlampir. Klik untuk kelola / ubah.`}
+                              >
+                                <img
+                                  src={getDriveImageUrl(q.option_images[key])}
+                                  alt=""
+                                  className="option-thumb-img"
+                                  onError={e => { e.currentTarget.style.display = 'none' }}
+                                />
+                                <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                                  Gambar ✓
+                                </span>
+                              </button>
+                            )}
+
                             {/* Plus / Image button beside answer option */}
                             <button
                               type="button"
-                              className={`btn btn-sm ${hasImage ? 'btn-primary' : 'btn-ghost'}`}
+                              className={`btn btn-sm ${isInputOpen ? 'btn-primary' : 'btn-ghost'}`}
                               style={{
                                 padding: '0.25rem 0.5rem',
                                 height: 36,
@@ -2937,16 +3543,25 @@ export default function CreateExam() {
                                 gap: '0.25rem',
                                 fontSize: '0.75rem',
                                 flexShrink: 0,
-                                border: hasImage ? '1px solid var(--accent)' : '1px solid var(--border)',
-                                background: hasImage ? 'rgba(79, 142, 247, 0.15)' : undefined,
-                                color: hasImage ? 'var(--accent)' : 'var(--text-secondary)'
+                                border: (hasImage || isInputOpen) ? '1px solid var(--accent)' : '1px solid var(--border)',
+                                background: isInputOpen ? 'var(--accent)' : hasImage ? 'rgba(79, 142, 247, 0.12)' : undefined,
+                                color: isInputOpen ? '#ffffff' : hasImage ? 'var(--accent)' : 'var(--text-secondary)'
                               }}
                               onClick={() => toggleOptionImageInput(idx, key)}
-                              title={hasImage ? `Kelola Gambar Opsi ${i + 1}` : `Tambah link gambar ke Opsi ${i + 1}`}
+                              title={isInputOpen ? `Ciutkan form gambar Opsi ${i + 1}` : hasImage ? `Kelola Gambar Opsi ${i + 1}` : `Tambah link gambar ke Opsi ${i + 1}`}
                             >
-                              <Plus size={14} />
-                              <ImageIcon size={14} />
-                              {hasImage && <span style={{ fontWeight: 600 }}>Gambar</span>}
+                              {isInputOpen ? (
+                                <>
+                                  <ChevronUp size={14} />
+                                  <span style={{ fontWeight: 600 }}>Tutup</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plus size={14} />
+                                  <ImageIcon size={14} />
+                                  {!hasImage && <span>Gambar</span>}
+                                </>
+                              )}
                             </button>
 
                             {optCount > 2 && (
@@ -2962,8 +3577,8 @@ export default function CreateExam() {
                             )}
                           </div>
 
-                          {/* Image URL attachment drawer & live adaptive preview */}
-                          {(isInputOpen || hasImage) && (
+                          {/* Image URL attachment drawer (Automated Shrink / Expand) */}
+                          {isInputOpen && (
                             <div style={{
                               marginLeft: 32,
                               padding: '0.5rem 0.75rem',
@@ -2974,14 +3589,14 @@ export default function CreateExam() {
                               flexDirection: 'column',
                               gap: '0.5rem',
                             }}>
-                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}>
                                   <ImageIcon size={13} /> Link Gambar Opsi {i + 1}:
                                 </span>
                                 <input
                                   type="url"
                                   className="form-input"
-                                  style={{ flex: 1, fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 30 }}
+                                  style={{ flex: 1, minWidth: 200, fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 30 }}
                                   placeholder="Tempel link gambar (Google Drive publik atau URL langsung: https://...)"
                                   value={q.option_images?.[key] || ''}
                                   onChange={e => updateOptionImage(idx, key, e.target.value)}
@@ -2999,14 +3614,15 @@ export default function CreateExam() {
                                 )}
                                 <button
                                   type="button"
-                                  className="btn btn-ghost btn-sm"
-                                  style={{ padding: '0.2rem 0.4rem', height: 28, fontSize: '0.75rem' }}
-                                  onClick={() => toggleOptionImageInput(idx, key)}
-                                  title="Tutup form lampiran gambar"
+                                  className="btn btn-primary btn-sm"
+                                  style={{ padding: '0.2rem 0.5rem', height: 28, fontSize: '0.74rem' }}
+                                  onClick={() => shrinkOptionImageInput(idx, key)}
+                                  title="Selesai dan ciutkan form gambar opsi ini"
                                 >
-                                  Tutup
+                                  ✓ Selesai & Ciutkan
                                 </button>
                               </div>
+
 
                               {/* Adaptive Live Preview */}
                               {hasImage && (
@@ -3076,58 +3692,108 @@ export default function CreateExam() {
                 const currentCount = currentKeys.length
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {/* Per-question options count controller toolbar */}
-                    <div style={{
-                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
-                      gap: '0.5rem'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Opsi Soal #{q.number}:</span>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeMcqOptionsCount(idx, currentCount - 1)}
-                            disabled={currentCount <= 2}
-                            title="Kurangi opsi"
-                          >-</button>
-                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{currentCount}</span>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeMcqOptionsCount(idx, currentCount + 1)}
-                            disabled={currentCount >= 10}
-                            title="Tambah opsi"
-                          >+</button>
-                        </div>
-                        <span className="text-muted text-xs">
-                          ({ALL_LETTERS[0]} s/d {ALL_LETTERS[currentCount - 1]})
-                        </span>
-                      </div>
+                    {/* Per-question options count controller toolbar (Automated Shrink / Expand) */}
+                    {(() => {
+                      const isSettingOpen = Boolean(openOptionSettings[idx])
+                      return (
+                        <div
+                          style={{
+                            background: isSettingOpen ? 'var(--navy-mid)' : 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: '0.45rem 0.75rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Sliders size={13} style={{ color: 'var(--accent)' }} />
+                                Jumlah Opsi Soal #{q.number}:
+                              </span>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
-                        {[3, 4, 5, 6].map(cnt => (
-                          <button
-                            key={cnt}
-                            type="button"
-                            className={`btn btn-sm ${currentCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
-                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
-                            onClick={() => changeMcqOptionsCount(idx, cnt)}
-                          >
-                            {cnt} Opsi ({ALL_LETTERS[0]}-{ALL_LETTERS[cnt - 1]})
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                              {/* Stepper ringkas langsung di bar */}
+                              <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 24, fontSize: '0.82rem' }}
+                                  onClick={() => changeMcqOptionsCount(idx, currentCount - 1)}
+                                  disabled={currentCount <= 2}
+                                  title="Kurangi opsi"
+                                >-</button>
+                                <span style={{ fontWeight: 700, fontSize: '0.82rem', minWidth: 22, textAlign: 'center', color: 'var(--accent)' }}>
+                                  {currentCount}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 24, fontSize: '0.82rem' }}
+                                  onClick={() => changeMcqOptionsCount(idx, currentCount + 1)}
+                                  disabled={currentCount >= 10}
+                                  title="Tambah opsi"
+                                >+</button>
+                              </div>
+
+                              <span className="text-muted text-xs" style={{ whiteSpace: 'nowrap' }}>
+                                ({ALL_LETTERS[0]} s/d {ALL_LETTERS[currentCount - 1]})
+                              </span>
+                            </div>
+
+                            {/* Tombol Toggle Preset Cepat */}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => toggleOptionSettings(idx)}
+                              style={{
+                                height: 24,
+                                padding: '0 0.45rem',
+                                fontSize: '0.74rem',
+                                color: isSettingOpen ? 'var(--primary)' : 'var(--text-secondary)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                              title={isSettingOpen ? 'Ciutkan pilihan cepat' : 'Buka pilihan preset cepat'}
+                            >
+                              <span>{isSettingOpen ? 'Tutup Preset' : 'Preset Cepat'}</span>
+                              {isSettingOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </button>
+                          </div>
+
+                          {/* Konten Preset Terbuka (Otomatis ciut setelah dipilih atau ditutup) */}
+                          {isSettingOpen && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.35rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--border)' }}>
+                              <span className="text-muted text-xs">Pilih cepat jumlah opsi:</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {[3, 4, 5, 6].map(cnt => (
+                                  <button
+                                    key={cnt}
+                                    type="button"
+                                    className={`btn btn-sm ${currentCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                                    style={{ padding: '0.15rem 0.5rem', fontSize: '0.74rem', height: 24, borderRadius: 5 }}
+                                    onClick={() => {
+                                      changeMcqOptionsCount(idx, cnt)
+                                      shrinkOptionSettings(idx)
+                                    }}
+                                  >
+                                    {cnt} Opsi ({ALL_LETTERS[0]}-{ALL_LETTERS[cnt - 1]})
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* Options list */}
                     {currentKeys.map(key => {
                       const hasImage = !!q.option_images?.[key]
-                      const isInputOpen = openOptionImageInputs[`${idx}_${key}`] ?? false
+                      const isInputOpen = Boolean(openOptionImageInputs[`${idx}_${key}`])
                       return (
                         <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
                           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -3142,10 +3808,30 @@ export default function CreateExam() {
                               onChange={e => updateOption(idx, key, e.target.value)}
                             />
 
+                            {/* Thumbnail Gambar Terlampir Ringkas (Automated Shrink) */}
+                            {hasImage && !isInputOpen && (
+                              <button
+                                type="button"
+                                className="option-thumb-compact-btn"
+                                onClick={() => toggleOptionImageInput(idx, key)}
+                                title={`Gambar Opsi ${key} terlampir. Klik untuk kelola / ubah.`}
+                              >
+                                <img
+                                  src={getDriveImageUrl(q.option_images[key])}
+                                  alt=""
+                                  className="option-thumb-img"
+                                  onError={e => { e.currentTarget.style.display = 'none' }}
+                                />
+                                <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                                  Gambar ✓
+                                </span>
+                              </button>
+                            )}
+
                             {/* Plus / Image button beside answer option */}
                             <button
                               type="button"
-                              className={`btn btn-sm ${hasImage ? 'btn-primary' : 'btn-ghost'}`}
+                              className={`btn btn-sm ${isInputOpen ? 'btn-primary' : 'btn-ghost'}`}
                               style={{
                                 padding: '0.25rem 0.5rem',
                                 height: 36,
@@ -3154,16 +3840,25 @@ export default function CreateExam() {
                                 gap: '0.25rem',
                                 fontSize: '0.75rem',
                                 flexShrink: 0,
-                                border: hasImage ? '1px solid var(--accent)' : '1px solid var(--border)',
-                                background: hasImage ? 'rgba(79, 142, 247, 0.15)' : undefined,
-                                color: hasImage ? 'var(--accent)' : 'var(--text-secondary)'
+                                border: (hasImage || isInputOpen) ? '1px solid var(--accent)' : '1px solid var(--border)',
+                                background: isInputOpen ? 'var(--accent)' : hasImage ? 'rgba(79, 142, 247, 0.12)' : undefined,
+                                color: isInputOpen ? '#ffffff' : hasImage ? 'var(--accent)' : 'var(--text-secondary)'
                               }}
                               onClick={() => toggleOptionImageInput(idx, key)}
-                              title={hasImage ? `Kelola Gambar Opsi ${key}` : `Tambah link gambar ke Opsi ${key}`}
+                              title={isInputOpen ? `Ciutkan form gambar Opsi ${key}` : hasImage ? `Kelola Gambar Opsi ${key}` : `Tambah link gambar ke Opsi ${key}`}
                             >
-                              <Plus size={14} />
-                              <ImageIcon size={14} />
-                              {hasImage && <span style={{ fontWeight: 600 }}>Gambar</span>}
+                              {isInputOpen ? (
+                                <>
+                                  <ChevronUp size={14} />
+                                  <span style={{ fontWeight: 600 }}>Tutup</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plus size={14} />
+                                  <ImageIcon size={14} />
+                                  {!hasImage && <span>Gambar</span>}
+                                </>
+                              )}
                             </button>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }} title={q.type === 'MCQ' ? 'Kunci jawaban benar' : 'Centang jika opsi ini benar'}>
@@ -3201,8 +3896,8 @@ export default function CreateExam() {
                             )}
                           </div>
 
-                          {/* Image URL attachment drawer & live adaptive preview */}
-                          {(isInputOpen || hasImage) && (
+                          {/* Image URL attachment drawer (Automated Shrink / Expand) */}
+                          {isInputOpen && (
                             <div style={{
                               marginLeft: 32,
                               padding: '0.5rem 0.75rem',
@@ -3213,14 +3908,14 @@ export default function CreateExam() {
                               flexDirection: 'column',
                               gap: '0.5rem',
                             }}>
-                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}>
                                   <ImageIcon size={13} /> Link Gambar Opsi {key}:
                                 </span>
                                 <input
                                   type="url"
                                   className="form-input"
-                                  style={{ flex: 1, fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 30 }}
+                                  style={{ flex: 1, minWidth: 200, fontSize: '0.8rem', padding: '0.25rem 0.5rem', height: 30 }}
                                   placeholder="Tempel link gambar (Google Drive publik atau URL langsung: https://...)"
                                   value={q.option_images?.[key] || ''}
                                   onChange={e => updateOptionImage(idx, key, e.target.value)}
@@ -3238,14 +3933,15 @@ export default function CreateExam() {
                                 )}
                                 <button
                                   type="button"
-                                  className="btn btn-ghost btn-sm"
-                                  style={{ padding: '0.2rem 0.4rem', height: 28, fontSize: '0.75rem' }}
-                                  onClick={() => toggleOptionImageInput(idx, key)}
-                                  title="Tutup form lampiran gambar"
+                                  className="btn btn-primary btn-sm"
+                                  style={{ padding: '0.2rem 0.5rem', height: 28, fontSize: '0.74rem' }}
+                                  onClick={() => shrinkOptionImageInput(idx, key)}
+                                  title="Selesai dan ciutkan form gambar opsi ini"
                                 >
-                                  Tutup
+                                  ✓ Selesai & Ciutkan
                                 </button>
                               </div>
+
 
                               {/* Adaptive Live Preview */}
                               {hasImage && (
@@ -3306,50 +4002,97 @@ export default function CreateExam() {
                 const stmtCount = stmtKeys.length
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {/* Statements count controller toolbar */}
-                    <div style={{
-                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
-                      gap: '0.5rem'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Pernyataan Soal #{q.number}:</span>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeStatementsCount(idx, stmtCount - 1)}
-                            disabled={stmtCount <= 1}
-                            title="Kurangi pernyataan"
-                          >-</button>
-                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{stmtCount}</span>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeStatementsCount(idx, stmtCount + 1)}
-                            disabled={stmtCount >= 10}
-                            title="Tambah pernyataan"
-                          >+</button>
-                        </div>
-                      </div>
+                    {/* Statements count controller toolbar (Automated Shrink / Expand) */}
+                    {(() => {
+                      const isSettingOpen = Boolean(openOptionSettings[`tf_${idx}`])
+                      return (
+                        <div
+                          style={{
+                            background: isSettingOpen ? 'var(--navy-mid)' : 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: '0.45rem 0.75rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Sliders size={13} style={{ color: 'var(--accent)' }} />
+                                Jumlah Pernyataan Soal #{q.number}:
+                              </span>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 24, fontSize: '0.82rem' }}
+                                  onClick={() => changeStatementsCount(idx, stmtCount - 1)}
+                                  disabled={stmtCount <= 1}
+                                  title="Kurangi pernyataan"
+                                >-</button>
+                                <span style={{ fontWeight: 700, fontSize: '0.82rem', minWidth: 22, textAlign: 'center', color: 'var(--accent)' }}>{stmtCount}</span>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 24, fontSize: '0.82rem' }}
+                                  onClick={() => changeStatementsCount(idx, stmtCount + 1)}
+                                  disabled={stmtCount >= 10}
+                                  title="Tambah pernyataan"
+                                >+</button>
+                              </div>
+                              <span className="text-muted text-xs">({stmtCount} Pernyataan)</span>
+                            </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
-                        {[2, 3, 4, 5].map(cnt => (
-                          <button
-                            key={cnt}
-                            type="button"
-                            className={`btn btn-sm ${stmtCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
-                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
-                            onClick={() => changeStatementsCount(idx, cnt)}
-                          >
-                            {cnt} Baris
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                            {/* Tombol Toggle Preset Cepat */}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => toggleOptionSettings(`tf_${idx}`)}
+                              style={{
+                                height: 24,
+                                padding: '0 0.45rem',
+                                fontSize: '0.74rem',
+                                color: isSettingOpen ? 'var(--primary)' : 'var(--text-secondary)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                              title={isSettingOpen ? 'Ciutkan pilihan cepat' : 'Buka pilihan preset cepat'}
+                            >
+                              <span>{isSettingOpen ? 'Tutup Preset' : 'Preset Cepat'}</span>
+                              {isSettingOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </button>
+                          </div>
+
+                          {/* Konten Preset Terbuka (Otomatis ciut setelah dipilih) */}
+                          {isSettingOpen && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.35rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--border)' }}>
+                              <span className="text-muted text-xs">Pilih cepat jumlah pernyataan:</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {[2, 3, 4, 5].map(cnt => (
+                                  <button
+                                    key={cnt}
+                                    type="button"
+                                    className={`btn btn-sm ${stmtCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                                    style={{ padding: '0.15rem 0.5rem', fontSize: '0.74rem', height: 24, borderRadius: 5 }}
+                                    onClick={() => {
+                                      changeStatementsCount(idx, cnt)
+                                      shrinkOptionSettings(`tf_${idx}`)
+                                    }}
+                                  >
+                                    {cnt} Baris
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
 
                     {stmtKeys.map((key, i) => (
                       <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
@@ -3811,6 +4554,94 @@ export default function CreateExam() {
           </button>
         </div>
       </div>
+
+      {/* ─── UNSAVED CHANGES CONFIRMATION PROMPT MODAL ─── */}
+      {showUnsavedModal && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal" style={{ maxWidth: 480, padding: '1.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: '#fef3c7',
+                color: '#d97706',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <AlertTriangle size={24} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 0.35rem 0', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Perubahan Belum Disimpan!
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  Anda memiliki perubahan pada {modeLabel.toLowerCase()} ini yang belum disimpan ke server. Jika Anda meninggalkan halaman ini sekarang, perubahan tersebut akan hilang.
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              padding: '0.75rem 1rem',
+              marginBottom: '1.5rem',
+              fontSize: '0.8rem',
+              color: 'var(--text-muted)'
+            }}>
+              💡 <strong>Tips Guru:</strong> Klik <em>&ldquo;Simpan Draf &amp; Keluar&rdquo;</em> untuk mengamankan pekerjaan Anda ke dalam draf agar dapat dilanjutkan kapan saja.
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <button
+                type="button"
+                className="btn btn-gold"
+                disabled={saving}
+                onClick={async () => {
+                  await handleSave(false, pendingNavPath || returnPath)
+                }}
+                style={{ width: '100%', justifyContent: 'center', fontWeight: 700, padding: '0.65rem 1rem' }}
+              >
+                <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Draf & Keluar'}
+              </button>
+
+              <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ flex: 1, justifyContent: 'center', border: '1px solid var(--border)' }}
+                  onClick={() => {
+                    setShowUnsavedModal(false)
+                    setPendingNavPath(null)
+                  }}
+                >
+                  Lanjut Mengedit
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ flex: 1, justifyContent: 'center', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.04)' }}
+                  onClick={() => {
+                    isSavedRef.current = true
+                    setShowUnsavedModal(false)
+                    const dest = pendingNavPath || returnPath
+                    if (dest.startsWith('http://') || dest.startsWith('https://')) {
+                      window.location.href = dest
+                    } else {
+                      navigate(dest)
+                    }
+                  }}
+                >
+                  Tinggalkan Halaman
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

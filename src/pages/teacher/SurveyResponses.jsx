@@ -332,7 +332,7 @@ export default function SurveyResponses() {
         </div>
 
         {/* Tabs */}
-        <div className="no-print" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+        <div className="no-print" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <button className={`btn ${activeTab === 'summary' ? 'btn-gold' : 'btn-ghost'} btn-sm`} onClick={() => setActiveTab('summary')}>
             <BarChart2 size={14} /> Ringkasan
           </button>

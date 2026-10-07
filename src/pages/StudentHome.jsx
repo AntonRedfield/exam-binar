@@ -200,7 +200,7 @@ export default function StudentHome() {
                     {icon}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.375rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.375rem', flexWrap: 'wrap' }}>
                       <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{exam.title}</h3>
                       {isSurvey && (
                         <span className="badge badge-survey" style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>📋 Survei</span>
@@ -210,7 +210,7 @@ export default function StudentHome() {
                       )}
                       {getStatusBadge(session?.status, session?.returnee_token_required)}
                     </div>
-                    <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', gap: '1rem', fontSize: '0.82rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
                       {isSurvey ? (
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><ClipboardList size={13} /> Tanpa batas waktu</span>
                       ) : (

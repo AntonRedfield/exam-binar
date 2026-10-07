@@ -19,6 +19,7 @@ import ViolationWarning from '../components/exam/ViolationWarning'
 import ScreenFreezeOverlay from '../components/exam/ScreenFreezeOverlay'
 import FaceDetectionStatus from '../components/exam/FaceDetectionStatus'
 import ListeningPlayer from '../components/exam/ListeningPlayer'
+import QuestionVideoPlayer from '../components/exam/QuestionVideoPlayer'
 import { 
   MONITORING_LEVELS,
   shouldTriggerFreeze,
@@ -610,6 +611,17 @@ export default function ExamRoom() {
                       studentId={user?.id}
                       maxPlays={q.max_plays || 1}
                       allowPause={Boolean(q.allow_pause)}
+                    />
+                  </div>
+                )}
+
+                {q.video_url && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <QuestionVideoPlayer
+                      videoUrl={q.video_url}
+                      title={`Video Lampiran Soal ${currentQ}`}
+                      showTitle={true}
+                      maxHeight={360}
                     />
                   </div>
                 )}

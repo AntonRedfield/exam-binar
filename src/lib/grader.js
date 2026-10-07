@@ -165,3 +165,65 @@ export function getDriveImageUrl(url) {
   if (!fileId) return url // fallback
   return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`
 }
+
+/**
+ * Parse video URL and return embed info (YouTube, Google Drive, Vimeo, direct MP4/WebM)
+ */
+export function getVideoEmbedInfo(url) {
+  if (!url || typeof url !== 'string') return null
+  const trimmed = url.trim()
+  if (!trimmed) return null
+
+  // 1. YouTube (watch?v=ID, youtu.be/ID, embed/ID, shorts/ID)
+  const ytMatch = trimmed.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+  if (ytMatch) {
+    return {
+      type: 'iframe',
+      src: `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?rel=0`,
+      provider: 'youtube',
+      label: 'YouTube Video'
+    }
+  }
+
+  // 2. Google Drive video
+  const driveId = extractDriveFileId(trimmed)
+  if (driveId) {
+    return {
+      type: 'iframe',
+      src: `https://drive.google.com/file/d/${driveId}/preview`,
+      provider: 'drive',
+      label: 'Google Drive Video'
+    }
+  }
+
+  // 3. Vimeo
+  const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/([^\/]*)\/videos\/|album\/(\d+)\/video\/|video\/|)(\d+)/)
+  if (vimeoMatch && vimeoMatch[3]) {
+    return {
+      type: 'iframe',
+      src: `https://player.vimeo.com/video/${vimeoMatch[3]}`,
+      provider: 'vimeo',
+      label: 'Vimeo Video'
+    }
+  }
+
+  // 4. Direct video file (MP4, WebM, OGG, MOV)
+  const isDirectVideo = /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(trimmed)
+  if (isDirectVideo) {
+    return {
+      type: 'video',
+      src: trimmed,
+      provider: 'html5',
+      label: 'Video MP4/WebM'
+    }
+  }
+
+  // Fallback: embed as iframe
+  return {
+    type: 'iframe',
+    src: trimmed,
+    provider: 'generic',
+    label: 'Video Link'
+  }
+}
+
