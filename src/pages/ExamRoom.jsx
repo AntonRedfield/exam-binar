@@ -20,6 +20,7 @@ import ScreenFreezeOverlay from '../components/exam/ScreenFreezeOverlay'
 import FaceDetectionStatus from '../components/exam/FaceDetectionStatus'
 import ListeningPlayer from '../components/exam/ListeningPlayer'
 import QuestionVideoPlayer from '../components/exam/QuestionVideoPlayer'
+import AdaptiveExamImage from '../components/exam/AdaptiveExamImage'
 import { 
   MONITORING_LEVELS,
   shouldTriggerFreeze,
@@ -627,13 +628,12 @@ export default function ExamRoom() {
                 )}
 
                 {q.image_url && (
-                  <div style={{ marginBottom: '1rem', textAlign: 'center' }}>
-                    <img 
-                      src={getDriveImageUrl(q.image_url)} 
-                      alt={`Lampiran Soal ${currentQ}`} 
-                      style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: 8, objectFit: 'contain' }} 
-                    />
-                  </div>
+                  <AdaptiveExamImage
+                    src={q.image_url}
+                    alt={`Lampiran Soal ${currentQ}`}
+                    maxHeight={380}
+                    type="question"
+                  />
                 )}
 
                 {q.question_text && (

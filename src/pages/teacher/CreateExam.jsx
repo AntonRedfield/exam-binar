@@ -3085,6 +3085,7 @@ export default function CreateExam() {
                                 <img 
                                   src={getDriveImageUrl(q.image_url)} 
                                   alt={`Pratinjau Lampiran Gambar Soal ${q.number}`} 
+                                  referrerPolicy="no-referrer"
                                   style={{ maxHeight: 90, maxWidth: '100%', objectFit: 'contain', borderRadius: 4, margin: '0 auto' }}
                                   onError={(e) => { e.currentTarget.style.display = 'none' }}
                                 />

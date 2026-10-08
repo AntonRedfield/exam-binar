@@ -1,5 +1,5 @@
 import { CheckSquare, Square } from 'lucide-react'
-import { getDriveImageUrl } from '../../lib/grader'
+import AdaptiveExamImage from './AdaptiveExamImage'
 
 export default function QuestionComplexMCQ({ question, value, onChange }) {
   const options = question?.options || {}
@@ -22,6 +22,7 @@ export default function QuestionComplexMCQ({ question, value, onChange }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {keys.map(key => {
           const isSelected = selected.includes(key)
+          const hasText = options[key] && String(options[key]).trim().length > 0
           const imgUrl = optionImages[key]
           return (
             <button
@@ -31,17 +32,16 @@ export default function QuestionComplexMCQ({ question, value, onChange }) {
               onClick={() => toggle(key)}
             >
               <span className="option-key">{key}</span>
-              <div className="option-content">
-                {options[key] && <span className="option-text">{options[key]}</span>}
+              <div className="option-content" style={{ flex: 1, minWidth: 0 }}>
+                {hasText && <span className="option-text">{options[key]}</span>}
                 {imgUrl && (
-                  <div className="option-image-wrapper">
-                    <img
-                      src={getDriveImageUrl(imgUrl)}
-                      alt={`Gambar Opsi ${key}`}
-                      className="option-adaptive-img"
-                      loading="lazy"
-                    />
-                  </div>
+                  <AdaptiveExamImage
+                    src={imgUrl}
+                    alt={`Opsi ${key}`}
+                    type="option"
+                    optionKey={key}
+                    maxHeight={220}
+                  />
                 )}
               </div>
               <div style={{ flexShrink: 0, marginTop: imgUrl ? '2px' : 0 }}>

@@ -50,6 +50,7 @@ export default function QuestionMultipleChoice({ question, value, onChange, disa
                     src={getDriveImageUrl(imgUrl)}
                     alt={`Gambar Opsi ${key}`}
                     className="option-adaptive-img"
+                    referrerPolicy="no-referrer"
                     loading="lazy"
                   />
                 </div>

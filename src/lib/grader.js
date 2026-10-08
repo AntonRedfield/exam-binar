@@ -163,7 +163,19 @@ export function getDriveEmbedUrl(url) {
 export function getDriveImageUrl(url) {
   const fileId = extractDriveFileId(url)
   if (!fileId) return url // fallback
-  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`
+  return `https://lh3.googleusercontent.com/d/${fileId}=s1200`
+}
+
+export function getDriveThumbnailUrl(url) {
+  const fileId = extractDriveFileId(url)
+  if (!fileId) return url
+  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`
+}
+
+export function getDriveDirectUrl(url) {
+  const fileId = extractDriveFileId(url)
+  if (!fileId) return url
+  return `https://drive.google.com/uc?export=view&id=${fileId}`
 }
 
 /**

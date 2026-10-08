@@ -340,8 +340,18 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
       onContextMenu={handleContextMenu}
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      className={`select-none outline-none font-sans rounded-xl border border-slate-700 bg-slate-900/90 text-slate-100 p-4 md:p-5 shadow-xl backdrop-blur-md transition-all ${className}`}
-      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+      className={`listening-player-container ${className}`}
+      style={{
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        background: '#f8fafc',
+        border: '1.5px solid #cbd5e1',
+        borderRadius: '10px',
+        padding: '1rem',
+        marginBottom: '1.25rem',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        fontFamily: 'inherit',
+      }}
     >
       {/* Hidden Native Audio Element (No controls, strictly driven by code) */}
       {blobUrl && (
@@ -349,7 +359,7 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
           ref={audioRef}
           src={blobUrl}
           preload="auto"
-          className="hidden"
+          style={{ display: 'none' }}
           onTimeUpdate={handleTimeUpdate}
           onSeeking={handleSeeking}
           onLoadedMetadata={handleLoadedMetadata}
@@ -357,53 +367,135 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
         />
       )}
 
-      {/* Top Banner: IELTS/TOEFL Standard Listening Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3 mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
-          <span className="text-xs font-semibold tracking-wider text-cyan-400 uppercase">
-            Bagian Ujian Mendengarkan (Listening)
+      {/* Top Banner: Listening Header with Official Badges */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.5rem',
+          borderBottom: '1px solid #e2e8f0',
+          paddingBottom: '0.65rem',
+          marginBottom: '0.85rem',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: '#1e3a8a',
+              background: '#dbeafe',
+              border: '1px solid #bfdbfe',
+              padding: '0.2rem 0.55rem',
+              borderRadius: '4px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+            }}
+          >
+            🎧 Bagian Ujian Mendengarkan (Listening)
           </span>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+          <span
+            style={{
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              color: '#475569',
+              background: '#f1f5f9',
+              border: '1px solid #cbd5e1',
+              padding: '0.2rem 0.5rem',
+              borderRadius: '4px',
+            }}
+          >
             {maxPlays === 1 ? 'Putar 1 Kali (Standar Resmi)' : `Batas Putar: ${maxPlays} Kali`}
           </span>
         </div>
 
-        {/* Network & Offline Status */}
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+        {/* Network & Memory Offline Status */}
+        <div>
           {isOfflineReady ? (
-            <span className="inline-flex items-center gap-1 text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded-full text-[11px]">
-              <Wifi size={12} />
-              Tersimpan di Memori (Aman Gangguan Jaringan)
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                color: '#15803d',
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                padding: '0.2rem 0.55rem',
+                borderRadius: '4px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+              }}
+            >
+              <Wifi size={13} /> Tersimpan di Memori (Aman Gangguan Jaringan)
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-amber-400 bg-amber-950/60 border border-amber-800/80 px-2 py-0.5 rounded-full text-[11px]">
-              <RefreshCw size={12} className="animate-spin" />
-              Mengunduh Audio...
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                color: '#b45309',
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                padding: '0.2rem 0.55rem',
+                borderRadius: '4px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+              }}
+            >
+              <RefreshCw size={12} /> Mengunduh Audio ({downloadProgress}%)...
             </span>
           )}
         </div>
       </div>
 
       {/* Main Player State Display */}
-      <div className="space-y-4">
+      <div>
         {/* State 1: Caching In Progress */}
         {status === 'caching' && (
-          <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/60">
-            <div className="flex justify-between items-center text-xs text-slate-300 mb-2">
-              <span className="flex items-center gap-1.5 font-medium">
-                <RefreshCw size={14} className="animate-spin text-cyan-400" />
-                Menyimpan audio ke memori perangkat ({downloadProgress}%)
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '8px',
+              padding: '0.85rem 1rem',
+              border: '1px solid #cbd5e1',
+              marginBottom: '0.85rem',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '0.78rem',
+                color: '#334155',
+                fontWeight: 600,
+                marginBottom: '0.5rem',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <RefreshCw size={13} /> Menyimpan audio ke memori ({downloadProgress}%)
               </span>
-              <span className="text-slate-400">Perlindungan gangguan sinyal Wi-Fi</span>
+              <span style={{ color: '#64748b', fontWeight: 400, fontSize: '0.72rem' }}>
+                Perlindungan gangguan sinyal Wi-Fi
+              </span>
             </div>
-            <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+            <div style={{ width: '100%', height: '7px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
               <div
-                className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-200"
-                style={{ width: `${downloadProgress}%` }}
+                style={{
+                  width: `${downloadProgress}%`,
+                  height: '100%',
+                  background: '#2563eb',
+                  transition: 'width 0.2s ease',
+                }}
               />
             </div>
-            <p className="text-[11px] text-slate-400 mt-2">
+            <p style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.45rem', margin: '0.45rem 0 0 0' }}>
               Mohon tunggu sejenak. Berkas audio sedang diunduh secara penuh ke memori agar pemutaran berjalan lancar tanpa kendala jaringan.
             </p>
           </div>
@@ -411,13 +503,27 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
 
         {/* State 2: Ready to Play (Candidate click required for Autoplay Policy) */}
         {status === 'ready' && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-800/40 p-4 rounded-lg border border-slate-700">
-            <div>
-              <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-                <ShieldCheck size={16} className="text-emerald-400" />
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              flexWrap: 'wrap',
+              background: '#ffffff',
+              padding: '0.9rem 1rem',
+              borderRadius: '8px',
+              border: '1.5px solid #86efac',
+              marginBottom: '0.85rem',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: '220px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 700, color: '#166534' }}>
+                <ShieldCheck size={16} color="#16a34a" />
                 Audio Siap Diputar
-              </h4>
-              <p className="text-xs text-slate-400 mt-0.5">
+              </div>
+              <p style={{ fontSize: '0.75rem', color: '#4b5563', margin: '0.25rem 0 0 0', lineHeight: 1.4 }}>
                 {allowPause
                   ? 'Anda diperbolehkan menjeda audio jika diperlukan.'
                   : 'Perhatian: Setelah dimulai, fitur penggeseran waktu dinonaktifkan dan audio tidak dapat diulang kembali.'}
@@ -425,10 +531,25 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
             </div>
 
             <button
+              type="button"
               onClick={handleStartListening}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold text-sm shadow-lg shadow-emerald-950 transition-all cursor-pointer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                padding: '0.65rem 1.25rem',
+                borderRadius: '6px',
+                background: '#16a34a',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              }}
             >
-              <Play size={16} fill="currentColor" />
+              <Play size={15} fill="#ffffff" />
               Mulai Dengarkan Audio (Sisa: {remainingPlays} kali)
             </button>
           </div>
@@ -436,74 +557,122 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
 
         {/* State 3: Authorizing with Server */}
         {status === 'authorizing' && (
-          <div className="flex items-center justify-center gap-3 py-6 bg-slate-800/30 rounded-lg border border-slate-800">
-            <RefreshCw size={18} className="animate-spin text-cyan-400" />
-            <span className="text-sm font-medium text-slate-300">
-              Memverifikasi otorisasi pemutaran ke server ujian...
-            </span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.6rem',
+              padding: '1.25rem',
+              background: '#ffffff',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              color: '#334155',
+              marginBottom: '0.85rem',
+            }}
+          >
+            <RefreshCw size={16} />
+            <span>Memverifikasi otorisasi pemutaran ke server ujian...</span>
           </div>
         )}
 
         {/* State 4 & 5: Playing or Paused */}
         {(status === 'playing' || status === 'paused') && (
-          <div className="space-y-3 bg-slate-800/60 p-4 rounded-lg border border-slate-700">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {/* Visual Audio Waveform Animation */}
-                <div className="flex items-end gap-1 h-5 px-1">
-                  {[40, 80, 50, 95, 60, 30, 85].map((height, i) => (
-                    <div
-                      key={i}
-                      className={`w-1 bg-cyan-400 rounded-full transition-all duration-300 ${
-                        status === 'playing' ? 'animate-pulse' : 'opacity-40'
-                      }`}
-                      style={{
-                        height: status === 'playing' ? `${height}%` : '25%',
-                        animationDelay: `${i * 120}ms`,
-                      }}
-                    />
-                  ))}
+          <div
+            style={{
+              background: '#ffffff',
+              padding: '0.9rem 1rem',
+              borderRadius: '8px',
+              border: '1.5px solid #93c5fd',
+              marginBottom: '0.85rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.65rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 700, color: '#1e40af' }}>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: status === 'playing' ? '#2563eb' : '#f59e0b',
+                    }}
+                  />
+                  {status === 'playing' ? 'Audio Sedang Diputar' : 'Audio Dijeda'}
                 </div>
-
-                <div>
-                  <span className="text-xs font-medium text-slate-200">
-                    {status === 'playing' ? 'Audio Sedang Diputar' : 'Audio Dijeda'}
-                  </span>
-                  <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                    <Lock size={10} className="text-amber-400" />
-                    Kendali Terkunci • Penggeseran Waktu Dilarang
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
+                  <Lock size={11} color="#d97706" />
+                  Kendali Terkunci • Penggeseran Waktu Dilarang
                 </div>
               </div>
 
               {/* Timestamp Indicator */}
-              <div className="text-xs font-mono font-semibold text-cyan-300 bg-slate-900 px-2.5 py-1 rounded border border-slate-800">
+              <div
+                style={{
+                  fontFamily: 'monospace',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  color: '#0f172a',
+                  background: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '5px',
+                }}
+              >
                 {formatTime(currentTime)} / {formatTime(duration)}
               </div>
             </div>
 
-            {/* Read-Only Visual Progress Bar (Cannot be clicked or dragged) */}
-            <div className="relative w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800 cursor-not-allowed">
+            {/* Read-Only Visual Progress Bar */}
+            <div
+              style={{
+                width: '100%',
+                height: '7px',
+                background: '#e2e8f0',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                cursor: 'not-allowed',
+              }}
+            >
               <div
-                className="bg-gradient-to-r from-cyan-400 to-blue-500 h-full rounded-full transition-all duration-150"
-                style={{ width: `${progressPercent}%` }}
+                style={{
+                  width: `${progressPercent}%`,
+                  height: '100%',
+                  background: '#2563eb',
+                  transition: 'width 0.15s linear',
+                }}
               />
             </div>
 
             {/* Candidate Action: Pause Button (Only rendered if allowPause is true) */}
             {allowPause && (
-              <div className="pt-1 flex justify-start">
+              <div style={{ marginTop: '0.65rem' }}>
                 <button
+                  type="button"
                   onClick={handleTogglePause}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.4rem 0.85rem',
+                    borderRadius: '5px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
                 >
                   {status === 'playing' ? (
                     <>
-                      <Pause size={14} /> Jeda
+                      <Pause size={13} /> Jeda
                     </>
                   ) : (
                     <>
-                      <Play size={14} /> Lanjutkan
+                      <Play size={13} /> Lanjutkan
                     </>
                   )}
                 </button>
@@ -514,13 +683,24 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
 
         {/* State 6 & 7: Completed or Locked */}
         {(status === 'completed' || status === 'locked') && (
-          <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-950/30 border border-amber-900/60 text-amber-200">
-            <Lock size={20} className="text-amber-400 flex-shrink-0" />
-            <div className="text-xs">
-              <p className="font-semibold text-amber-300">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.75rem',
+              padding: '0.9rem 1rem',
+              borderRadius: '8px',
+              background: '#fffbeb',
+              border: '1.5px solid #fde68a',
+              marginBottom: '0.85rem',
+            }}
+          >
+            <Lock size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.78rem' }}>
+              <strong style={{ display: 'block', fontSize: '0.82rem', color: '#92400e', marginBottom: '0.2rem' }}>
                 Sesi Pemutaran Selesai (Terkunci)
-              </p>
-              <p className="text-amber-200/80 mt-0.5">
+              </strong>
+              <p style={{ color: '#b45309', margin: 0, lineHeight: 1.4 }}>
                 {authError ||
                   'Pemutaran audio untuk butir soal ini telah selesai dan tidak dapat diputar kembali sesuai peraturan integritas ujian CBT.'}
               </p>
@@ -530,33 +710,54 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
 
         {/* State 8: Error */}
         {status === 'error' && (
-          <div className="flex items-center gap-3 p-4 rounded-lg bg-rose-950/40 border border-rose-900/70 text-rose-200">
-            <AlertCircle size={20} className="text-rose-400 flex-shrink-0" />
-            <div className="text-xs">
-              <p className="font-semibold text-rose-300">Kendala Pemutaran Audio</p>
-              <p className="text-rose-200/80 mt-0.5">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.75rem',
+              padding: '0.9rem 1rem',
+              borderRadius: '8px',
+              background: '#fef2f2',
+              border: '1.5px solid #fecaca',
+              marginBottom: '0.85rem',
+            }}
+          >
+            <AlertCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.78rem' }}>
+              <strong style={{ display: 'block', fontSize: '0.82rem', color: '#991b1b', marginBottom: '0.2rem' }}>
+                Kendala Pemutaran Audio
+              </strong>
+              <p style={{ color: '#b91c1c', margin: 0, lineHeight: 1.4 }}>
                 {authError || 'Terjadi kendala saat memuat berkas audio. Harap segera hubungi pengawas ujian Anda.'}
               </p>
             </div>
           </div>
         )}
 
-        {/* ---------------------------------------------------------------------- */}
-        {/* Candidate Controls: Master Volume Slider Only (0% to 100%)              */}
-        {/* ---------------------------------------------------------------------- */}
-        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-slate-400 text-xs">
+        {/* Candidate Controls: Master Volume Slider Only (0% to 100%) */}
+        <div
+          style={{
+            borderTop: '1px solid #e2e8f0',
+            paddingTop: '0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>
             {volume === 0 ? (
-              <VolumeX size={16} className="text-rose-400" />
+              <VolumeX size={16} color="#dc2626" />
             ) : volume < 0.5 ? (
-              <Volume1 size={16} className="text-slate-300" />
+              <Volume1 size={16} color="#475569" />
             ) : (
-              <Volume2 size={16} className="text-slate-300" />
+              <Volume2 size={16} color="#1b3361" />
             )}
-            <span className="font-medium">Volume Suara Utama</span>
+            <span>Volume Suara Utama</span>
           </div>
 
-          <div className="flex items-center gap-3 flex-1 max-w-[200px]">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '220px', maxWidth: '60%' }}>
             <input
               type="range"
               min="0"
@@ -565,9 +766,23 @@ export const ListeningPlayer: React.FC<ListeningPlayerProps> = ({
               value={volume}
               onChange={handleVolumeChange}
               aria-label="Volume Suara Utama"
-              className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+              style={{
+                flex: 1,
+                height: '6px',
+                accentColor: '#1b3361',
+                cursor: 'pointer',
+              }}
             />
-            <span className="text-[11px] font-mono text-slate-400 w-8 text-right">
+            <span
+              style={{
+                fontFamily: 'monospace',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                color: '#1e293b',
+                minWidth: '38px',
+                textAlign: 'right',
+              }}
+            >
               {Math.round(volume * 100)}%
             </span>
           </div>

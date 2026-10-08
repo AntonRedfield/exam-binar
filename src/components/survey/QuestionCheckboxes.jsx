@@ -40,6 +40,7 @@ export default function QuestionCheckboxes({ question, value, onChange, disabled
                     src={getDriveImageUrl(imgUrl)}
                     alt={`Gambar Opsi ${key}`}
                     className="option-adaptive-img"
+                    referrerPolicy="no-referrer"
                     loading="lazy"
                   />
                 </div>
