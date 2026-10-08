@@ -123,6 +123,14 @@ export default function ExamRoom() {
   const violationsRef = useRef(0)
   const autoSaveTimer = useRef(null)
   const submitLock = useRef(false)
+  const answerScrollRef = useRef(null)
+
+  // Scroll answer pane to top when navigating questions
+  useEffect(() => {
+    if (answerScrollRef.current) {
+      answerScrollRef.current.scrollTop = 0
+    }
+  }, [currentQ])
 
   useEffect(() => {
     if (!user) return
@@ -591,8 +599,8 @@ export default function ExamRoom() {
           </div>
         )}
 
-        <div className={`answer-pane ${hasPdf && mobileTab !== 'answer' ? 'mobile-hidden' : ''}`} style={!hasPdf && !isQuiz ? {} : !hasPdf ? { flex: 1 } : {}}>
-          <div className="answer-scroll">
+        <div className={`answer-pane ${hasPdf && mobileTab !== 'answer' ? 'mobile-hidden' : ''} ${!hasPdf ? 'no-pdf' : ''}`}>
+          <div className="answer-scroll" ref={answerScrollRef}>
             {q && (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
