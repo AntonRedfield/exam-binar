@@ -146,6 +146,7 @@ export default function CreateExam() {
   const [quizTimerType, setQuizTimerType] = useState('uniform')
   const [uniformTime, setUniformTime] = useState(30)
   const [questionOrder, setQuestionOrder] = useState('ORDER')
+  const [keepEssayAtEnd, setKeepEssayAtEnd] = useState(false)
   const [defaultOptionsCount, setDefaultOptionsCount] = useState(4)
   const [defaultStatementsCount, setDefaultStatementsCount] = useState(3)
   const [defaultMatchingCount, setDefaultMatchingCount] = useState(3)
@@ -295,6 +296,7 @@ export default function CreateExam() {
         setQuizTimerType(exam.quiz_timer_type || 'uniform')
         setMonitoringLevel(normalizeMonitoringLevel(exam.monitoring_level))
         setQuestionOrder(exam.question_order || 'ORDER')
+        setKeepEssayAtEnd(Boolean(exam.keep_essay_at_end))
         // Load default options counts
         if (exam.default_options_count) setDefaultOptionsCount(exam.default_options_count)
         if (exam.default_statements_count) setDefaultStatementsCount(exam.default_statements_count)
@@ -1340,6 +1342,7 @@ export default function CreateExam() {
         quiz_timer_type: mode === 'quiz' ? quizTimerType : 'uniform',
         monitoring_level: isSurvey ? 0 : monitoringLevel,
         question_order: isSurvey ? 'ORDER' : questionOrder,
+        keep_essay_at_end: isSurvey ? false : Boolean(keepEssayAtEnd),
         default_options_count: Number(defaultOptionsCount) || 4,
         default_statements_count: Number(defaultStatementsCount) || 3,
         default_matching_count: Number(defaultMatchingCount) || 3,
@@ -2074,7 +2077,7 @@ export default function CreateExam() {
                     
                     <div className="form-group">
                       <label className="form-label">Urutan Soal</label>
-                      <div style={{ display: 'flex', gap: '1rem' }}>
+                      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
                           <input 
                             type="radio" 
@@ -2094,8 +2097,56 @@ export default function CreateExam() {
                           />
                           Acak (Shuffle)
                         </label>
+
+                        {/* Setting beside shuffle: Keep essay at end */}
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          paddingLeft: '1rem',
+                          borderLeft: '1.5px solid var(--border)',
+                          opacity: pdfUrl ? 0.5 : 1,
+                        }}>
+                          <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            cursor: pdfUrl ? 'not-allowed' : 'pointer',
+                            fontSize: '0.88rem',
+                            fontWeight: keepEssayAtEnd ? 600 : 500,
+                            color: keepEssayAtEnd ? 'var(--accent)' : 'inherit',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={keepEssayAtEnd}
+                              onChange={e => setKeepEssayAtEnd(e.target.checked)}
+                              disabled={!!pdfUrl}
+                              style={{ cursor: pdfUrl ? 'not-allowed' : 'pointer', accentColor: 'var(--accent)' }}
+                            />
+                            <span>Letakkan Soal Esai di Nomor Terakhir (Keep Essay at End)</span>
+                          </label>
+                        </div>
                       </div>
-                      {pdfUrl && <span className="text-xs text-muted" style={{ display: 'block', marginTop: '0.25rem' }}>Fitur Acak Soal dinonaktifkan karena Anda menggunakan file PDF.</span>}
+                      {pdfUrl ? (
+                        <span className="text-xs text-muted" style={{ display: 'block', marginTop: '0.25rem' }}>
+                          Fitur Acak Soal dinonaktifkan karena Anda menggunakan file PDF.
+                        </span>
+                      ) : (
+                        <div style={{ marginTop: '0.35rem', fontSize: '0.78rem' }}>
+                          {keepEssayAtEnd ? (
+                            <span style={{ color: '#16a34a', fontWeight: 600 }}>
+                              ✓ Soal bertipe Esai dijamin selalu ditempatkan di nomor-nomor terakhir ujian (setelah seluruh soal objektif/pilihan), bahkan saat mode acak (shuffle) aktif.
+                            </span>
+                          ) : questionOrder === 'SHUFFLE' ? (
+                            <span className="text-muted">
+                              Semua butir soal akan diacak merata. Centang &ldquo;Letakkan Soal Esai di Nomor Terakhir&rdquo; jika ingin soal esai selalu berada di bagian akhir.
+                            </span>
+                          ) : (
+                            <span className="text-muted">
+                              Soal disajikan berurutan normal sesuai urutan pembuatan.
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

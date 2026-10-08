@@ -146,9 +146,24 @@ export default function ExamRoom() {
       }
       
       let finalQs = qs || []
-      // Apply consistent shuffle if configured
+      // Apply question ordering (shuffle and/or keep essay at end)
       if (examData?.question_order === 'SHUFFLE') {
-        finalQs = shuffleArray(finalQs, sess.id)
+        if (examData?.keep_essay_at_end) {
+          const nonEssays = finalQs.filter(q => q.type !== 'ESSAY')
+          const essays = finalQs.filter(q => q.type === 'ESSAY')
+          const shuffledNonEssays = shuffleArray(nonEssays, sess.id)
+          const sortedEssays = [...essays].sort((a, b) => (a.number || 0) - (b.number || 0))
+          finalQs = [...shuffledNonEssays, ...sortedEssays]
+        } else {
+          finalQs = shuffleArray(finalQs, sess.id)
+        }
+      } else if (examData?.keep_essay_at_end) {
+        // Even in sequential mode, guarantee essays appear at the end
+        const nonEssays = finalQs.filter(q => q.type !== 'ESSAY')
+        const essays = finalQs.filter(q => q.type === 'ESSAY')
+        const sortedNonEssays = [...nonEssays].sort((a, b) => (a.number || 0) - (b.number || 0))
+        const sortedEssays = [...essays].sort((a, b) => (a.number || 0) - (b.number || 0))
+        finalQs = [...sortedNonEssays, ...sortedEssays]
       }
 
       setExam(examData)

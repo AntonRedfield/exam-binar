@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS public.exams (
   quiz_timer_type VARCHAR(20) DEFAULT 'uniform',
   monitoring_level SMALLINT NOT NULL DEFAULT 1,
   question_order VARCHAR(10) DEFAULT 'ORDER',
+  keep_essay_at_end BOOLEAN NOT NULL DEFAULT false,
   uniform_time SMALLINT DEFAULT 30,
   survey_type VARCHAR(20),
   survey_recurrence VARCHAR(20),
