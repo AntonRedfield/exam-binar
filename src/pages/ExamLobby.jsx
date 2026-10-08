@@ -16,7 +16,8 @@ import {
   Info,
   Lock,
   Unlock,
-  Key
+  Key,
+  ArrowLeft
 } from 'lucide-react'
 import { MONITORING_LEVELS } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
@@ -236,6 +237,33 @@ export default function ExamLobby() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)', padding: '1rem' }}>
       <div style={{ maxWidth: 560, width: '100%' }}>
+        {/* Top Back Navigation */}
+        <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => navigate('/home')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              color: '#334155',
+              fontWeight: 600,
+              fontSize: '0.82rem',
+              background: '#ffffff',
+              border: '1.5px solid #cbd5e1',
+              borderRadius: '8px',
+              padding: '0.45rem 0.85rem',
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+              transition: 'background 0.15s, border-color 0.15s',
+            }}
+          >
+            <ArrowLeft size={15} />
+            <span>Kembali ke Beranda Ujian</span>
+          </button>
+        </div>
+
         {/* Header brand & icon */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
           <div style={{
@@ -403,8 +431,18 @@ export default function ExamLobby() {
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
         {isDone ? (
-          <div className="alert alert-success" style={{ textAlign: 'center', justifyContent: 'center' }}>
-            <CheckCircle size={16} /> Anda telah menyelesaikan ujian ini.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div className="alert alert-success" style={{ textAlign: 'center', justifyContent: 'center' }}>
+              <CheckCircle size={16} /> Anda telah menyelesaikan ujian ini.
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary w-full"
+              onClick={() => navigate('/home')}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}
+            >
+              <ArrowLeft size={16} /> Kembali ke Daftar Ujian
+            </button>
           </div>
         ) : isReturneeRequired ? (
           /* Returnee Token Verification Card */
@@ -493,22 +531,55 @@ export default function ExamLobby() {
               >
                 <RotateCcw size={13} /> Periksa Ulang (Jika Sudah Dibuka Langsung oleh Pengawas)
               </button>
+
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm w-full"
+                onClick={() => navigate('/home')}
+                style={{ fontSize: '0.8rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+              >
+                <ArrowLeft size={14} /> Kembali ke Daftar Ujian
+              </button>
             </div>
           </div>
         ) : (
-          <button
-            className="btn btn-gold btn-lg w-full"
-            onClick={handleStart}
-            disabled={starting || !canStart}
-            style={!canStart ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-          >
-            {starting
-              ? <><div className="spinner" style={{ width: 20, height: 20, borderColor: 'rgba(0,0,0,0.2)', borderTopColor: '#0A1628' }} /> Memulai...</>
-              : isActive
-              ? <><RotateCcw size={18} /> Lanjutkan Ujian</>
-              : <><Play size={18} /> Mulai {exam.mode === 'quiz' ? 'Kuis' : 'Ujian'}</>
-            }
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            <button
+              className="btn btn-gold btn-lg w-full"
+              onClick={handleStart}
+              disabled={starting || !canStart}
+              style={!canStart ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+            >
+              {starting
+                ? <><div className="spinner" style={{ width: 20, height: 20, borderColor: 'rgba(0,0,0,0.2)', borderTopColor: '#0A1628' }} /> Memulai...</>
+                : isActive
+                ? <><RotateCcw size={18} /> Lanjutkan Ujian</>
+                : <><Play size={18} /> Mulai {exam.mode === 'quiz' ? 'Kuis' : 'Ujian'}</>
+              }
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-ghost w-full"
+              onClick={() => navigate('/home')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.45rem',
+                color: '#475569',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                border: '1.5px solid #cbd5e1',
+                background: '#ffffff',
+                borderRadius: '8px',
+                padding: '0.6rem 1rem',
+                cursor: 'pointer'
+              }}
+            >
+              <ArrowLeft size={16} /> Kembali ke Daftar Ujian
+            </button>
+          </div>
         )}
 
         {!canStart && !isDone && (
