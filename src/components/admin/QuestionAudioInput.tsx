@@ -155,7 +155,33 @@ export const QuestionAudioInput: React.FC<QuestionAudioInputProps> = ({
           },
         });
 
-        if (error) throw new Error(error.message || 'Pemanggilan edge function gagal.');
+        if (error) {
+          let detailedMsg = error.message;
+          // Extract detailed message from error.context if available
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ctx = (error as any)?.context;
+          if (ctx && typeof ctx.json === 'function') {
+            try {
+              const bodyJson = await ctx.json();
+              if (bodyJson?.error) {
+                detailedMsg = bodyJson.error;
+              } else if (bodyJson?.message) {
+                detailedMsg = bodyJson.message;
+              }
+            } catch {
+              // Fallback to text if JSON parsing fails
+              try {
+                if (typeof ctx.text === 'function') {
+                  const text = await ctx.text();
+                  if (text) detailedMsg = text;
+                }
+              } catch {
+                // ignore
+              }
+            }
+          }
+          throw new Error(detailedMsg || 'Pemanggilan edge function gagal.');
+        }
         resultData = data as IngestFunctionResponse;
       } else {
         const supabaseUrl = client?.supabaseUrl || 'https://asjgavgxbppauzykqqgv.supabase.co';
@@ -181,7 +207,10 @@ export const QuestionAudioInput: React.FC<QuestionAudioInputProps> = ({
         if (
           resultData?.code === 'DRIVE_PERMISSION_DENIED' ||
           resultData?.error?.toLowerCase().includes('private') ||
-          resultData?.error?.toLowerCase().includes('access')
+          resultData?.error?.toLowerCase().includes('privat') ||
+          resultData?.error?.toLowerCase().includes('access') ||
+          resultData?.error?.toLowerCase().includes('akses') ||
+          resultData?.error?.toLowerCase().includes('izin')
         ) {
           setPermissionErrorGuide(true);
         }
@@ -216,8 +245,10 @@ export const QuestionAudioInput: React.FC<QuestionAudioInputProps> = ({
       setErrorMessage(msg);
       if (
         msg.toLowerCase().includes('private') ||
+        msg.toLowerCase().includes('privat') ||
         msg.toLowerCase().includes('permission') ||
-        msg.toLowerCase().includes('akses')
+        msg.toLowerCase().includes('akses') ||
+        msg.toLowerCase().includes('izin')
       ) {
         setPermissionErrorGuide(true);
       }
