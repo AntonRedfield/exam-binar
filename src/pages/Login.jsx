@@ -11,13 +11,13 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [kickoutWarning, setKickoutWarning] = useState(false)
+  const [kickoutReason, setKickoutReason] = useState('')
 
   useEffect(() => {
     try {
       const reason = searchParams.get('reason') || sessionStorage.getItem('binar_kickout_reason')
-      if (reason === 'concurrent_session' || reason === 'other_device' || reason === 'other_window') {
-        setKickoutWarning(true)
+      if (reason) {
+        setKickoutReason(reason)
         sessionStorage.removeItem('binar_kickout_reason')
       }
     } catch (e) {}
@@ -80,7 +80,7 @@ export default function Login() {
           </h1>
         </div>
 
-        {kickoutWarning && (
+        {kickoutReason && (
           <div style={{
             marginBottom: '1.25rem',
             padding: '0.85rem 1rem',
@@ -95,8 +95,18 @@ export default function Login() {
           }}>
             <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--danger)' }} />
             <div style={{ fontSize: '0.82rem', lineHeight: 1.45 }}>
-              <div style={{ fontWeight: 700, marginBottom: '0.15rem' }}>Sesi Anda Telah Berakhir</div>
-              Akun Anda telah login di perangkat atau jendela lain. Akun Siswa &amp; Petugas (Level 1 &amp; 2) dibatasi hanya 1 login aktif dalam satu waktu.
+              <div style={{ fontWeight: 700, marginBottom: '0.15rem' }}>
+                {kickoutReason === 'split_screen'
+                  ? 'Akses Ujian Dikunci (Split Screen)'
+                  : kickoutReason === 'app_switch'
+                  ? 'Akses Ujian Dikunci (Keluar Aplikasi)'
+                  : 'Sesi Anda Telah Berakhir'}
+              </div>
+              {kickoutReason === 'split_screen'
+                ? 'Terdeteksi percobaan membagi layar (Split Screen / Layar Ganda) saat ujian berlangsung. Anda telah dikeluarkan otomatis dan sesi dikunci. Silakan login kembali, lalu gunakan Token Returnee dari Guru Pengawas atau minta pengawas membuka kunci langsung untuk melanjutkan ujian.'
+                : kickoutReason === 'app_switch'
+                ? 'Terdeteksi keluar dari aplikasi ujian melebihi batas waktu yang diizinkan. Anda telah dikeluarkan otomatis dan sesi dikunci. Silakan login kembali, lalu gunakan Token Returnee dari Guru Pengawas atau minta pengawas membuka kunci langsung untuk melanjutkan ujian.'
+                : 'Akun Anda telah login di perangkat atau jendela lain. Akun Siswa & Petugas (Level 1 & 2) dibatasi hanya 1 login aktif dalam satu waktu.'}
             </div>
           </div>
         )}

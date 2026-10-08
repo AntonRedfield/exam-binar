@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getCurrentUser } from '../lib/auth'
+import { getCurrentUser, logout } from '../lib/auth'
 import { exams, questions, sessions, results } from '../lib/db'
 import { markSessionAsReturnee } from '../lib/returnee'
 import { gradeExam, getDriveEmbedUrl, getDriveImageUrl } from '../lib/grader'
@@ -117,6 +117,11 @@ export default function ExamRoom() {
   const [freezeOffense, setFreezeOffense] = useState(0)
   const [timeReductionMsg, setTimeReductionMsg] = useState('')
   const [bonusTimeReduction, setBonusTimeReduction] = useState(0) // seconds removed from global timer
+
+  // Security Kickout State (Split-Screen / Leaving App)
+  const [kickoutActive, setKickoutActive] = useState(false)
+  const [kickoutReason, setKickoutReason] = useState('')
+  const kickoutLockedRef = useRef(false)
 
   const sessionRef = useRef(null)
   const answersRef = useRef({})
@@ -289,12 +294,57 @@ export default function ExamRoom() {
     }
   }, [currentQ, monitorLevel, isQuiz, handleFreeze, handleTimeReduction, freezeActive])
 
+  // ─── Automated Security Rule: Split Screen / App Leaving Lockout ───
+  const handleSecurityLockout = useCallback(async (type, reasonText) => {
+    if (kickoutLockedRef.current || submitting || timeUp) return
+    kickoutLockedRef.current = true
+    submitLock.current = true
+
+    setKickoutReason(reasonText)
+    setKickoutActive(true)
+
+    // 1. Immediately save current student answers to database
+    if (sessionRef.current?.id) {
+      try {
+        await sessions.update(sessionRef.current.id, {
+          answers: answersRef.current,
+          current_question: currentQ,
+        })
+      } catch (e) {
+        console.warn('Auto-save answers on kickout error:', e)
+      }
+
+      // 2. Mark session as returnee in database
+      try {
+        await markSessionAsReturnee(sessionRef.current.id, reasonText)
+      } catch (e) {
+        console.warn('markSessionAsReturnee on kickout error:', e)
+      }
+    }
+
+    // 3. Clear active exam room token & set session storage
+    sessionStorage.removeItem('binar_exam_active_room')
+    sessionStorage.setItem('binar_kickout_reason', type)
+    sessionStorage.setItem('binar_kickout_details', reasonText)
+
+    // 4. Log out user and redirect to login
+    setTimeout(async () => {
+      try {
+        await logout(type)
+      } catch (err) {
+        console.warn('Logout error on kickout:', err)
+      }
+      navigate(`/login?reason=${type}`, { replace: true })
+    }, 1800)
+  }, [currentQ, submitting, timeUp, navigate])
+
   // ─── Anti-cheat hook ──────────────────────────────────────────────
   useAntiCheat({
-    enabled: !loading && !submitting && !freezeActive,
+    enabled: !loading && !submitting && !freezeActive && !kickoutActive && !timeUp,
     monitoringLevel: monitorLevel,
     isQuiz,
     onViolation: handleViolation,
+    onSecurityLockout: handleSecurityLockout,
   })
 
   // ─── Face detection (Level 4 only) ────────────────────────────────
@@ -472,6 +522,44 @@ export default function ExamRoom() {
   return (
     <div className="exam-layout">
       {violationMsg && <ViolationWarning message={violationMsg} />}
+
+      {/* Security Kickout Modal (Split-Screen / Leaving App) */}
+      {kickoutActive && (
+        <div className="modal-overlay" style={{ zIndex: 999999, background: 'rgba(10,22,40,0.98)' }}>
+          <div className="modal" style={{ maxWidth: 440, textAlign: 'center', borderTop: '5px solid var(--danger)', padding: '2rem 1.5rem' }}>
+            <div style={{
+              width: 70, height: 70, borderRadius: '50%',
+              background: 'rgba(239,68,68,0.12)', border: '2px solid var(--danger)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 1.25rem'
+            }}>
+              <ShieldAlert size={38} color="var(--danger)" />
+            </div>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--danger)', marginBottom: '0.5rem', fontFamily: "'Inter', sans-serif" }}>
+              Pelanggaran Keamanan Ujian!
+            </h2>
+            <div style={{
+              padding: '0.75rem',
+              background: 'rgba(239,68,68,0.08)',
+              borderRadius: 8,
+              border: '1px solid rgba(239,68,68,0.25)',
+              color: 'var(--danger)',
+              fontWeight: 700,
+              fontSize: '0.92rem',
+              marginBottom: '1rem'
+            }}>
+              {kickoutReason || 'Terdeteksi Split Screen atau meninggalkan aplikasi'}
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem', lineHeight: 1.55 }}>
+              Jawaban Anda telah disimpan dan akun Anda dikeluarkan otomatis. Sesi Anda kini berstatus <strong>Returnee</strong> dan memerlukan persetujuan token atau pembukaan kunci dari Guru Pengawas untuk dapat masuk kembali.
+            </p>
+            <div className="spinner" style={{ width: 28, height: 28, margin: '0 auto 0.5rem', borderColor: 'rgba(239,68,68,0.2)', borderTopColor: 'var(--danger)' }} />
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Mengeluarkan akun secara aman...
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Screen Freeze Overlay (Level 3+) */}
       {freezeActive && (

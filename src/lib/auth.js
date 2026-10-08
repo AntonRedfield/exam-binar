@@ -240,7 +240,11 @@ export async function logout(reason = null) {
   if (currentUser) {
     try {
       // Mark any active exam session as requiring returnee token
-      const returneeReason = reason === 'other_device'
+      const returneeReason = reason === 'split_screen'
+        ? 'Terdeteksi Split Screen'
+        : reason === 'app_switch'
+        ? 'Keluar dari aplikasi ujian terlalu lama'
+        : reason === 'other_device'
         ? 'Terdeteksi login di perangkat lain'
         : reason === 'other_window'
         ? 'Terdeteksi membuka tab/jendela lain'
