@@ -174,8 +174,8 @@ WITH CHECK (true);
 --   JSONB: { "allowed": boolean, "remaining_plays": number, "reason": text }
 
 CREATE OR REPLACE FUNCTION public.start_audio_playback(
-    p_student_id UUID,
-    p_question_id UUID
+    p_student_id TEXT,
+    p_question_id TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql

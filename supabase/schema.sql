@@ -506,3 +506,128 @@ BEGIN
   );
 END;
 $$;
+
+-- ─── CBT Listening: Atomic Audio Playback Authorizer ───────────────────────
+CREATE OR REPLACE FUNCTION public.start_audio_playback(
+    p_student_id TEXT,
+    p_question_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_student_uuid UUID;
+    v_max_plays INT;
+    v_audio_url TEXT;
+    v_current_plays INT;
+    v_is_locked BOOLEAN;
+    v_remaining INT;
+    v_new_play_count INT;
+    v_should_lock BOOLEAN;
+BEGIN
+    -- 1. Safely resolve student UUID
+    BEGIN
+        v_student_uuid := p_student_id::UUID;
+    EXCEPTION WHEN OTHERS THEN
+        SELECT id INTO v_student_uuid 
+        FROM public.profiles 
+        WHERE username ILIKE p_student_id OR id::text = p_student_id 
+        LIMIT 1;
+
+        IF v_student_uuid IS NULL THEN
+            v_student_uuid := md5(p_student_id)::UUID;
+        END IF;
+    END;
+
+    -- 2. Fetch question playback configuration
+    SELECT max_plays, audio_url
+    INTO v_max_plays, v_audio_url
+    FROM public.questions
+    WHERE id = p_question_id;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object(
+            'allowed', false,
+            'remaining_plays', 0,
+            'reason', 'Butir soal tidak ditemukan'
+        );
+    END IF;
+
+    -- Default max_plays to 1 if unset or invalid
+    IF v_max_plays IS NULL OR v_max_plays <= 0 THEN
+        v_max_plays := 1;
+    END IF;
+
+    IF v_audio_url IS NULL OR TRIM(v_audio_url) = '' THEN
+        RETURN jsonb_build_object(
+            'allowed', false,
+            'remaining_plays', 0,
+            'reason', 'Tidak ada audio pada butir soal ini'
+        );
+    END IF;
+
+    -- 3. Idempotent insert into student_listening_logs
+    INSERT INTO public.student_listening_logs (
+        student_id,
+        question_id,
+        play_count,
+        is_locked,
+        last_played_at
+    )
+    VALUES (
+        v_student_uuid,
+        p_question_id,
+        0,
+        false,
+        now()
+    )
+    ON CONFLICT (student_id, question_id) DO NOTHING;
+
+    -- 4. Row-level lock to prevent concurrent play races
+    SELECT play_count, is_locked
+    INTO v_current_plays, v_is_locked
+    FROM public.student_listening_logs
+    WHERE student_id = v_student_uuid AND question_id = p_question_id
+    FOR UPDATE;
+
+    IF v_current_plays IS NULL THEN
+        v_current_plays := 0;
+        v_is_locked := false;
+    END IF;
+
+    -- 5. Check if already reached playback limit
+    IF v_is_locked OR v_current_plays >= v_max_plays THEN
+        IF NOT v_is_locked THEN
+            UPDATE public.student_listening_logs
+            SET is_locked = true
+            WHERE student_id = v_student_uuid AND question_id = p_question_id;
+        END IF;
+
+        RETURN jsonb_build_object(
+            'allowed', false,
+            'remaining_plays', 0,
+            'reason', 'Batas pemutaran audio telah habis (' || v_current_plays || ' dari ' || v_max_plays || ')'
+        );
+    END IF;
+
+    -- 6. Increment and lock if last play
+    v_new_play_count := v_current_plays + 1;
+    v_remaining := GREATEST(0, v_max_plays - v_new_play_count);
+    v_should_lock := (v_remaining = 0);
+
+    UPDATE public.student_listening_logs
+    SET
+        play_count = v_new_play_count,
+        is_locked = v_should_lock,
+        last_played_at = now()
+    WHERE student_id = v_student_uuid AND question_id = p_question_id;
+
+    RETURN jsonb_build_object(
+        'allowed', true,
+        'remaining_plays', v_remaining,
+        'reason', 'Pemutaran diizinkan'
+    );
+END;
+$$;
