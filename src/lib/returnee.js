@@ -1,45 +1,46 @@
 /**
- * Returnee Module — Exam Mode Returnee & Token Management
+ * Returnee Module — Centralized Exam Token System (OSN Exambro & TKA System)
  * 
  * Rules:
- * - If a student taking an exam is detected logged out (voluntary, kicked by session guard,
- *   closing browser/tab, crash, device change, or any other circumstance) and needs to return:
- *   They MUST input a valid Returnee Token from a Level 3 (Teacher) or Level 4 (Admin) user.
- * - Token format: Exactly 6 characters, numbers (0-9) and lowercase letters (a-z) only.
- * - Level 3 & 4 users can generate tokens automatically (auto-generated) or input them manually.
+ * - Exactly 1 active token per exam (NOT per student).
+ * - All students who are locked out (Returnee / "out") use the SAME token within the active time window.
+ * - Teachers (Level 3 & 4) can configure the token duration (e.g. 60 seconds, 120s, 300s, 900s, etc.).
+ * - If current time > token expiry time, token is EXPIRED and will reject student unlock attempts.
+ * - Teacher can generate a new token, extend the active token timer, or enter a manual 6-character token.
+ * - Verification is case-insensitive (standard 6 alphanumeric characters).
  */
 
 import { supabase, isSupabaseConfigured } from './supabase.js'
 
-export const RETURNEE_TOKEN_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz'
-export const RETURNEE_TOKEN_REGEX = /^[0-9a-z]{6}$/
+export const RETURNEE_TOKEN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+export const RETURNEE_TOKEN_REGEX = /^[0-9a-zA-Z]{6}$/
 
 /**
- * Validates whether a token string is valid (6 alphanumeric lowercase characters).
+ * Validates whether a token string is 6 alphanumeric characters.
  * @param {string} token 
  * @returns {boolean}
  */
 export function isValidReturneeToken(token) {
   if (!token || typeof token !== 'string') return false
-  return RETURNEE_TOKEN_REGEX.test(token.trim().toLowerCase())
+  return RETURNEE_TOKEN_REGEX.test(token.trim())
 }
 
 /**
- * Sanitizes an input string to conform to token format (lowercase, strip invalid characters, max 6 chars).
+ * Sanitizes input to conform to token format (uppercase alphanumeric, max 6 chars).
  * @param {string} input 
  * @returns {string}
  */
 export function sanitizeReturneeToken(input) {
   if (!input) return ''
   return String(input)
-    .toLowerCase()
-    .replace(/[^0-9a-z]/g, '')
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, '')
     .slice(0, 6)
 }
 
 /**
- * Generates a cryptographically random 6-character lowercase alphanumeric token.
- * Example outputs: '7b3x9a', 'k49m12', '0a8z5c'
+ * Generates a random 6-character uppercase alphanumeric token.
+ * Example outputs: 'W7BX9A', 'K49M12', '0A8Z5C'
  * @returns {string}
  */
 export function generateReturneeToken() {
@@ -59,6 +60,69 @@ export function generateReturneeToken() {
     }
   }
   return token
+}
+
+/**
+ * Computes complete metadata for an exam's active token:
+ * duration, expiration timestamp, remaining seconds, and status.
+ * Resilient to both new schema columns and fallback columns.
+ * 
+ * @param {Object} exam
+ * @returns {{
+ *   token: string|null,
+ *   duration: number,
+ *   expiresAt: string|null,
+ *   remainingSeconds: number,
+ *   isExpired: boolean,
+ *   isActive: boolean,
+ *   percentRemaining: number
+ * }}
+ */
+export function getExamTokenInfo(exam) {
+  if (!exam || !exam.returnee_token) {
+    return {
+      token: null,
+      duration: 60,
+      expiresAt: null,
+      remainingSeconds: 0,
+      isExpired: false,
+      isActive: false,
+      percentRemaining: 0
+    }
+  }
+
+  const token = sanitizeReturneeToken(exam.returnee_token)
+  const duration = Number(exam.returnee_token_duration) || Number(exam.survey_notify_time) || 60
+
+  let expiresAt = exam.returnee_token_expires_at || null
+  if (!expiresAt && exam.updated_at) {
+    const updatedAtTime = new Date(exam.updated_at).getTime()
+    if (!isNaN(updatedAtTime)) {
+      expiresAt = new Date(updatedAtTime + duration * 1000).toISOString()
+    }
+  }
+
+  let remainingSeconds = 0
+  if (expiresAt) {
+    const expiryTime = new Date(expiresAt).getTime()
+    if (!isNaN(expiryTime)) {
+      remainingSeconds = Math.max(0, Math.floor((expiryTime - Date.now()) / 1000))
+    }
+  }
+
+  const isExpired = remainingSeconds <= 0
+  const isActive = !isExpired && remainingSeconds > 0
+  const percentRemaining = duration > 0 ? Math.min(100, Math.max(0, Math.round((remainingSeconds / duration) * 100))) : 0
+
+  return {
+    token,
+    duration,
+    expiresAt,
+    remainingSeconds,
+    isExpired,
+    isActive,
+    percentRemaining
+  }
 }
 
 /**
@@ -115,102 +179,136 @@ export async function markActiveSessionsAsReturnee(studentId, reason = 'Logout t
 }
 
 /**
- * Sets or updates the exam-wide returnee token (Level 3 & 4 only).
- * If customToken is provided, it is sanitized and validated.
- * If customToken is not provided or null, a random token is auto-generated.
+ * Sets or updates the centralized exam-wide token (Level 3 & 4 only).
+ * Exactly 1 token per exam with teacher-configured duration (in seconds).
  * 
  * @param {string} examId 
  * @param {string|null} customToken 
- * @returns {Promise<{ token: string|null, error: Error|null }>}
+ * @param {number} durationSeconds - Duration in seconds (e.g. 60, 120, 300, 900)
+ * @returns {Promise<{ token: string|null, duration: number, expiresAt: string|null, error: Error|null }>}
  */
-export async function setExamReturneeToken(examId, customToken = null) {
+export async function setExamReturneeToken(examId, customToken = null, durationSeconds = 60) {
   if (!isSupabaseConfigured || !supabase || !examId) {
-    return { token: null, error: new Error('Database offline atau examId tidak valid') }
+    return { token: null, duration: 60, expiresAt: null, error: new Error('Database offline atau examId tidak valid') }
   }
 
   let finalToken = ''
   if (customToken) {
     const sanitized = sanitizeReturneeToken(customToken)
     if (!isValidReturneeToken(sanitized)) {
-      return { token: null, error: new Error('Token harus tepat 6 karakter (angka dan huruf kecil saja).') }
+      return { token: null, duration: 60, expiresAt: null, error: new Error('Token harus tepat 6 karakter alphanumeric (0-9, A-Z).') }
     }
     finalToken = sanitized
   } else {
     finalToken = generateReturneeToken()
   }
 
+  const duration = Math.max(10, Number(durationSeconds) || 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + duration * 1000).toISOString()
+  const nowIso = now.toISOString()
+
   try {
+    // Attempt standard update with duration and expiry columns
+    const updatePayload = {
+      returnee_token: finalToken,
+      returnee_token_duration: duration,
+      returnee_token_expires_at: expiresAt,
+      updated_at: nowIso
+    }
+
     const { error } = await supabase
       .from('exams')
-      .update({ returnee_token: finalToken })
+      .update(updatePayload)
       .eq('id', examId)
 
-    if (error) throw error
-    return { token: finalToken, error: null }
+    if (error) {
+      // 42703 = column does not exist (migration not yet applied to remote DB)
+      if (error.code === '42703' || String(error.message).includes('returnee_token_expires_at')) {
+        console.warn('[Returnee] Falling back to existing columns for token duration storage')
+        const { error: fallbackError } = await supabase
+          .from('exams')
+          .update({
+            returnee_token: finalToken,
+            survey_notify_time: String(duration),
+            updated_at: nowIso
+          })
+          .eq('id', examId)
+
+        if (fallbackError) throw fallbackError
+      } else {
+        throw error
+      }
+    }
+
+    return { token: finalToken, duration, expiresAt, error: null }
   } catch (err) {
     console.error('[Returnee] setExamReturneeToken error:', err)
-    return { token: null, error: err }
+    return { token: null, duration, expiresAt: null, error: err }
   }
 }
 
 /**
- * Clears/removes the exam-wide returnee token.
+ * Extends or resets the expiration time of the active token without changing the token code.
+ * Useful when students need more time with the current token.
+ * 
+ * @param {string} examId 
+ * @param {number} durationSeconds 
+ * @returns {Promise<{ token: string|null, duration: number, expiresAt: string|null, error: Error|null }>}
+ */
+export async function extendExamReturneeToken(examId, durationSeconds = 60) {
+  if (!isSupabaseConfigured || !supabase || !examId) {
+    return { token: null, duration: 60, expiresAt: null, error: new Error('Database offline atau examId tidak valid') }
+  }
+
+  try {
+    const { data: exam, error: fetchErr } = await supabase
+      .from('exams')
+      .select('*')
+      .eq('id', examId)
+      .maybeSingle()
+
+    if (fetchErr || !exam || !exam.returnee_token) {
+      return { token: null, duration: 60, expiresAt: null, error: new Error('Belum ada token aktif untuk diperpanjang') }
+    }
+
+    return await setExamReturneeToken(examId, exam.returnee_token, durationSeconds)
+  } catch (err) {
+    return { token: null, duration: 60, expiresAt: null, error: err }
+  }
+}
+
+/**
+ * Clears/removes the exam-wide returnee token (invalidates immediately).
  * @param {string} examId 
  */
 export async function clearExamReturneeToken(examId) {
   if (!isSupabaseConfigured || !supabase || !examId) return { error: null }
   try {
+    const updatePayload = {
+      returnee_token: null,
+      returnee_token_expires_at: null,
+      updated_at: new Date().toISOString()
+    }
     const { error } = await supabase
       .from('exams')
-      .update({ returnee_token: null })
+      .update(updatePayload)
       .eq('id', examId)
+
+    if (error && (error.code === '42703' || String(error.message).includes('returnee_token_expires_at'))) {
+      const { error: fallbackError } = await supabase
+        .from('exams')
+        .update({
+          returnee_token: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', examId)
+      return { error: fallbackError }
+    }
 
     return { error }
   } catch (err) {
     return { error: err }
-  }
-}
-
-/**
- * Sets or updates an individual student's returnee token (Level 3 & 4 only).
- * If customToken is provided, validates and sets it.
- * If not provided, auto-generates a 6-character token.
- * 
- * @param {string} sessionId 
- * @param {string|null} customToken 
- * @returns {Promise<{ token: string|null, error: Error|null }>}
- */
-export async function setStudentReturneeToken(sessionId, customToken = null) {
-  if (!isSupabaseConfigured || !supabase || !sessionId) {
-    return { token: null, error: new Error('Database offline atau sessionId tidak valid') }
-  }
-
-  let finalToken = ''
-  if (customToken) {
-    const sanitized = sanitizeReturneeToken(customToken)
-    if (!isValidReturneeToken(sanitized)) {
-      return { token: null, error: new Error('Token harus tepat 6 karakter (angka dan huruf kecil saja).') }
-    }
-    finalToken = sanitized
-  } else {
-    finalToken = generateReturneeToken()
-  }
-
-  try {
-    const { error } = await supabase
-      .from('exam_sessions')
-      .update({
-        returnee_token: finalToken,
-        returnee_token_required: true,
-        last_sync: new Date().toISOString()
-      })
-      .eq('id', sessionId)
-
-    if (error) throw error
-    return { token: finalToken, error: null }
-  } catch (err) {
-    console.error('[Returnee] setStudentReturneeToken error:', err)
-    return { token: null, error: err }
   }
 }
 
@@ -225,6 +323,7 @@ export async function unlockStudentReturnee(sessionId) {
       .from('exam_sessions')
       .update({
         returnee_token_required: false,
+        returnee_token: null,
         returnee_unlocked_at: new Date().toISOString(),
         last_sync: new Date().toISOString()
       })
@@ -246,10 +345,13 @@ export async function lockStudentReturnee(sessionId, reason = 'Dikunci oleh peng
 }
 
 /**
- * Verifies a student's input token to unlock an active returnee exam session.
- * Checks against both:
- * 1. The individual student session returnee_token
- * 2. The exam-wide returnee_token
+ * Verifies a student's input token against the active central exam token.
+ * All locked out students use the 1 central exam token within its duration.
+ * 
+ * Checks:
+ * 1. Has an exam token been generated?
+ * 2. Has the token expired (current time > expiresAt)?
+ * 3. Does the input token match the exam token (case-insensitive)?
  * 
  * @param {Object} params
  * @param {string} params.sessionId
@@ -264,14 +366,14 @@ export async function verifyAndUnlockReturnee({ sessionId, examId, token }) {
 
   const clean = sanitizeReturneeToken(token)
   if (!clean || clean.length !== 6) {
-    return { success: false, error: 'Token harus terdiri dari 6 karakter (angka dan huruf kecil).' }
+    return { success: false, error: 'Token harus terdiri dari 6 karakter (angka dan huruf).' }
   }
 
   try {
-    // Fetch session and exam data
+    // Fetch session and exam data in parallel
     const [sessRes, examRes] = await Promise.all([
       supabase.from('exam_sessions').select('*').eq('id', sessionId).maybeSingle(),
-      supabase.from('exams').select('returnee_token').eq('id', examId).maybeSingle()
+      supabase.from('exams').select('*').eq('id', examId).maybeSingle()
     ])
 
     const sess = sessRes.data
@@ -281,31 +383,38 @@ export async function verifyAndUnlockReturnee({ sessionId, examId, token }) {
       return { success: false, error: 'Sesi ujian tidak ditemukan.' }
     }
 
-    const expectedStudentToken = sess.returnee_token ? sanitizeReturneeToken(sess.returnee_token) : null
-    const expectedExamToken = exam?.returnee_token ? sanitizeReturneeToken(exam.returnee_token) : null
-
-    // Check if token matches either individual or exam token
-    const isStudentMatch = expectedStudentToken && expectedStudentToken === clean
-    const isExamMatch = expectedExamToken && expectedExamToken === clean
-
-    if (!isStudentMatch && !isExamMatch) {
-      if (!expectedStudentToken && !expectedExamToken) {
-        return {
-          success: false,
-          error: 'Token belum digenerate oleh pengawas (Level 3/4). Silakan hubungi Guru / Admin untuk meminta token.'
-        }
-      }
+    if (!exam || !exam.returnee_token) {
       return {
         success: false,
-        error: 'Token yang dimasukkan salah. Periksa kembali 6 digit angka dan huruf kecil Anda.'
+        error: 'Token ujian belum dirilis oleh Pengawas. Silakan hubungi Guru/Pengawas di ruangan ujian.'
       }
     }
 
-    // Token is valid! Unlock session
+    const tokenInfo = getExamTokenInfo(exam)
+
+    // Check if token has expired
+    if (tokenInfo.isExpired) {
+      return {
+        success: false,
+        error: `Token ujian telah kadaluarsa (batas waktu ${tokenInfo.duration} detik habis). Minta token baru yang masih aktif kepada Pengawas.`
+      }
+    }
+
+    // Compare token case-insensitively
+    const expectedToken = tokenInfo.token
+    if (expectedToken !== clean) {
+      return {
+        success: false,
+        error: 'Token yang dimasukkan salah. Periksa kembali token 6 karakter aktif dari Pengawas.'
+      }
+    }
+
+    // Token is valid and active! Unlock student session
     const { error: unlockErr } = await supabase
       .from('exam_sessions')
       .update({
         returnee_token_required: false,
+        returnee_token: null,
         returnee_unlocked_at: new Date().toISOString(),
         last_sync: new Date().toISOString()
       })
@@ -323,4 +432,13 @@ export async function verifyAndUnlockReturnee({ sessionId, examId, token }) {
     console.error('[Returnee] verifyAndUnlockReturnee error:', err)
     return { success: false, error: err.message || 'Terjadi kesalahan saat memverifikasi token.' }
   }
+}
+
+/**
+ * Backwards compatibility stub for individual student tokens (now deprecated).
+ * Directly unlocks student session or sets exam token.
+ */
+export async function setStudentReturneeToken(sessionId) {
+  console.warn('[Returnee] Individual student tokens are deprecated in favor of 1 exam-wide token.')
+  return unlockStudentReturnee(sessionId)
 }

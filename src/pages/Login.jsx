@@ -122,7 +122,7 @@ export default function Login() {
               type="text"
               id="login-input-username"
               className="form-input"
-              placeholder="cth: 7a1, 10a1, atau username akun"
+              placeholder="Masukkan ID"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoFocus
@@ -158,20 +158,6 @@ export default function Login() {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-          </div>
-
-          {/* Student Login Guide */}
-          <div style={{
-            fontSize: '0.78rem',
-            color: 'var(--text-muted, #94a3b8)',
-            lineHeight: 1.45,
-            background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid var(--border-color, rgba(255, 255, 255, 0.08))',
-            borderRadius: '8px',
-            padding: '8px 12px',
-            marginBottom: '0.5rem'
-          }}>
-            <span style={{ color: 'var(--gold, #f59e0b)', fontWeight: 600 }}>💡 Panduan Siswa:</span> Gunakan ID/Username kelas (contoh: <code style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '1px 4px', borderRadius: '3px' }}>7a1</code>, <code style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '1px 4px', borderRadius: '3px' }}>10a1</code>). Password default: <code style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '1px 4px', borderRadius: '3px' }}>password</code> atau ID Anda (<code style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '1px 4px', borderRadius: '3px' }}>7a1</code>).
           </div>
 
           {/* Error Message */}

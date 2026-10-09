@@ -1,34 +1,34 @@
-import { useEffect, useState, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, sessions } from '../../lib/db'
 import {
-  RefreshCcw,
-  ChevronLeft,
-  RotateCcw,
   Activity,
-  Key,
   Lock,
   Unlock,
+  RotateCcw,
+  RefreshCcw,
+  ChevronLeft,
+  Key,
   Copy,
   Check,
   Sparkles,
   AlertTriangle,
   ShieldAlert,
-  X,
   Trash2,
-  CheckCircle2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Clock,
+  Timer
 } from 'lucide-react'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 import {
-  generateReturneeToken,
   isValidReturneeToken,
   sanitizeReturneeToken,
   setExamReturneeToken,
+  extendExamReturneeToken,
   clearExamReturneeToken,
-  setStudentReturneeToken,
+  getExamTokenInfo,
   unlockStudentReturnee,
   lockStudentReturnee
 } from '../../lib/returnee'
@@ -42,6 +42,9 @@ function statusBadge(status, returneeRequired, returneeReason) {
         </span>
         <span style={{ fontSize: '0.7rem', color: '#dc2626', fontWeight: 600 }}>
           {returneeReason || 'Perlu Token'}
+        </span>
+        <span style={{ fontSize: '0.66rem', color: '#64748b', background: '#f1f5f9', padding: '0.1rem 0.35rem', borderRadius: '4px', width: 'fit-content' }}>
+          Gunakan Token Ujian
         </span>
       </div>
     )
@@ -63,6 +66,21 @@ function getRemaining(endTimestamp) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+function formatTokenRemaining(secs) {
+  if (secs <= 0) return '00:00 (Habis)'
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+const DURATION_PRESETS = [
+  { label: '30 Detik', value: 30 },
+  { label: '60 Detik (1 Menit)', value: 60 },
+  { label: '2 Menit', value: 120 },
+  { label: '5 Menit', value: 300 },
+  { label: '15 Menit', value: 900 }
+]
+
 export default function Monitor() {
   const { examId } = useParams()
   const navigate = useNavigate()
@@ -72,20 +90,24 @@ export default function Monitor() {
   const [, forceUpdate] = useState(0)
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
 
-  // Exam-level token management state
+  // Exam-level centralized token management state (OSN & TKA System)
   const [isTokenPanelCollapsed, setIsTokenPanelCollapsed] = useState(false)
   const [examTokenCopied, setExamTokenCopied] = useState(false)
   const [isManualExamToken, setIsManualExamToken] = useState(false)
   const [manualExamTokenInput, setManualExamTokenInput] = useState('')
   const [examTokenError, setExamTokenError] = useState('')
   const [examTokenLoading, setExamTokenLoading] = useState(false)
+  const [tokenDuration, setTokenDuration] = useState(60) // default 60 seconds
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [, setTimerTick] = useState(0)
 
-  // Student-level token modal state
-  const [selectedStudent, setSelectedStudent] = useState(null)
-  const [studentTokenInput, setStudentTokenInput] = useState('')
-  const [studentTokenError, setStudentTokenError] = useState('')
-  const [studentTokenCopied, setStudentTokenCopied] = useState(false)
-  const [studentModalLoading, setStudentModalLoading] = useState(false)
+  // 1-second countdown tick for live token timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimerTick(t => t + 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   const load = useCallback(async () => {
     const [{ data: examData }, { data: sess }] = await Promise.all([
@@ -94,16 +116,75 @@ export default function Monitor() {
     ])
     setExam(examData)
     setSessionList(sess || [])
+    if (examData?.returnee_token_duration) {
+      setTokenDuration(Number(examData.returnee_token_duration))
+    } else if (examData?.survey_notify_time && Number(examData.survey_notify_time) > 0) {
+      setTokenDuration(Number(examData.survey_notify_time))
+    }
     setLoading(false)
   }, [examId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    let ignore = false
+    exams.getById(examId).then(({ data: examData }) => {
+      if (!ignore && examData) {
+        setExam(examData)
+        if (examData.returnee_token_duration) {
+          setTokenDuration(Number(examData.returnee_token_duration))
+        } else if (examData.survey_notify_time && Number(examData.survey_notify_time) > 0) {
+          setTokenDuration(Number(examData.survey_notify_time))
+        }
+      }
+    })
+    sessions.listByExam(examId).then(({ data: sess }) => {
+      if (!ignore) {
+        setSessionList(sess || [])
+        setLoading(false)
+      }
+    })
+    return () => { ignore = true }
+  }, [examId])
 
-  // Refresh every 10s
+  // Refresh every 10s for student session states
   useEffect(() => {
     const id = setInterval(() => { load(); forceUpdate(v => v + 1) }, 10000)
     return () => clearInterval(id)
   }, [load])
+
+  // Compute live token info
+  const tokenInfo = getExamTokenInfo(exam)
+
+  // ─── Centralized Exam Token Handlers ─────────────────────────────────────────
+  const handleAutoGenerateExamToken = useCallback(async () => {
+    setExamTokenLoading(true)
+    setExamTokenError('')
+    const { token, duration, expiresAt, error } = await setExamReturneeToken(examId, null, tokenDuration)
+    if (error) {
+      setExamTokenError(error.message || 'Gagal membuat token')
+    } else {
+      setExam(prev => prev ? {
+        ...prev,
+        returnee_token: token,
+        returnee_token_duration: duration,
+        returnee_token_expires_at: expiresAt,
+        survey_notify_time: String(duration),
+        updated_at: new Date().toISOString()
+      } : prev)
+      setIsManualExamToken(false)
+      setManualExamTokenInput('')
+    }
+    setExamTokenLoading(false)
+  }, [examId, tokenDuration])
+
+  // Auto-refresh when token expires if autoRefresh is toggled on
+  useEffect(() => {
+    if (autoRefresh && tokenInfo.token && tokenInfo.isExpired && !examTokenLoading) {
+      const timeout = setTimeout(() => {
+        handleAutoGenerateExamToken()
+      }, 100)
+      return () => clearTimeout(timeout)
+    }
+  }, [autoRefresh, tokenInfo.token, tokenInfo.isExpired, examTokenLoading, handleAutoGenerateExamToken])
 
   async function handleReset(sess) {
     const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
@@ -112,129 +193,85 @@ export default function Monitor() {
     await load()
   }
 
-  // ─── Exam Returnee Token Handlers ──────────────────────────────────────────
-  async function handleAutoGenerateExamToken() {
+  async function handleExtendExamToken() {
+    if (!tokenInfo.token) return
     setExamTokenLoading(true)
     setExamTokenError('')
-    const { token, error } = await setExamReturneeToken(examId)
+    const { token, duration, expiresAt, error } = await extendExamReturneeToken(examId, tokenDuration)
     if (error) {
-      setExamTokenError(error.message || 'Gagal membuat token')
+      setExamTokenError(error.message || 'Gagal memperpanjang waktu token')
     } else {
-      setExam(prev => prev ? { ...prev, returnee_token: token } : prev)
-      setIsManualExamToken(false)
-      setManualExamTokenInput('')
+      setExam(prev => prev ? {
+        ...prev,
+        returnee_token: token,
+        returnee_token_duration: duration,
+        returnee_token_expires_at: expiresAt,
+        survey_notify_time: String(duration),
+        updated_at: new Date().toISOString()
+      } : prev)
     }
     setExamTokenLoading(false)
-    await load()
   }
 
   async function handleSaveManualExamToken() {
     const clean = sanitizeReturneeToken(manualExamTokenInput)
     if (!isValidReturneeToken(clean)) {
-      setExamTokenError('Token harus terdiri dari tepat 6 karakter angka & huruf kecil (0-9, a-z).')
+      setExamTokenError('Token harus terdiri dari tepat 6 karakter angka & huruf (0-9, A-Z).')
       return
     }
     setExamTokenLoading(true)
     setExamTokenError('')
-    const { token, error } = await setExamReturneeToken(examId, clean)
+    const { token, duration, expiresAt, error } = await setExamReturneeToken(examId, clean, tokenDuration)
     if (error) {
       setExamTokenError(error.message || 'Gagal menyimpan token')
     } else {
-      setExam(prev => prev ? { ...prev, returnee_token: token } : prev)
+      setExam(prev => prev ? {
+        ...prev,
+        returnee_token: token,
+        returnee_token_duration: duration,
+        returnee_token_expires_at: expiresAt,
+        survey_notify_time: String(duration),
+        updated_at: new Date().toISOString()
+      } : prev)
       setIsManualExamToken(false)
       setManualExamTokenInput('')
     }
     setExamTokenLoading(false)
-    await load()
   }
 
   async function handleClearExamToken() {
-    if (!confirm('Hapus Token Returnee Ujian ini? Siswa yang belum masuk harus menunggu token baru.')) return
+    if (!confirm('Hapus/nonaktifkan Token Ujian ini? Siswa yang terkunci (Returnee) harus menunggu token baru dirilis.')) return
     setExamTokenLoading(true)
     await clearExamReturneeToken(examId)
-    setExam(prev => prev ? { ...prev, returnee_token: null } : prev)
+    setExam(prev => prev ? {
+      ...prev,
+      returnee_token: null,
+      returnee_token_expires_at: null,
+      updated_at: new Date().toISOString()
+    } : prev)
     setExamTokenLoading(false)
-    await load()
   }
 
   function handleCopyExamToken() {
-    if (!exam?.returnee_token) return
-    navigator.clipboard.writeText(exam.returnee_token)
+    if (!tokenInfo?.token) return
+    navigator.clipboard.writeText(tokenInfo.token)
     setExamTokenCopied(true)
     setTimeout(() => setExamTokenCopied(false), 2000)
   }
 
-  // ─── Student Returnee Handlers ─────────────────────────────────────────────
-  function handleOpenStudentModal(sess) {
-    setSelectedStudent(sess)
-    setStudentTokenInput(sess.returnee_token || '')
-    setStudentTokenError('')
-    setStudentTokenCopied(false)
-  }
-
-  function handleCloseStudentModal() {
-    setSelectedStudent(null)
-    setStudentTokenInput('')
-    setStudentTokenError('')
-    setStudentTokenCopied(false)
-  }
-
+  // ─── Proctor Direct Student Actions ──────────────────────────────────────────
   async function handleDirectUnlock(sess) {
     const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
-    if (!confirm(`Buka kunci ujian untuk ${studentName} tanpa memerlukan input token?`)) return
+    if (!confirm(`Buka kunci ujian untuk ${studentName} langsung tanpa memerlukan input token?`)) return
     await unlockStudentReturnee(sess.id)
-    if (selectedStudent?.id === sess.id) {
-      handleCloseStudentModal()
-    }
     await load()
   }
 
   async function handleLockStudent(sess) {
     const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
-    if (!confirm(`Kunci sesi ujian ${studentName} sebagai Returnee? Siswa harus memasukkan token untuk melanjutkan.`)) return
+    if (!confirm(`Kunci sesi ujian ${studentName} sebagai Returnee? Siswa harus memasukkan Token Ujian aktif untuk melanjutkan.`)) return
     await lockStudentReturnee(sess.id, 'Dikunci secara manual oleh pengawas')
     await load()
-  }
-
-  async function handleAutoGenerateStudentToken() {
-    if (!selectedStudent) return
-    setStudentModalLoading(true)
-    setStudentTokenError('')
-    const { token, error } = await setStudentReturneeToken(selectedStudent.id)
-    if (error) {
-      setStudentTokenError(error.message || 'Gagal membuat token')
-    } else {
-      setSelectedStudent(prev => prev ? { ...prev, returnee_token: token, returnee_token_required: true } : prev)
-      setStudentTokenInput(token)
-    }
-    setStudentModalLoading(false)
-    await load()
-  }
-
-  async function handleSaveManualStudentToken() {
-    if (!selectedStudent) return
-    const clean = sanitizeReturneeToken(studentTokenInput)
-    if (!isValidReturneeToken(clean)) {
-      setStudentTokenError('Token harus tepat 6 karakter angka & huruf kecil (contoh: 7b3x9a).')
-      return
-    }
-    setStudentModalLoading(true)
-    setStudentTokenError('')
-    const { token, error } = await setStudentReturneeToken(selectedStudent.id, clean)
-    if (error) {
-      setStudentTokenError(error.message || 'Gagal menyimpan token')
-    } else {
-      setSelectedStudent(prev => prev ? { ...prev, returnee_token: token, returnee_token_required: true } : prev)
-    }
-    setStudentModalLoading(false)
-    await load()
-  }
-
-  function handleCopyStudentToken() {
-    if (!selectedStudent?.returnee_token) return
-    navigator.clipboard.writeText(selectedStudent.returnee_token)
-    setStudentTokenCopied(true)
-    setTimeout(() => setStudentTokenCopied(false), 2000)
   }
 
   const active = sessionList.filter(s => s.status === 'active' && !s.returnee_token_required).length
@@ -258,6 +295,14 @@ export default function Monitor() {
     if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
     return 0
   })
+
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="spinner" style={{ width: 40, height: 40 }} />
+      </div>
+    )
+  }
 
   return (
     <>
@@ -315,12 +360,9 @@ export default function Monitor() {
           </div>
         </div>
 
-        {/* Exam Returnee Token Management Panel */}
-        <div className={`card card-collapsible ${isTokenPanelCollapsed ? 'collapsed' : ''}`} style={{
+        {/* Centralized Exam Token Management Panel (OSN & TKA System) */}
+        <div className={`osn-token-card ${tokenInfo.isActive ? 'active' : tokenInfo.isExpired ? 'expired' : ''}`} style={{
           marginBottom: '1.5rem',
-          border: '1px solid rgba(27, 51, 97, 0.15)',
-          background: 'linear-gradient(135deg, rgba(27, 51, 97, 0.03) 0%, rgba(245, 166, 35, 0.04) 100%)',
-          borderRadius: '14px',
           padding: isTokenPanelCollapsed ? '0.85rem 1.25rem' : '1.25rem'
         }}>
           <div 
@@ -330,33 +372,45 @@ export default function Monitor() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
               <div style={{
-                width: 38,
-                height: 38,
-                borderRadius: '10px',
-                background: '#1b3361',
+                width: 40,
+                height: 40,
+                borderRadius: '12px',
+                background: tokenInfo.isActive ? 'linear-gradient(135deg, #1e3a8a, #2563eb)' : '#1e293b',
                 color: '#fff',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                flexShrink: 0
+                flexShrink: 0,
+                boxShadow: tokenInfo.isActive ? '0 4px 12px rgba(37,99,235,0.3)' : 'none'
               }}>
-                <Key size={18} />
+                <Key size={20} />
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#1b3361' }}>
-                    Token Masuk Kembali (Returnee Token)
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e3a8a' }}>
+                    Token Ujian Terpusat (OSN &amp; TKA System)
                   </h3>
-                  <span className="badge badge-gold" style={{ fontSize: '0.68rem' }}>Lv.3 &amp; Lv.4 User</span>
-                  {isTokenPanelCollapsed && (
-                    <span className="section-summary-preview">
-                      {exam?.returnee_token ? `Token: ${exam.returnee_token}` : 'Belum Ada Token'}
+                  <span className="badge badge-gold" style={{ fontSize: '0.68rem' }}>Lv.3 &amp; Lv.4 Pengawas</span>
+
+                  {/* Status Badge */}
+                  {tokenInfo.isActive ? (
+                    <span className="badge badge-active" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span className="pulse-dot-green"></span>
+                      AKTIF ({tokenInfo.remainingSeconds}s)
+                    </span>
+                  ) : tokenInfo.isExpired ? (
+                    <span className="badge badge-closed" style={{ fontSize: '0.75rem', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
+                      🔴 KADALUARSA (EXPIRED)
+                    </span>
+                  ) : (
+                    <span className="badge badge-draft" style={{ fontSize: '0.75rem' }}>
+                      ⚪ BELUM DIRILIS
                     </span>
                   )}
                 </div>
                 {!isTokenPanelCollapsed && (
-                  <p className="text-muted text-xs" style={{ margin: '0.25rem 0 0', maxWidth: 620, lineHeight: 1.4 }}>
-                    Siswa yang terputus, logout, atau ganti perangkat diwajibkan memasukkan token 6 karakter (angka &amp; huruf kecil) untuk melanjutkan ujian.
+                  <p className="text-muted text-xs" style={{ margin: '0.25rem 0 0', maxWidth: 680, lineHeight: 1.4 }}>
+                    <strong>1 Token berlaku untuk semua peserta</strong> yang berstatus Returnee/Terkunci dalam batas durasi aktif yang ditentukan guru/pengawas.
                   </p>
                 )}
               </div>
@@ -377,58 +431,197 @@ export default function Monitor() {
           </div>
 
           {!isTokenPanelCollapsed && (
-            <div className="card-collapsible-body" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(27, 51, 97, 0.1)' }}>
-              {/* Token Action Controls */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {exam?.returnee_token ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#ffffff', padding: '0.4rem 0.6rem', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                      <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>Token Ujian:</span>
-                      <span className="token-display-badge">
-                        {exam.returnee_token}
-                      </span>
+            <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(203, 213, 225, 0.6)' }}>
+              
+              {/* Token Hero Section (Display + Live Timer) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                
+                {/* Active Token Display Box */}
+                <div className={`osn-token-hero ${tokenInfo.isActive ? 'active' : tokenInfo.isExpired ? 'expired' : ''}`}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: '0.2rem' }}>
+                      Kode Token Ujian:
+                    </div>
+                    {tokenInfo.token ? (
+                      <div className={`osn-token-code ${tokenInfo.isExpired ? 'expired' : ''}`}>
+                        {tokenInfo.token}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '1rem', fontWeight: 600, color: '#94a3b8', fontStyle: 'italic' }}>
+                        (Belum Dirilis)
+                      </div>
+                    )}
+                  </div>
+
+                  {tokenInfo.token && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                       <button
                         className="btn btn-ghost btn-sm"
                         onClick={handleCopyExamToken}
-                        title="Salin Token"
-                        style={{ padding: '0.25rem 0.5rem' }}
+                        title="Salin Token ke Clipboard"
+                        style={{ padding: '0.4rem 0.65rem', background: '#f8fafc', border: '1px solid #cbd5e1' }}
                       >
-                        {examTokenCopied ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                        {examTokenCopied ? <Check size={16} color="#16a34a" /> : <Copy size={16} />}
+                        <span style={{ fontSize: '0.78rem', marginLeft: '0.3rem' }}>
+                          {examTokenCopied ? 'Tersalin' : 'Salin'}
+                        </span>
                       </button>
                       <button
                         className="btn btn-ghost btn-sm text-danger"
                         onClick={handleClearExamToken}
                         disabled={examTokenLoading}
-                        title="Hapus Token"
-                        style={{ padding: '0.25rem 0.5rem' }}
+                        title="Nonaktifkan Token Sekarang"
+                        style={{ padding: '0.3rem 0.5rem', fontSize: '0.75rem' }}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} /> Nonaktifkan
                       </button>
                     </div>
-                  ) : (
-                    <span className="badge badge-draft" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}>
-                      Belum ada token ujian aktif
-                    </span>
                   )}
                 </div>
 
+                {/* Live Countdown Timer & Progress Bar */}
+                <div style={{
+                  background: '#ffffff',
+                  border: '1.5px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '0.85rem 1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <div className="osn-token-timer-label">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Timer size={14} /> Sisa Waktu Token:
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500 }}>
+                      Durasi: {tokenInfo.duration}s
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                    <div className={`osn-token-timer-value ${tokenInfo.isExpired ? 'danger' : ''}`}>
+                      {tokenInfo.token ? formatTokenRemaining(tokenInfo.remainingSeconds) : '—'}
+                    </div>
+                    {tokenInfo.isActive && (
+                      <span style={{ fontSize: '0.75rem', color: tokenInfo.remainingSeconds <= 15 ? '#dc2626' : '#16a34a', fontWeight: 700 }}>
+                        {tokenInfo.percentRemaining}% tersisa
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Progress Bar Track */}
+                  <div className="osn-token-progress-track">
+                    <div
+                      className="osn-token-progress-fill"
+                      style={{
+                        width: `${tokenInfo.token ? tokenInfo.percentRemaining : 0}%`,
+                        backgroundColor: tokenInfo.isExpired
+                          ? '#dc2626'
+                          : tokenInfo.remainingSeconds > 30
+                          ? '#16a34a'
+                          : tokenInfo.remainingSeconds > 10
+                          ? '#f59e0b'
+                          : '#dc2626'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Duration Settings & Presets */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Clock size={15} color="#2563eb" /> Pengaturan Durasi Token Aktif:
+                  </span>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoRefresh}
+                      onChange={(e) => setAutoRefresh(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>Auto-refresh token baru saat waktu habis</span>
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {DURATION_PRESETS.map((preset) => (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      className={`osn-preset-btn ${tokenDuration === preset.value ? 'active' : ''}`}
+                      onClick={() => setTokenDuration(preset.value)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+
+                  {/* Custom duration input */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: 'auto' }}>
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Kustom:</span>
+                    <input
+                      type="number"
+                      min={10}
+                      max={7200}
+                      value={tokenDuration}
+                      onChange={(e) => setTokenDuration(Math.max(10, Number(e.target.value) || 10))}
+                      style={{
+                        width: '75px',
+                        padding: '0.3rem 0.5rem',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        textAlign: 'center'
+                      }}
+                    />
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>detik</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button
-                    className="btn btn-ghost btn-sm"
+                    className="btn btn-gold btn-sm"
                     onClick={handleAutoGenerateExamToken}
                     disabled={examTokenLoading}
-                    title="Generate token acak 6 digit"
-                    style={{ background: '#ffffff', border: '1px solid #cbd5e1' }}
+                    title="Rilis token acak 6 digit baru dengan durasi terpilih"
+                    style={{ fontWeight: 700 }}
                   >
-                    <Sparkles size={14} color="#f59e0b" /> Auto-Generate
+                    <Sparkles size={15} /> Rilis Token Baru ({tokenDuration}s)
                   </button>
+
+                  {tokenInfo.token && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={handleExtendExamToken}
+                      disabled={examTokenLoading}
+                      title="Reset timer token ini dengan durasi aktif tanpa mengubah kode token"
+                      style={{ background: '#ffffff', border: '1px solid #cbd5e1' }}
+                    >
+                      <Timer size={14} color="#2563eb" /> Perpanjang Waktu (+{tokenDuration}s)
+                    </button>
+                  )}
 
                   <button
                     className={`btn btn-sm ${isManualExamToken ? 'btn-gold' : 'btn-ghost'}`}
                     onClick={() => {
                       setIsManualExamToken(!isManualExamToken)
                       setExamTokenError('')
-                      setManualExamTokenInput(exam?.returnee_token || '')
+                      setManualExamTokenInput(tokenInfo.token || '')
                     }}
                     disabled={examTokenLoading}
                     style={!isManualExamToken ? { background: '#ffffff', border: '1px solid #cbd5e1' } : {}}
@@ -436,6 +629,12 @@ export default function Monitor() {
                     <Key size={14} /> {isManualExamToken ? 'Batal Manual' : 'Input Manual'}
                   </button>
                 </div>
+
+                {tokenInfo.isExpired && (
+                  <span style={{ fontSize: '0.8rem', color: '#dc2626', fontWeight: 600 }}>
+                    ⚠️ Token telah habis. Klik "Rilis Token Baru" atau "Perpanjang Waktu".
+                  </span>
+                )}
               </div>
 
               {/* Manual Input Form */}
@@ -445,20 +644,20 @@ export default function Monitor() {
                   padding: '1rem',
                   background: '#ffffff',
                   borderRadius: '10px',
-                  border: '1px solid #e2e8f0',
+                  border: '1.5px dashed #3b82f6',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '0.75rem'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b' }}>
-                      Ketik 6 Karakter Token (0-9, a-z):
+                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e293b' }}>
+                      Ketik 6 Karakter Token Kustom (0-9, A-Z):
                     </span>
                     <input
                       type="text"
                       className="token-digit-input"
-                      style={{ maxWidth: 220, padding: '0.4rem 0.6rem', fontSize: '1.2rem' }}
-                      placeholder="contoh: 7b3x9a"
+                      style={{ maxWidth: 220, padding: '0.45rem 0.75rem', fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '0.25em' }}
+                      placeholder="contoh: 7B3X9A"
                       maxLength={6}
                       value={manualExamTokenInput}
                       onChange={(e) => {
@@ -476,17 +675,18 @@ export default function Monitor() {
                       onClick={handleSaveManualExamToken}
                       disabled={examTokenLoading || manualExamTokenInput.length !== 6}
                     >
-                      <Check size={14} /> Terapkan Token
+                      <Check size={14} /> Terapkan Token ({tokenDuration}s)
                     </button>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                    * Karakter otomatis diubah ke huruf kecil dan simbol dibersihkan. Hanya angka dan huruf alfabet kecil diperbolehkan.
+                    * Karakter otomatis diubah ke huruf kapital. Hanya angka dan alfabet diperbolehkan. Token akan aktif selama {tokenDuration} detik.
                   </div>
-                  {examTokenError && (
-                    <div style={{ color: '#ef4444', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <AlertTriangle size={14} /> {examTokenError}
-                    </div>
-                  )}
+                </div>
+              )}
+
+              {examTokenError && (
+                <div style={{ marginTop: '0.75rem', color: '#ef4444', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <AlertTriangle size={15} /> {examTokenError}
                 </div>
               )}
             </div>
@@ -506,17 +706,16 @@ export default function Monitor() {
                     Kelas {sortConfig.key === 'kelas' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
                   <th>Status</th>
-                  <th>Token Siswa</th>
-                  <th>Sisa Waktu</th>
+                  <th>Sisa Waktu Ujian</th>
                   <th>Soal ke-</th>
                   <th>Dijawab</th>
                   <th>Pelanggaran</th>
-                  <th style={{ textAlign: 'center' }}>Aksi Returnee &amp; Sesi</th>
+                  <th style={{ textAlign: 'center' }}>Aksi Sesi</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedSessions.length === 0 ? (
-                  <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem' }}>Belum ada siswa yang memulai ujian.</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem' }}>Belum ada siswa yang memulai ujian.</td></tr>
                 ) : sortedSessions.map(sess => {
                   const isReturnee = Boolean(sess.returnee_token_required)
                   return (
@@ -531,19 +730,6 @@ export default function Monitor() {
                       </td>
                       <td>{sess.users?.classes?.name || sess.users?.kelas || '—'}</td>
                       <td>{statusBadge(sess.status, isReturnee, sess.returnee_reason)}</td>
-                      <td>
-                        {sess.returnee_token ? (
-                          <span className="token-display-badge" style={{ fontSize: '0.85rem', padding: '0.2rem 0.5rem' }}>
-                            {sess.returnee_token}
-                          </span>
-                        ) : isReturnee ? (
-                          <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                            {exam?.returnee_token ? `Token Ujian (${exam.returnee_token})` : 'Perlu Token'}
-                          </span>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                      </td>
                       <td style={{ fontFamily: 'monospace' }}>{sess.status === 'active' ? getRemaining(sess.end_timestamp) : '—'}</td>
                       <td>{sess.current_question || 1}</td>
                       <td>{sess.answers ? Object.keys(sess.answers).length : 0}</td>
@@ -555,24 +741,14 @@ export default function Monitor() {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                           {isReturnee ? (
-                            <>
-                              <button
-                                className="btn btn-warning btn-sm"
-                                onClick={() => handleOpenStudentModal(sess)}
-                                title="Beri atau ubah token returnee khusus siswa ini"
-                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
-                              >
-                                <Key size={12} /> Token
-                              </button>
-                              <button
-                                className="btn btn-success btn-sm"
-                                onClick={() => handleDirectUnlock(sess)}
-                                title="Buka kunci langsung tanpa perlu input token"
-                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
-                              >
-                                <Unlock size={12} /> Buka Kunci
-                              </button>
-                            </>
+                            <button
+                              className="btn btn-success btn-sm"
+                              onClick={() => handleDirectUnlock(sess)}
+                              title="Buka kunci langsung tanpa perlu siswa input token"
+                              style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
+                            >
+                              <Unlock size={12} /> Buka Kunci
+                            </button>
                           ) : sess.status === 'active' ? (
                             <button
                               className="btn btn-ghost btn-sm"
@@ -602,172 +778,6 @@ export default function Monitor() {
           </div>
         </div>
       </div>
-
-      {/* Individual Student Returnee Modal */}
-      {selectedStudent && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(10, 22, 40, 0.65)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '1rem'
-        }}>
-          <div className="card" style={{
-            maxWidth: 500,
-            width: '100%',
-            background: '#ffffff',
-            borderRadius: '16px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-            padding: '1.75rem',
-            position: 'relative'
-          }}>
-            <button
-              onClick={handleCloseStudentModal}
-              style={{
-                position: 'absolute',
-                top: '1rem',
-                right: '1rem',
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: '#64748b',
-                padding: '0.25rem'
-              }}
-            >
-              <X size={20} />
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <div style={{
-                width: 44,
-                height: 44,
-                borderRadius: '12px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                color: '#dc2626',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <Lock size={22} />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1e293b' }}>
-                  Kelola Returnee Siswa
-                </h3>
-                <p className="text-muted text-xs" style={{ margin: '0.15rem 0 0' }}>
-                  {selectedStudent.users?.full_name || selectedStudent.users?.name} — {selectedStudent.users?.kelas || 'Kelas'}
-                </p>
-              </div>
-            </div>
-
-            <div style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '10px',
-              padding: '0.85rem',
-              marginBottom: '1.25rem',
-              fontSize: '0.85rem'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                <span style={{ color: '#64748b' }}>Status:</span>
-                <span style={{ fontWeight: 700, color: '#dc2626' }}>Terkunci (Returnee)</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b' }}>Alasan Terdeteksi:</span>
-                <span style={{ fontWeight: 600, color: '#1e293b' }}>{selectedStudent.returnee_reason || 'Logout terdeteksi'}</span>
-              </div>
-            </div>
-
-            {/* Current Token Display */}
-            <div style={{ marginBottom: '1.25rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600 }}>
-                Token Returnee Khusus Siswa Ini:
-              </div>
-              {selectedStudent.returnee_token ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                  <span className="token-display-badge" style={{ fontSize: '1.35rem', padding: '0.4rem 1rem' }}>
-                    {selectedStudent.returnee_token}
-                  </span>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={handleCopyStudentToken}
-                    title="Salin Token Siswa"
-                  >
-                    {studentTokenCopied ? <Check size={16} color="#16a34a" /> : <Copy size={16} />}
-                  </button>
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                  Belum ada token khusus. Siswa dapat menggunakan Token Ujian: <strong>{exam?.returnee_token || '(belum dibuat)'}</strong>
-                </div>
-              )}
-            </div>
-
-            {/* Token Generation Options */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  className="btn btn-ghost w-full"
-                  onClick={handleAutoGenerateStudentToken}
-                  disabled={studentModalLoading}
-                  style={{ border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
-                >
-                  <Sparkles size={14} color="#f59e0b" /> Auto-Generate (6 Digit)
-                </button>
-              </div>
-
-              {/* Manual Input for Student */}
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  className="token-digit-input"
-                  placeholder="manual (6 digit)"
-                  maxLength={6}
-                  value={studentTokenInput}
-                  onChange={(e) => {
-                    setStudentTokenInput(sanitizeReturneeToken(e.target.value))
-                    setStudentTokenError('')
-                  }}
-                  style={{ flex: 1, padding: '0.45rem 0.6rem', fontSize: '1rem' }}
-                />
-                <button
-                  className="btn btn-gold btn-sm"
-                  onClick={handleSaveManualStudentToken}
-                  disabled={studentModalLoading || studentTokenInput.length !== 6}
-                  style={{ whiteSpace: 'nowrap' }}
-                >
-                  Simpan Token
-                </button>
-              </div>
-              {studentTokenError && (
-                <div style={{ color: '#ef4444', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <AlertTriangle size={13} /> {studentTokenError}
-                </div>
-              )}
-            </div>
-
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <button
-                className="btn btn-success"
-                onClick={() => handleDirectUnlock(selectedStudent)}
-                style={{ flex: 1 }}
-              >
-                <Unlock size={15} /> Buka Kunci Langsung
-              </button>
-              <button className="btn btn-ghost" onClick={handleCloseStudentModal}>
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

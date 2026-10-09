@@ -20,7 +20,7 @@ import {
   ArrowLeft
 } from 'lucide-react'
 import { MONITORING_LEVELS } from '../lib/monitoringConfig'
-import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
+import { MonitoringIcon } from '../lib/monitoringUI'
 import {
   verifyAndUnlockReturnee,
   sanitizeReturneeToken,
@@ -176,7 +176,7 @@ export default function ExamLobby() {
 
     const clean = sanitizeReturneeToken(returneeTokenInput)
     if (clean.length !== 6) {
-      setReturneeError('Token harus 6 karakter angka dan huruf kecil.')
+      setReturneeError('Token harus terdiri dari 6 karakter angka atau huruf.')
       return
     }
 
@@ -476,14 +476,14 @@ export default function ExamLobby() {
             </div>
 
             <p style={{ fontSize: '0.85rem', color: '#334155', margin: '0 0 1.25rem', lineHeight: 1.5 }}>
-              Sesi ujian Anda terputus atau terdeteksi logout. Untuk dapat kembali ke ruang ujian, masukkan <strong>Token Masuk Kembali (6 Karakter)</strong> dari Pengawas (Guru Level 3 atau Admin Level 4).
+              Sesi ujian Anda terputus atau terdeteksi logout. Sistem ujian menggunakan <strong>Token Ujian Terpusat (OSN/TKA System)</strong>. Masukkan Token Ujian yang sedang aktif dari Pengawas di ruangan untuk melanjutkan.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
               <input
                 type="text"
                 className="token-digit-input"
-                placeholder="6 digit token"
+                placeholder="6 DIGIT TOKEN"
                 maxLength={6}
                 value={returneeTokenInput}
                 onChange={(e) => {
@@ -491,10 +491,11 @@ export default function ExamLobby() {
                   setReturneeError('')
                 }}
                 disabled={verifyingToken}
+                style={{ textTransform: 'uppercase', letterSpacing: '0.25em', fontWeight: 800, textAlign: 'center', fontSize: '1.25rem' }}
                 autoFocus
               />
               <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Hanya angka &amp; alfabet huruf kecil ({returneeTokenInput.length}/6)
+                Hanya angka &amp; huruf alfabet ({returneeTokenInput.length}/6)
               </span>
             </div>
 

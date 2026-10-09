@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS public.exams (
   default_grid_rows_count SMALLINT DEFAULT 3,
   default_grid_cols_count SMALLINT DEFAULT 3,
   returnee_token VARCHAR(6),
+  returnee_token_expires_at TIMESTAMPTZ,
+  returnee_token_duration INTEGER DEFAULT 60,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

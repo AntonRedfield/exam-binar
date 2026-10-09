@@ -15,13 +15,15 @@ import {
   markSessionAsReturnee,
   markActiveSessionsAsReturnee,
   setExamReturneeToken,
+  extendExamReturneeToken,
   clearExamReturneeToken,
   setStudentReturneeToken,
   unlockStudentReturnee,
   verifyAndUnlockReturnee,
   generateReturneeToken,
   isValidReturneeToken,
-  sanitizeReturneeToken
+  sanitizeReturneeToken,
+  getExamTokenInfo
 } from './returnee.js'
 
 // ─── Clean up any conflicting legacy local mock storage ─────────────────────
@@ -634,10 +636,12 @@ export const sessions = {
   unlockReturnee: unlockStudentReturnee,
   verifyReturnee: verifyAndUnlockReturnee,
   setExamReturneeToken,
+  extendExamReturneeToken,
   clearExamReturneeToken,
   generateReturneeToken,
   isValidReturneeToken,
-  sanitizeReturneeToken
+  sanitizeReturneeToken,
+  getExamTokenInfo
 }
 
 // ─── RESULTS API ──────────────────────────────────────────────────────────────

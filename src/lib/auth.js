@@ -166,7 +166,7 @@ export async function login(username, password) {
     console.error('[Auth] Sign-in failed:', { email, status: error?.status, code: error?.code, message: error?.message })
     const msg = (error?.message || '').toLowerCase()
     if (error?.code === 'invalid_credentials' || msg.includes('invalid login credentials')) {
-      throw new Error('Username atau password salah. Silakan coba lagi. Untuk siswa: gunakan ID/Username (cth: 7a1, 10a1) dan password (default: password atau ID Anda).')
+      throw new Error('Username atau password salah. Silakan periksa kembali kredensial Anda.')
     }
     if (error?.status === 429 || msg.includes('rate limit')) {
       throw new Error('Terlalu banyak percobaan login. Tunggu beberapa menit lalu coba lagi.')
