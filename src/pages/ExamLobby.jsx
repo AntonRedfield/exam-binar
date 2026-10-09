@@ -530,7 +530,7 @@ export default function ExamLobby() {
                 onClick={handleRecheckUnlock}
                 style={{ fontSize: '0.8rem', color: '#64748b' }}
               >
-                <RotateCcw size={13} /> Periksa Ulang (Jika Sudah Dibuka Langsung oleh Pengawas)
+                <RotateCcw size={13} /> Periksa Ulang Status Sesi Ujian
               </button>
 
               <button

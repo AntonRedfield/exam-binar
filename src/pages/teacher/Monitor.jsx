@@ -29,7 +29,6 @@ import {
   extendExamReturneeToken,
   clearExamReturneeToken,
   getExamTokenInfo,
-  unlockStudentReturnee,
   lockStudentReturnee
 } from '../../lib/returnee'
 
@@ -74,11 +73,11 @@ function formatTokenRemaining(secs) {
 }
 
 const DURATION_PRESETS = [
-  { label: '30 Detik', value: 30 },
-  { label: '60 Detik (1 Menit)', value: 60 },
-  { label: '2 Menit', value: 120 },
-  { label: '5 Menit', value: 300 },
-  { label: '15 Menit', value: 900 }
+  { label: '60s (1 Menit)', value: 60 },
+  { label: '120s (2 Menit)', value: 120 },
+  { label: '180s (3 Menit)', value: 180 },
+  { label: '300s (5 Menit)', value: 300 },
+  { label: '600s (10 Menit)', value: 600 }
 ]
 
 export default function Monitor() {
@@ -97,7 +96,7 @@ export default function Monitor() {
   const [manualExamTokenInput, setManualExamTokenInput] = useState('')
   const [examTokenError, setExamTokenError] = useState('')
   const [examTokenLoading, setExamTokenLoading] = useState(false)
-  const [tokenDuration, setTokenDuration] = useState(60) // default 60 seconds
+  const [tokenDuration, setTokenDuration] = useState(300) // default 300 seconds (5 min)
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [, setTimerTick] = useState(0)
 
@@ -259,14 +258,7 @@ export default function Monitor() {
     setTimeout(() => setExamTokenCopied(false), 2000)
   }
 
-  // ─── Proctor Direct Student Actions ──────────────────────────────────────────
-  async function handleDirectUnlock(sess) {
-    const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
-    if (!confirm(`Buka kunci ujian untuk ${studentName} langsung tanpa memerlukan input token?`)) return
-    await unlockStudentReturnee(sess.id)
-    await load()
-  }
-
+  // ─── Proctor Student Actions ──────────────────────────────────────────
   async function handleLockStudent(sess) {
     const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
     if (!confirm(`Kunci sesi ujian ${studentName} sebagai Returnee? Siswa harus memasukkan Token Ujian aktif untuk melanjutkan.`)) return
@@ -573,9 +565,9 @@ export default function Monitor() {
                     <input
                       type="number"
                       min={10}
-                      max={7200}
+                      max={600}
                       value={tokenDuration}
-                      onChange={(e) => setTokenDuration(Math.max(10, Number(e.target.value) || 10))}
+                      onChange={(e) => setTokenDuration(Math.max(10, Math.min(600, Number(e.target.value) || 10)))}
                       style={{
                         width: '75px',
                         padding: '0.3rem 0.5rem',
@@ -586,7 +578,7 @@ export default function Monitor() {
                         textAlign: 'center'
                       }}
                     />
-                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>detik</span>
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>detik (maks 600s / 10m)</span>
                   </div>
                 </div>
               </div>
@@ -734,22 +726,28 @@ export default function Monitor() {
                       <td>{sess.current_question || 1}</td>
                       <td>{sess.answers ? Object.keys(sess.answers).length : 0}</td>
                       <td>
-                        {sess.violation_count > 0
-                          ? <span style={{ color: 'var(--warning)', fontWeight: 700 }}>⚠ {sess.violation_count}</span>
-                          : <span className="text-muted">0</span>}
+                        {sess.violation_count > 0 ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem',
+                            color: '#dc2626',
+                            fontWeight: 800,
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem'
+                          }}>
+                            ⚠ {sess.violation_count}x
+                          </span>
+                        ) : (
+                          <span className="text-muted">0</span>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {isReturnee ? (
-                            <button
-                              className="btn btn-success btn-sm"
-                              onClick={() => handleDirectUnlock(sess)}
-                              title="Buka kunci langsung tanpa perlu siswa input token"
-                              style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
-                            >
-                              <Unlock size={12} /> Buka Kunci
-                            </button>
-                          ) : sess.status === 'active' ? (
+                          {sess.status === 'active' && !isReturnee && (
                             <button
                               className="btn btn-ghost btn-sm"
                               onClick={() => handleLockStudent(sess)}
@@ -758,7 +756,7 @@ export default function Monitor() {
                             >
                               <Lock size={12} /> Kunci
                             </button>
-                          ) : null}
+                          )}
 
                           <button
                             className="btn btn-ghost btn-sm"
