@@ -313,7 +313,8 @@ export async function clearExamReturneeToken(examId) {
 }
 
 /**
- * Direct unlock for a returnee student by Level 3 or 4 user (no student typing required).
+ * Direct unlock for a returnee student by Level 3 or 4 teacher/proctor (no student typing required).
+ * Forces the student back into the exam without requiring a token.
  * @param {string} sessionId 
  */
 export async function unlockStudentReturnee(sessionId) {
@@ -324,10 +325,36 @@ export async function unlockStudentReturnee(sessionId) {
       .update({
         returnee_token_required: false,
         returnee_token: null,
+        returnee_reason: null,
         returnee_unlocked_at: new Date().toISOString(),
         last_sync: new Date().toISOString()
       })
       .eq('id', sessionId)
+
+    return { error }
+  } catch (err) {
+    return { error: err }
+  }
+}
+
+/**
+ * Direct unlock for ALL returnee students in an exam (emergency force-unlock all without token).
+ * @param {string} examId 
+ */
+export async function unlockAllExamReturnees(examId) {
+  if (!isSupabaseConfigured || !supabase || !examId) return { error: null }
+  try {
+    const { error } = await supabase
+      .from('exam_sessions')
+      .update({
+        returnee_token_required: false,
+        returnee_token: null,
+        returnee_reason: null,
+        returnee_unlocked_at: new Date().toISOString(),
+        last_sync: new Date().toISOString()
+      })
+      .eq('exam_id', examId)
+      .eq('returnee_token_required', true)
 
     return { error }
   } catch (err) {

@@ -153,9 +153,15 @@ export default function ExamRoom() {
       // Guard: must have passed lobby unlock
       const inRoom = sessionStorage.getItem('binar_exam_active_room') === examId
       if (!inRoom) {
-        await markSessionAsReturnee(sess.id, 'Sesi terputus / akses langsung')
-        navigate(`/exam/${examId}/lobby`)
-        return
+        const isRecentlyUnlocked = sess.returnee_unlocked_at && 
+          (Date.now() - new Date(sess.returnee_unlocked_at).getTime() < 15 * 60 * 1000)
+        if (isRecentlyUnlocked && !sess.returnee_token_required) {
+          sessionStorage.setItem('binar_exam_active_room', examId)
+        } else {
+          await markSessionAsReturnee(sess.id, 'Sesi terputus / akses langsung')
+          navigate(`/exam/${examId}/lobby`)
+          return
+        }
       }
       
       let finalQs = qs || []

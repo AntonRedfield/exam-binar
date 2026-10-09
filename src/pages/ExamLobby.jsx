@@ -67,11 +67,17 @@ export default function ExamLobby() {
       // Check if student has active session that was interrupted / from outside the room
       if (sess && sess.status === 'active') {
         const inRoom = sessionStorage.getItem('binar_exam_active_room') === examId
-        if (sess.returnee_token_required || !inRoom) {
-          if (!sess.returnee_token_required) {
-            await markSessionAsReturnee(sess.id, 'Sesi terputus / login ulang')
-            currentSess = { ...sess, returnee_token_required: true, returnee_reason: 'Sesi terputus / login ulang' }
-          }
+        const isRecentlyUnlocked = sess.returnee_unlocked_at && 
+          (Date.now() - new Date(sess.returnee_unlocked_at).getTime() < 15 * 60 * 1000)
+
+        if (sess.returnee_token_required) {
+          currentSess = sess
+        } else if (!inRoom && !isRecentlyUnlocked) {
+          await markSessionAsReturnee(sess.id, 'Sesi terputus / login ulang')
+          currentSess = { ...sess, returnee_token_required: true, returnee_reason: 'Sesi terputus / login ulang' }
+        } else if (!sess.returnee_token_required && isRecentlyUnlocked) {
+          // Proctor unlocked them! Auto-grant active room permission and proceed
+          sessionStorage.setItem('binar_exam_active_room', examId)
         }
       }
 
@@ -82,6 +88,23 @@ export default function ExamLobby() {
     }
     load()
   }, [examId, user?.id, navigate])
+
+  // ─── Auto-listen for proctor unlock while student is locked in lobby ────────
+  useEffect(() => {
+    if (!session?.returnee_token_required || !user?.id || !examId) return
+    const interval = setInterval(async () => {
+      const { data: latestSess } = await sessions.get(user.id, examId)
+      if (latestSess && !latestSess.returnee_token_required && latestSess.status === 'active') {
+        setSession(latestSess)
+        setReturneeSuccess('Pengawas telah membuka kunci ujian Anda! Mengalihkan ke ruang ujian...')
+        sessionStorage.setItem('binar_exam_active_room', examId)
+        setTimeout(() => {
+          navigate(`/exam/${examId}/room`)
+        }, 1000)
+      }
+    }, 2500)
+    return () => clearInterval(interval)
+  }, [session?.returnee_token_required, user?.id, examId, navigate])
 
   const monitorLevel = exam?.monitoring_level || 1
   const levelConfig = MONITORING_LEVELS[monitorLevel] || MONITORING_LEVELS[1]
@@ -530,7 +553,7 @@ export default function ExamLobby() {
                 onClick={handleRecheckUnlock}
                 style={{ fontSize: '0.8rem', color: '#64748b' }}
               >
-                <RotateCcw size={13} /> Periksa Ulang Status Sesi Ujian
+                <RotateCcw size={13} /> Periksa Ulang (Jika Dibuka Langsung oleh Pengawas)
               </button>
 
               <button

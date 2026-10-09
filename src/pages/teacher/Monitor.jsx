@@ -29,6 +29,8 @@ import {
   extendExamReturneeToken,
   clearExamReturneeToken,
   getExamTokenInfo,
+  unlockStudentReturnee,
+  unlockAllExamReturnees,
   lockStudentReturnee
 } from '../../lib/returnee'
 
@@ -259,9 +261,25 @@ export default function Monitor() {
   }
 
   // ─── Proctor Student Actions ──────────────────────────────────────────
+  async function handleDirectUnlock(sess) {
+    const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
+    if (!confirm(`Buka kunci ujian untuk ${studentName} langsung tanpa memerlukan input token?\n\nSiswa akan langsung dapat melanjutkan ujian (paksa masuk).`)) return
+    await unlockStudentReturnee(sess.id)
+    await load()
+  }
+
+  async function handleDirectUnlockAll() {
+    if (returnees === 0) return
+    if (!confirm(`Buka kunci paksa untuk SEMUA (${returnees} siswa) yang terkunci tanpa memerlukan token?\n\nGunakan ini jika terjadi kendala teknis tak terduga (jaringan terputus, pemadaman, dll) agar seluruh siswa langsung dapat kembali ujian.`)) return
+    setLoading(true)
+    await unlockAllExamReturnees(examId)
+    await load()
+    setLoading(false)
+  }
+
   async function handleLockStudent(sess) {
     const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
-    if (!confirm(`Kunci sesi ujian ${studentName} sebagai Returnee? Siswa harus memasukkan Token Ujian aktif untuk melanjutkan.`)) return
+    if (!confirm(`Kunci sesi ujian ${studentName} sebagai Returnee? Siswa harus memasukkan Token Ujian aktif atau dibuka oleh pengawas untuk melanjutkan.`)) return
     await lockStudentReturnee(sess.id, 'Dikunci secara manual oleh pengawas')
     await load()
   }
@@ -337,8 +355,29 @@ export default function Monitor() {
             <div className="stat-icon" style={{ background: returnees > 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)' }}>
               <Lock size={22} color="var(--danger)" />
             </div>
-            <div>
-              <div className="stat-value" style={returnees > 0 ? { color: 'var(--danger)' } : {}}>{returnees}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div className="stat-value" style={returnees > 0 ? { color: 'var(--danger)' } : {}}>{returnees}</div>
+                {returnees > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-success btn-xs"
+                    onClick={handleDirectUnlockAll}
+                    title="Buka kunci darurat untuk SEMUA siswa terkunci tanpa token"
+                    style={{
+                      fontSize: '0.72rem',
+                      padding: '0.25rem 0.55rem',
+                      fontWeight: 700,
+                      background: '#16a34a',
+                      color: '#ffffff',
+                      border: 'none',
+                      boxShadow: '0 1px 2px rgba(22, 163, 74, 0.2)'
+                    }}
+                  >
+                    <Unlock size={11} /> Buka Semua ({returnees})
+                  </button>
+                )}
+              </div>
               <div className="stat-label">Peserta Returnee</div>
             </div>
           </div>
@@ -747,6 +786,28 @@ export default function Monitor() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          {isReturnee && (
+                            <button
+                              className="btn btn-success btn-sm"
+                              onClick={() => handleDirectUnlock(sess)}
+                              title="Buka kunci langsung tanpa perlu siswa input token (Paksa masuk)"
+                              style={{
+                                padding: '0.3rem 0.75rem',
+                                fontSize: '0.76rem',
+                                fontWeight: 700,
+                                background: '#16a34a',
+                                color: '#ffffff',
+                                border: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                boxShadow: '0 1px 2px rgba(22, 163, 74, 0.25)'
+                              }}
+                            >
+                              <Unlock size={12} /> Buka Kunci
+                            </button>
+                          )}
+
                           {sess.status === 'active' && !isReturnee && (
                             <button
                               className="btn btn-ghost btn-sm"
