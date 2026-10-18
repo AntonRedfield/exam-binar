@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results, sessions, questions } from '../../lib/db'
 import { gradeExam } from '../../lib/grader'
-import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2 } from 'lucide-react'
+import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw } from 'lucide-react'
 
 export default function ResultsView() {
   const { examId } = useParams()
@@ -14,6 +14,7 @@ export default function ResultsView() {
   const [saving, setSaving] = useState(null)
   const [selectedResult, setSelectedResult] = useState(null)
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
+  const [regrading, setRegrading] = useState(false)
 
   async function load() {
     const [{ data: examData }, { data: res }, { data: sess }, { data: qs }] = await Promise.all([
@@ -77,6 +78,53 @@ export default function ResultsView() {
       ))
     }
     setSaving(null)
+  }
+
+  async function handleRegrade() {
+    if (!window.confirm('Hitung ulang semua nilai siswa berdasarkan sistem penilaian terbaru?')) return
+    setRegrading(true)
+    try {
+      const [{ data: qs }, { data: sess }, { data: currentRes }] = await Promise.all([
+        questions.listByExam(examId),
+        sessions.listByExam(examId),
+        results.listByExam(examId)
+      ])
+      if (!qs || !currentRes) return
+
+      const sessionMap = {}
+      ;(sess || []).forEach(s => {
+        if (s.id) sessionMap[s.id] = s
+        if (s.student_id) sessionMap[s.student_id] = s
+      })
+
+      const updatedRes = []
+      for (const r of currentRes) {
+        const s = sessionMap[r.session_id] || sessionMap[r.student_id]
+        if (s && s.answers) {
+          const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers, qs)
+          const { data: updated } = await results.update(r.id, {
+            auto_score: autoScore,
+            max_auto_score: maxAutoScore,
+            breakdown: JSON.stringify(breakdown)
+          })
+          if (updated) {
+            updated.users = r.users
+            updatedRes.push(updated)
+          } else {
+            updatedRes.push({ ...r, auto_score: autoScore, max_auto_score: maxAutoScore, breakdown: JSON.stringify(breakdown) })
+          }
+        } else {
+          updatedRes.push(r)
+        }
+      }
+      setResultList(updatedRes)
+      alert('Berhasil menghitung ulang seluruh nilai siswa!')
+    } catch (err) {
+      console.error(err)
+      alert('Gagal menghitung ulang: ' + (err.message || 'Terjadi kesalahan'))
+    } finally {
+      setRegrading(false)
+    }
   }
 
   function handleSort(key) {
@@ -143,7 +191,16 @@ export default function ResultsView() {
               </p>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleRegrade}
+              disabled={regrading || resultList.length === 0}
+              title="Hitung ulang semua nilai siswa berdasarkan sistem penilaian terbaru"
+            >
+              <RefreshCw size={15} style={{ animation: regrading ? 'spin 0.8s linear infinite' : 'none' }} />
+              {regrading ? 'Menghitung...' : 'Hitung Ulang Nilai'}
+            </button>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/analytics/${examId}`)}>
               <BarChart2 size={15} /> Analisis Soal
             </button>

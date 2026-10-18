@@ -1,4 +1,75 @@
 /**
+ * Safely parse an option set into an array of lowercase strings.
+ * Handles arrays, JSON-encoded strings, comma-separated strings, or single values.
+ */
+function parseOptionList(val) {
+  if (!val) return []
+  if (Array.isArray(val)) {
+    return val.map(a => String(a).trim().toLowerCase()).filter(Boolean)
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim()
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed)) {
+          return parsed.map(a => String(a).trim().toLowerCase()).filter(Boolean)
+        }
+      } catch {}
+    }
+    if (trimmed.includes(',')) {
+      return trimmed.split(',').map(a => a.trim().toLowerCase()).filter(Boolean)
+    }
+    return [trimmed.toLowerCase()]
+  }
+  return []
+}
+
+/**
+ * Safely parse an object map (e.g. for TRUE_FALSE, MATCHING, AGREE_DISAGREE).
+ * Handles Javascript objects or JSON-encoded strings.
+ */
+function parseObjectMap(val) {
+  if (!val) return {}
+  if (typeof val === 'object' && !Array.isArray(val)) return val
+  if (typeof val === 'string') {
+    const trimmed = val.trim()
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (typeof parsed === 'object' && !Array.isArray(parsed) && parsed !== null) {
+          return parsed
+        }
+      } catch {}
+    }
+  }
+  return {}
+}
+
+/**
+ * Safely parse an array (e.g. for SEQUENCING).
+ * Handles Javascript arrays, JSON-encoded strings, or comma-separated strings.
+ */
+function parseArray(val) {
+  if (!val) return []
+  if (Array.isArray(val)) return val
+  if (typeof val === 'string') {
+    const trimmed = val.trim()
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed)) return parsed
+      } catch {}
+    }
+    if (trimmed.includes(',')) {
+      return trimmed.split(',').map(s => s.trim()).filter(Boolean)
+    }
+    return [trimmed]
+  }
+  return []
+}
+
+/**
  * Grade an exam session against the correct answers.
  * Returns { autoScore, maxAutoScore, essayPending, breakdown }
  */
@@ -12,7 +83,7 @@ export function gradeExam(answers, questions) {
     const studentAnswer = answers[String(q.number)]
     const pts = q.points || 1
 
-    if (q.type === 'ESSAY') {
+    if (q.type === 'ESSAY' || q.type === 'PARAGRAPH') {
       essayPending = true
       breakdown.push({ number: q.number, type: q.type, status: 'pending', earned: 0, max: pts, given: studentAnswer })
       continue
@@ -20,114 +91,192 @@ export function gradeExam(answers, questions) {
 
     maxAutoScore += pts
 
-    if (q.type === 'MCQ') {
-      const correct = String(q.correct_answer).toLowerCase()
-      const given = studentAnswer ? String(studentAnswer).toLowerCase() : ''
-      const isCorrect = correct === given
-      const earned = isCorrect ? pts : 0
-      autoScore += earned
-      breakdown.push({ number: q.number, type: q.type, status: isCorrect ? 'correct' : 'wrong', earned, max: pts, correct: q.correct_answer, given: studentAnswer })
+    if (q.type === 'MCQ' || q.type === 'DROPDOWN') {
+      const correctArr = parseOptionList(q.correct_answer)
+      if (correctArr.length > 1) {
+        // Multi-option MCQ proportional scoring: (pts / totalCorrect) * correctSelected
+        const givenArr = parseOptionList(studentAnswer)
+        const totalCorrect = correctArr.length
+        const correctSelected = givenArr.filter(a => correctArr.includes(a)).length
+        const wrongSelected = givenArr.filter(a => !correctArr.includes(a)).length
+
+        const ratio = totalCorrect > 0 ? (correctSelected / totalCorrect) : 0
+        const earned = Math.round(ratio * pts * 100) / 100
+        autoScore += earned
+
+        let status = 'wrong'
+        if (totalCorrect > 0 && correctSelected === totalCorrect && wrongSelected === 0) {
+          status = 'correct'
+        } else if (earned > 0) {
+          status = 'partial'
+        }
+
+        breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
+      } else {
+        const correct = String(Array.isArray(q.correct_answer) ? q.correct_answer[0] : (q.correct_answer || '')).trim().toLowerCase()
+        const given = studentAnswer ? String(Array.isArray(studentAnswer) ? studentAnswer[0] : studentAnswer).trim().toLowerCase() : ''
+        const isCorrect = correct !== '' && correct === given
+        const earned = isCorrect ? pts : 0
+        autoScore += earned
+        breakdown.push({ number: q.number, type: q.type, status: isCorrect ? 'correct' : 'wrong', earned, max: pts, correct: q.correct_answer, given: studentAnswer })
+      }
     }
 
-    if (q.type === 'TRUE_FALSE') {
-      const optionsObj = q.options || {}
-      const correctObj = q.correct_answer || {}
-      const givenObj = studentAnswer || {}
-      // Grade based on the available statements visible to the student
-      const keys = Object.keys(optionsObj)
-      
-      let correctCount = 0
-      for (const k of keys) {
-        if (correctObj[k] !== undefined) {
-          if (String(correctObj[k]).toLowerCase() === String(givenObj[k]).toLowerCase()) {
-            correctCount++
-          }
-        }
-      }
+    if (q.type === 'COMPLEX_MCQ' || q.type === 'CHECKBOXES') {
+      const correctSet = parseOptionList(q.correct_answer)
+      const givenSet = parseOptionList(studentAnswer)
 
-      const ratio = keys.length > 0 ? correctCount / keys.length : 0
+      const totalCorrect = correctSet.length
+      const correctSelected = givenSet.filter(a => correctSet.includes(a)).length
+      const wrongSelected = givenSet.filter(a => !correctSet.includes(a)).length
+
+      // Proportional scoring: (pts / totalCorrect) * correctSelected
+      const ratio = totalCorrect > 0 ? (correctSelected / totalCorrect) : 0
       const earned = Math.round(ratio * pts * 100) / 100
       autoScore += earned
 
       let status = 'wrong'
-      if (ratio >= 1) status = 'correct'
-      else if (ratio > 0) status = 'partial'
+      if (totalCorrect > 0 && correctSelected === totalCorrect && wrongSelected === 0) {
+        status = 'correct'
+      } else if (earned > 0) {
+        status = 'partial'
+      }
 
       breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
     }
 
-    if (q.type === 'COMPLEX_MCQ') {
-      const correctSet = Array.isArray(q.correct_answer) ? q.correct_answer.map(a => String(a).toLowerCase()) : []
-      const givenSet = Array.isArray(studentAnswer) ? studentAnswer.map(a => String(a).toLowerCase()) : []
+    if (q.type === 'TRUE_FALSE') {
+      const optionsObj = parseObjectMap(q.options)
+      const correctObj = parseObjectMap(q.correct_answer)
+      const givenObj = parseObjectMap(studentAnswer)
 
-      const correctSelected = givenSet.filter(a => correctSet.includes(a)).length
-      const wrongSelected = givenSet.filter(a => !correctSet.includes(a)).length
-      const totalCorrect = correctSet.length
+      const optKeys = Object.keys(optionsObj)
+      const ansKeys = Object.keys(correctObj)
+      const allKeys = Array.from(new Set([...optKeys, ...ansKeys]))
+      const validKeys = allKeys.filter(k => correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
 
-      let ratio = totalCorrect > 0 ? (correctSelected / totalCorrect) - (wrongSelected * 0.25) : 0
-      ratio = Math.max(0, ratio)
+      let correctCount = 0
+      for (const k of validKeys) {
+        const correctVal = String(correctObj[k]).trim().toLowerCase()
+        const givenVal = String(givenObj[k] || '').trim().toLowerCase()
+        if (correctVal === givenVal) {
+          correctCount++
+        }
+      }
+
+      const totalStatements = validKeys.length
+      // Proportional scoring: (pts / totalStatements) * correctCount
+      const ratio = totalStatements > 0 ? (correctCount / totalStatements) : 0
       const earned = Math.round(ratio * pts * 100) / 100
       autoScore += earned
-      breakdown.push({ number: q.number, type: q.type, status: ratio >= 1 ? 'correct' : ratio > 0 ? 'partial' : 'wrong', earned, max: pts, correct: q.correct_answer, given: studentAnswer })
+
+      let status = 'wrong'
+      if (totalStatements > 0 && correctCount === totalStatements) {
+        status = 'correct'
+      } else if (earned > 0) {
+        status = 'partial'
+      }
+
+      breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
     }
 
     if (q.type === 'MATCHING') {
-      const correctObj = q.correct_answer || {}
-      const givenObj = studentAnswer || {}
-      const keys = Object.keys(correctObj)
+      const correctObj = parseObjectMap(q.correct_answer)
+      const givenObj = parseObjectMap(studentAnswer)
+
+      const validKeys = Object.keys(correctObj).filter(k => correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
       let matchCount = 0
-      for (const k of keys) {
-        if (givenObj[k] !== undefined && String(givenObj[k]).trim() === String(correctObj[k]).trim()) {
+      for (const k of validKeys) {
+        const correctVal = String(correctObj[k]).trim().toLowerCase()
+        const givenVal = String(givenObj[k] || '').trim().toLowerCase()
+        if (correctVal !== '' && correctVal === givenVal) {
           matchCount++
         }
       }
-      const ratio = keys.length > 0 ? matchCount / keys.length : 0
+
+      const totalPairs = validKeys.length
+      // Proportional scoring: (pts / totalPairs) * matchCount
+      const ratio = totalPairs > 0 ? (matchCount / totalPairs) : 0
       const earned = Math.round(ratio * pts * 100) / 100
       autoScore += earned
+
       let status = 'wrong'
-      if (ratio >= 1) status = 'correct'
-      else if (ratio > 0) status = 'partial'
+      if (totalPairs > 0 && matchCount === totalPairs) {
+        status = 'correct'
+      } else if (earned > 0) {
+        status = 'partial'
+      }
+
       breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
     }
 
     if (q.type === 'SEQUENCING') {
-      const correctArr = Array.isArray(q.correct_answer) ? q.correct_answer : []
-      const givenArr = Array.isArray(studentAnswer) ? studentAnswer : []
+      const correctArr = parseArray(q.correct_answer)
+      const givenArr = parseArray(studentAnswer)
+      const totalItems = correctArr.length
       let correctPosCount = 0
-      for (let i = 0; i < correctArr.length; i++) {
-        if (givenArr[i] === correctArr[i]) {
+
+      for (let i = 0; i < totalItems; i++) {
+        if (givenArr[i] !== undefined && String(givenArr[i]).trim() === String(correctArr[i]).trim()) {
           correctPosCount++
         }
       }
-      const ratio = correctArr.length > 0 ? correctPosCount / correctArr.length : 0
+
+      const ratio = totalItems > 0 ? (correctPosCount / totalItems) : 0
       const earned = Math.round(ratio * pts * 100) / 100
       autoScore += earned
+
       let status = 'wrong'
-      if (ratio >= 1) status = 'correct'
-      else if (ratio > 0) status = 'partial'
+      if (totalItems > 0 && correctPosCount === totalItems) {
+        status = 'correct'
+      } else if (earned > 0) {
+        status = 'partial'
+      }
+
       breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
     }
 
     if (q.type === 'AGREE_DISAGREE') {
-      const optionsObj = q.options || {}
-      const correctObj = q.correct_answer || {}
-      const givenObj = studentAnswer || {}
-      const keys = Object.keys(optionsObj)
+      const optionsObj = parseObjectMap(q.options)
+      const correctObj = parseObjectMap(q.correct_answer)
+      const givenObj = parseObjectMap(studentAnswer)
+
+      const optKeys = Object.keys(optionsObj)
+      const ansKeys = Object.keys(correctObj)
+      const allKeys = Array.from(new Set([...optKeys, ...ansKeys]))
+      const validKeys = allKeys.filter(k => correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
+
       let correctCount = 0
-      for (const k of keys) {
-        if (correctObj[k] !== undefined) {
-          if (String(correctObj[k]).toLowerCase() === String(givenObj[k]).toLowerCase()) {
-            correctCount++
-          }
+      for (const k of validKeys) {
+        const correctVal = String(correctObj[k]).trim().toLowerCase()
+        const givenVal = String(givenObj[k] || '').trim().toLowerCase()
+        if (correctVal === givenVal) {
+          correctCount++
         }
       }
-      const ratio = keys.length > 0 ? correctCount / keys.length : 0
+
+      const totalStatements = validKeys.length
+      const ratio = totalStatements > 0 ? (correctCount / totalStatements) : 0
       const earned = Math.round(ratio * pts * 100) / 100
       autoScore += earned
+
       let status = 'wrong'
-      if (ratio >= 1) status = 'correct'
-      else if (ratio > 0) status = 'partial'
+      if (totalStatements > 0 && correctCount === totalStatements) {
+        status = 'correct'
+      } else if (earned > 0) {
+        status = 'partial'
+      }
+
       breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
+    }
+
+    if (q.type === 'SHORT_ANSWER') {
+      const correct = String(q.correct_answer || '').trim().toLowerCase()
+      const given = studentAnswer ? String(studentAnswer).trim().toLowerCase() : ''
+      const isCorrect = correct !== '' && correct === given
+      const earned = isCorrect ? pts : 0
+      autoScore += earned
+      breakdown.push({ number: q.number, type: q.type, status: isCorrect ? 'correct' : 'wrong', earned, max: pts, correct: q.correct_answer, given: studentAnswer })
     }
   }
 

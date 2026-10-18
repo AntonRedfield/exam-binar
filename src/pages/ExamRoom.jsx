@@ -6,6 +6,7 @@ import { markSessionAsReturnee } from '../lib/returnee'
 import { gradeExam, getDriveEmbedUrl, getDriveImageUrl } from '../lib/grader'
 import { useAntiCheat } from '../hooks/useAntiCheat'
 import { useFaceDetection } from '../hooks/useFaceDetection'
+import { ExamAtomicEngine } from '../lib/examStorage'
 import QuestionMCQ from '../components/exam/QuestionMCQ'
 import QuestionComplexMCQ from '../components/exam/QuestionComplexMCQ'
 import QuestionTrueFalse from '../components/exam/QuestionTrueFalse'
@@ -30,7 +31,7 @@ import {
   getTimeReduction
 } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
-import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock } from 'lucide-react'
+import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2 } from 'lucide-react'
 
 // Simple seeded PRNG based on string
 function cyrb128(str) {
@@ -123,10 +124,16 @@ export default function ExamRoom() {
   const [kickoutReason, setKickoutReason] = useState('')
   const kickoutLockedRef = useRef(false)
 
+  // Passive Autosave Notice state
+  const [lastSaved, setLastSaved] = useState(null) // { qNum, timeStr }
+  const [saveFlash, setSaveFlash] = useState(false)
+  const flashTimeoutRef = useRef(null)
+
   const sessionRef = useRef(null)
   const answersRef = useRef({})
   const violationsRef = useRef(0)
-  const autoSaveTimer = useRef(null)
+  const currentQRef = useRef(1)
+  const engineRef = useRef(null)
   const submitLock = useRef(false)
   const answerScrollRef = useRef(null)
 
@@ -189,10 +196,34 @@ export default function ExamRoom() {
       setQuestionList(finalQs)
       setSession(sess)
       sessionRef.current = sess
-      const savedAnswers = sess.answers || {}
-      setAnswers(savedAnswers)
-      answersRef.current = savedAnswers
+
+      // Initialize atomic exam storage and dirty-bit sync engine
+      const engine = new ExamAtomicEngine(examId, user.id)
+      engineRef.current = engine
+
+      const initialAnswers = await engine.init(sess.answers || {}, async (dirtyBatch, allAnswers) => {
+        if (sessionRef.current?.id) {
+          // Zero-body minimal sync (HTTP 204 No Content, no JSON response payload parsing)
+          await sessions.syncMinimal(sessionRef.current.id, {
+            answers: allAnswers,
+            current_question: currentQRef.current,
+            violation_count: violationsRef.current,
+          })
+        }
+      })
+
+      setAnswers(initialAnswers)
+      answersRef.current = initialAnswers
+      const answeredKeys = Object.keys(initialAnswers || {})
+      if (answeredKeys.length > 0) {
+        setLastSaved({
+          qNum: answeredKeys[answeredKeys.length - 1],
+          timeStr: 'tersinkron'
+        })
+      }
+
       setCurrentQ(sess.current_question || 1)
+      currentQRef.current = sess.current_question || 1
       setViolations(sess.violation_count || 0)
       violationsRef.current = sess.violation_count || 0
       setLoading(false)
@@ -200,20 +231,18 @@ export default function ExamRoom() {
     load()
   }, [examId, user?.id, navigate])
 
-  // Auto-save every 10s
+  // Sync current question index ref for asynchronous background syncing
   useEffect(() => {
-    if (!session) return
-    autoSaveTimer.current = setInterval(async () => {
-      if (sessionRef.current) {
-        await sessions.update(sessionRef.current.id, {
-          answers: answersRef.current,
-          violation_count: violationsRef.current,
-          current_question: currentQ,
-        })
-      }
-    }, 10000)
-    return () => clearInterval(autoSaveTimer.current)
-  }, [session, currentQ])
+    currentQRef.current = currentQ
+  }, [currentQ])
+
+  // Cleanup atomic storage timers and listeners on unmount
+  useEffect(() => {
+    return () => {
+      engineRef.current?.destroy()
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
+    }
+  }, [])
 
   // Track active room and mark as Returnee on any exit / unload
   useEffect(() => {
@@ -292,9 +321,8 @@ export default function ExamRoom() {
     }
 
     if (sessionRef.current) {
-      await sessions.update(sessionRef.current.id, {
+      await sessions.syncMinimal(sessionRef.current.id, {
         violation_count: currentCount,
-        answers: answersRef.current,
         current_question: currentQ,
       })
     }
@@ -309,13 +337,18 @@ export default function ExamRoom() {
     setKickoutReason(reasonText)
     setKickoutActive(true)
 
-    // 1. Immediately save current student answers to database
+    // 1. Immediately flush pending disk writes & sync dirty student answers to database
     if (sessionRef.current?.id) {
       try {
-        await sessions.update(sessionRef.current.id, {
-          answers: answersRef.current,
-          current_question: currentQ,
-        })
+        if (engineRef.current) {
+          engineRef.current.flushPendingDiskWrites()
+          await engineRef.current.syncDirty()
+        } else {
+          await sessions.syncMinimal(sessionRef.current.id, {
+            answers: answersRef.current,
+            current_question: currentQ,
+          })
+        }
       } catch (e) {
         console.warn('Auto-save answers on kickout error:', e)
       }
@@ -373,11 +406,27 @@ export default function ExamRoom() {
     }
   }, [])
 
-  function handleAnswer(qNum, value) {
+  function handleAnswer(qNum, value, isEssay = false) {
     if (lockedQuestions[String(qNum)]) return
-    const updated = { ...answersRef.current, [String(qNum)]: value }
+    if (!engineRef.current) {
+      const updated = { ...answersRef.current, [String(qNum)]: value }
+      answersRef.current = updated
+      setAnswers(updated)
+      return
+    }
+    const updated = engineRef.current.saveAnswer(qNum, value, isEssay)
     answersRef.current = updated
     setAnswers(updated)
+
+    // Passive autosave notice
+    const now = new Date()
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    setLastSaved({ qNum, timeStr })
+    setSaveFlash(true)
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
+    flashTimeoutRef.current = setTimeout(() => {
+      setSaveFlash(false)
+    }, 1800)
   }
 
   function handleQuizNext(isSubmit = false) {
@@ -451,7 +500,9 @@ export default function ExamRoom() {
     if (submitLock.current) return
     submitLock.current = true
     setSubmitting(true)
-    clearInterval(autoSaveTimer.current)
+    if (engineRef.current) {
+      engineRef.current.flushPendingDiskWrites()
+    }
     try {
       sessionStorage.removeItem('binar_exam_active_room')
     } catch (e) {}
@@ -492,6 +543,11 @@ export default function ExamRoom() {
           breakdown: JSON.stringify(breakdown),
         })
         result = data
+      }
+
+      // Clear local atomic storage upon successful submission
+      if (engineRef.current) {
+        await engineRef.current.clear()
       }
 
       if (isAuto) {
@@ -631,22 +687,40 @@ export default function ExamRoom() {
             Lv.{monitorLevel}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flex: 1, justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flex: 1, justifyContent: 'center' }}>
           <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
             <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text)' }}>{user?.name}</span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Kelas {user?.kelas || '-'}</span>
           </div>
-          {/* Timer */}
-          {isQuiz ? (
-            <Timer
-              durationSeconds={q?.time_limit || 30}
-              questionKey={`q-${currentQ}`}
-              onExpire={handleQuestionTimerExpire}
-              onWarning={handleQuestionTimeWarning}
-            />
-          ) : (
-            <Timer endTimestamp={adjustedEndTimestamp} onExpire={handleTimerExpire} />
-          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            {/* Timer */}
+            {isQuiz ? (
+              <Timer
+                durationSeconds={q?.time_limit || 30}
+                questionKey={`q-${currentQ}`}
+                onExpire={handleQuestionTimerExpire}
+                onWarning={handleQuestionTimeWarning}
+              />
+            ) : (
+              <Timer endTimestamp={adjustedEndTimestamp} onExpire={handleTimerExpire} />
+            )}
+
+            {/* Passive Autosave Notice */}
+            <div
+              className={`autosave-notice-badge ${saveFlash ? 'flash' : ''}`}
+              title={
+                lastSaved
+                  ? `Jawaban Soal No. ${lastSaved.qNum} otomatis tersimpan (${lastSaved.timeStr})`
+                  : 'Autosave aktif: jawaban Anda otomatis tersimpan secara real-time'
+              }
+            >
+              <span className="autosave-pulse-dot" />
+              <span className="autosave-notice-text">
+                {lastSaved ? `Tersimpan: No. ${lastSaved.qNum}` : 'Autosave aktif'}
+              </span>
+            </div>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
@@ -777,13 +851,13 @@ export default function ExamRoom() {
                   </div>
                 ) : (
                   <>
-                    {q.type === 'MCQ' && <QuestionMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
-                    {q.type === 'COMPLEX_MCQ' && <QuestionComplexMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
-                    {q.type === 'TRUE_FALSE' && <QuestionTrueFalse question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
-                    {q.type === 'MATCHING' && <QuestionMatching question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
-                    {q.type === 'SEQUENCING' && <QuestionSequencing question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
-                    {q.type === 'AGREE_DISAGREE' && <QuestionAgreeDisagree question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
-                    {q.type === 'ESSAY' && <QuestionEssay value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val)} />}
+                    {q.type === 'MCQ' && <QuestionMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'COMPLEX_MCQ' && <QuestionComplexMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'TRUE_FALSE' && <QuestionTrueFalse question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'MATCHING' && <QuestionMatching question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'SEQUENCING' && <QuestionSequencing question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'AGREE_DISAGREE' && <QuestionAgreeDisagree question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'ESSAY' && <QuestionEssay value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, true)} />}
                   </>
                 )}
               </div>

@@ -705,6 +705,18 @@ export const sessions = {
     return { data: updated, error: null }
   },
 
+  syncMinimal: async (sessionId, data) => {
+    if (!isSupabaseConfigured || !supabase) return { error: null }
+    // Updates session with minimal return header (HTTP 204 No Content, zero response body parsing)
+    const { error } = await supabase
+      .from('exam_sessions')
+      .update({ ...data, last_sync: new Date().toISOString() })
+      .eq('id', sessionId)
+
+    if (error) return { error }
+    return { error: null }
+  },
+
   getById: async (id) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
     const { data, error } = await supabase
