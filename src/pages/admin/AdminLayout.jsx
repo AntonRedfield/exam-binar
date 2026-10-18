@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
-import { Shield, Users, BookOpen, BarChart2, LogOut, Menu, LayoutDashboard } from 'lucide-react'
+import { Shield, Users, BookOpen, BarChart2, LogOut, Menu, LayoutDashboard, Database, KeyRound } from 'lucide-react'
 import BiometricPrompt from '../../components/BiometricPrompt'
+import ChangePasswordModal from '../../components/ChangePasswordModal'
 
 export default function AdminLayout() {
   const user = getCurrentUser()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
 
   function navClick() { setSidebarOpen(false) }
 
@@ -49,7 +51,10 @@ export default function AdminLayout() {
           </NavLink>
           <div className="nav-label">Manajemen</div>
           <NavLink to="/admin/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
-            <Users size={18} /> Pengguna
+            <Users size={18} /> Pengguna &amp; Akun
+          </NavLink>
+          <NavLink to="/admin/classes" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
+            <Database size={18} /> Data Master &amp; Kelas
           </NavLink>
           <NavLink to="/admin/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <BookOpen size={18} /> Semua Ujian
@@ -65,8 +70,11 @@ export default function AdminLayout() {
         <div className="sidebar-footer">
           <div style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.25rem' }}>{user?.name}</div>
           <div className="text-muted text-xs" style={{ marginBottom: '0.75rem' }}>Superadmin</div>
-          <button className="btn btn-ghost btn-sm w-full" onClick={() => { logout(); navigate('/login') }}>
-            <LogOut size={14} /> Keluar
+          <button className="btn btn-ghost btn-sm w-full" style={{ marginBottom: '0.5rem', justifyContent: 'flex-start' }} onClick={() => setShowPasswordModal(true)}>
+            <KeyRound size={14} style={{ marginRight: '0.5rem' }} /> Ubah Password
+          </button>
+          <button className="btn btn-ghost btn-sm w-full" style={{ color: 'var(--danger)', justifyContent: 'flex-start' }} onClick={() => { logout(); navigate('/login') }}>
+            <LogOut size={14} style={{ marginRight: '0.5rem' }} /> Keluar
           </button>
         </div>
       </nav>
@@ -78,6 +86,8 @@ export default function AdminLayout() {
         </div>
       </div>
       <BiometricPrompt />
+      <ChangePasswordModal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
     </div>
   )
 }
+

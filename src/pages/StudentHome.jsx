@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../lib/auth'
 import { exams, sessions, results } from '../lib/db'
-import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap, ClipboardList } from 'lucide-react'
+import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap, ClipboardList, KeyRound } from 'lucide-react'
 import BiometricPrompt from '../components/BiometricPrompt'
+import ChangePasswordModal from '../components/ChangePasswordModal'
 
 function getStatusBadge(status, returneeRequired = false) {
   if (returneeRequired) return <span className="badge badge-returnee">🔒 Returnee</span>
@@ -20,6 +21,7 @@ export default function StudentHome() {
   const [sessionMap, setSessionMap] = useState({})
   const [resultMap, setResultMap] = useState({})
   const [loading, setLoading] = useState(true)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -144,12 +146,15 @@ export default function StudentHome() {
             </div>
           </div>
         </div>
-        <div className="student-header-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="student-header-right" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user.name}</div>
             <div className="text-muted text-xs">Kelas {user.kelas}</div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowPasswordModal(true)} style={{ gap: '0.35rem' }}>
+            <KeyRound size={15} /> Ubah Password
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={handleLogout} style={{ gap: '0.35rem' }}>
             <LogOut size={15} /> Keluar
           </button>
         </div>
@@ -244,6 +249,7 @@ export default function StudentHome() {
         <div>System Engineered &amp; Maintain by Maulana Sulthoni.</div>
       </div>
       <BiometricPrompt />
+      <ChangePasswordModal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
     </div>
   )
 }

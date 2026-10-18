@@ -467,3 +467,31 @@ export function isStudentId(idOrEmail) {
 export async function updatePasskeyStatus() {
   // No-op
 }
+
+/**
+ * Change the current logged-in user's password directly via Supabase Auth.
+ * Works for any authenticated role (Student, Teacher, Admin).
+ * 
+ * @param {string} newPassword — Plaintext new password (min 6 characters)
+ * @returns {Promise<{ success: boolean, message: string }>}
+ */
+export async function updateOwnPassword(newPassword) {
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+    throw new Error('Password baru minimal harus 6 karakter.')
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Koneksi Supabase belum siap. Silakan coba beberapa saat lagi.')
+  }
+
+  const cleanPassword = newPassword.trim()
+  const { data, error } = await supabase.auth.updateUser({
+    password: cleanPassword
+  })
+
+  if (error) {
+    console.error('[Auth] updateOwnPassword error:', error)
+    throw new Error(error.message || 'Gagal mengubah password.')
+  }
+
+  return { success: true, message: 'Password berhasil diperbarui!' }
+}

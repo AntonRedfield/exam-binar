@@ -186,7 +186,53 @@ export const users = {
       .single()
 
     if (error) return { data: null, error }
+
+    // If new password is provided, reset it in auth.users as well
+    if (data.password && data.password.trim().length >= 6) {
+      await users.resetPassword(users._mapProfile(updated), data.password)
+    }
+
     return { data: users._mapProfile(updated), error: null }
+  },
+
+  resetPassword: async (target, newPassword) => {
+    if (!isSupabaseConfigured || !supabase) {
+      return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
+    }
+    if (!newPassword || newPassword.trim().length < 6) {
+      return { data: null, error: { message: 'Password minimal 6 karakter' } }
+    }
+
+    let userObj = target
+    if (typeof target === 'string') {
+      const { data, error } = await users.getById(target)
+      if (error || !data) return { data: null, error: error || { message: 'Pengguna tidak ditemukan' } }
+      userObj = data
+    }
+
+    const username = (userObj.username || userObj.email?.split('@')[0] || '').toLowerCase().trim()
+    const roleLevel = userObj.role === 'admin' ? 4 : (userObj.role === 'teacher' ? 3 : (userObj.role === 'officer' ? 2 : 1))
+    const fullName = userObj.full_name || userObj.display_name || userObj.name || username
+
+    try {
+      const { data: uid, error: rpcErr } = await supabase.rpc('register_seed_user', {
+        p_username: username,
+        p_password: newPassword.trim(),
+        p_full_name: fullName,
+        p_display_name: fullName,
+        p_email: userObj.email || `${username}@exam.binar.internal`,
+        p_role: userObj.role || 'student',
+        p_role_level: roleLevel,
+        p_class_section: userObj.kelas || null,
+        p_phone: userObj.phone_number || null
+      })
+
+      if (rpcErr) throw rpcErr
+      return { data: { id: uid || userObj.id, success: true }, error: null }
+    } catch (err) {
+      console.error('[DB] resetPassword error:', err)
+      return { data: null, error: err }
+    }
   },
 
   delete: async (id) => {
@@ -208,6 +254,145 @@ export const users = {
     return { data: unique, error: null }
   }
 }
+
+// ─── CLASSES API ─────────────────────────────────────────────────────────────
+
+export const classes = {
+  list: async () => {
+    if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*')
+      .order('name', { ascending: true })
+    return { data: data || [], error }
+  },
+
+  getById: async (id) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    return { data, error }
+  },
+
+  create: async (classData) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
+    const payload = {
+      name: classData.name.trim(),
+      grade_level: classData.grade_level ? parseInt(classData.grade_level, 10) : null,
+      academic_year: classData.academic_year || '2025/2026',
+      homeroom_teacher_id: classData.homeroom_teacher_id || null
+    }
+    const { data, error } = await supabase
+      .from('classes')
+      .insert(payload)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  update: async (id, classData) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
+    const payload = {}
+    if (classData.name !== undefined) payload.name = classData.name.trim()
+    if (classData.grade_level !== undefined) payload.grade_level = classData.grade_level ? parseInt(classData.grade_level, 10) : null
+    if (classData.academic_year !== undefined) payload.academic_year = classData.academic_year
+    if (classData.homeroom_teacher_id !== undefined) payload.homeroom_teacher_id = classData.homeroom_teacher_id || null
+
+    const { data, error } = await supabase
+      .from('classes')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  delete: async (id) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
+    const { error } = await supabase
+      .from('classes')
+      .delete()
+      .eq('id', id)
+    return { data: null, error }
+  }
+}
+
+// ─── ACADEMIC PERIODS API ───────────────────────────────────────────────────
+
+export const academicPeriods = {
+  list: async () => {
+    if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('academic_periods')
+      .select('*')
+      .order('start_date', { ascending: false })
+    return { data: data || [], error }
+  },
+
+  getById: async (id) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
+    const { data, error } = await supabase
+      .from('academic_periods')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    return { data, error }
+  },
+
+  create: async (periodData) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
+    const payload = {
+      name: periodData.name.trim(),
+      start_date: periodData.start_date,
+      end_date: periodData.end_date,
+      is_active: periodData.is_active ?? false
+    }
+    if (payload.is_active) {
+      await supabase.from('academic_periods').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000')
+    }
+    const { data, error } = await supabase
+      .from('academic_periods')
+      .insert(payload)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  update: async (id, periodData) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
+    const payload = {}
+    if (periodData.name !== undefined) payload.name = periodData.name.trim()
+    if (periodData.start_date !== undefined) payload.start_date = periodData.start_date
+    if (periodData.end_date !== undefined) payload.end_date = periodData.end_date
+    if (periodData.is_active !== undefined) {
+      payload.is_active = periodData.is_active
+      if (periodData.is_active) {
+        await supabase.from('academic_periods').update({ is_active: false }).neq('id', id)
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('academic_periods')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  delete: async (id) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
+    const { error } = await supabase
+      .from('academic_periods')
+      .delete()
+      .eq('id', id)
+    return { data: null, error }
+  }
+}
+
 
 // ─── EXAMS API ────────────────────────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ import AdminDashboard from './pages/admin/AdminDashboard'
 import UserManagement from './pages/admin/UserManagement'
 import ExamOversight from './pages/admin/ExamOversight'
 import Analytics from './pages/admin/Analytics'
+import ClassManagement from './pages/admin/ClassManagement'
 
 import './index.css'
 
@@ -193,6 +194,7 @@ export default function App() {
           }>
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="users" element={<UserManagement />} />
+            <Route path="classes" element={<ClassManagement />} />
             <Route path="exams" element={<ExamOversight />} />
             <Route path="create" element={<CreateExam />} />
             <Route path="edit/:examId" element={<CreateExam />} />

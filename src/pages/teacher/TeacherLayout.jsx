@@ -1,45 +1,20 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
-import { users } from '../../lib/db'
-import { BookOpen, Plus, Activity, BarChart2, LogOut, KeyRound, X, Save, Users, Menu, LayoutDashboard } from 'lucide-react'
+import { BookOpen, Plus, Activity, BarChart2, LogOut, KeyRound, Users, Menu, LayoutDashboard } from 'lucide-react'
 import BiometricPrompt from '../../components/BiometricPrompt'
+import ChangePasswordModal from '../../components/ChangePasswordModal'
 
 export default function TeacherLayout() {
   const user = getCurrentUser()
   const navigate = useNavigate()
   
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ newPass: '', confirmPass: '' })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   function handleLogout() {
     logout()
     navigate('/login')
-  }
-
-  async function handleChangePassword() {
-    setError(''); setSuccess('')
-    if (!form.newPass.trim()) return setError('Password baru tidak boleh kosong.')
-    if (form.newPass !== form.confirmPass) return setError('Konfirmasi password tidak cocok.')
-    
-    setSaving(true)
-    try {
-      await users.update(user.id, { password: form.newPass })
-      setSuccess('Password berhasil diubah. Silakan gunakan password baru saat login berikutnya.')
-      setTimeout(() => {
-        setShowModal(false)
-        setForm({ newPass: '', confirmPass: '' })
-        setSuccess('')
-      }, 3000)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
   }
 
   function navClick() { setSidebarOpen(false) }
@@ -124,55 +99,8 @@ export default function TeacherLayout() {
       </div>
 
       <BiometricPrompt />
-
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: 400 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-              <h3>Ubah Password</h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}><X size={15} /></button>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {success ? (
-                <div className="alert alert-success">{success}</div>
-              ) : (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">Password Baru</label>
-                    <input 
-                      type="password" 
-                      className="form-input" 
-                      placeholder="Masukkan password baru"
-                      value={form.newPass}
-                      onChange={e => setForm(f => ({ ...f, newPass: e.target.value }))}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Konfirmasi Password Baru</label>
-                    <input 
-                      type="password" 
-                      className="form-input" 
-                      placeholder="Ketik ulang password baru"
-                      value={form.confirmPass}
-                      onChange={e => setForm(f => ({ ...f, confirmPass: e.target.value }))}
-                    />
-                  </div>
-                  
-                  {error && <div className="alert alert-error">{error}</div>}
-                  
-                  <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setShowModal(false)}>Batal</button>
-                    <button className="btn btn-gold" style={{ flex: 1 }} onClick={handleChangePassword} disabled={saving}>
-                      {saving ? 'Menyimpan...' : <><Save size={14} /> Simpan</>}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ChangePasswordModal isOpen={showModal} onClose={() => setShowModal(false)} />
     </div>
   )
 }
+

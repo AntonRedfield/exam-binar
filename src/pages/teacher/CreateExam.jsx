@@ -2,12 +2,18 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, Video, FileText, Layers, Copy, Paperclip, Headphones, X } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, Video, FileText, Layers, Copy, Paperclip, Headphones, X, RefreshCw } from 'lucide-react'
 import { getDriveImageUrl } from '../../lib/grader'
 import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
 import QuestionAudioInput from '../../components/admin/QuestionAudioInput'
 import QuestionVideoPlayer from '../../components/exam/QuestionVideoPlayer'
+import {
+  saveExamDraftToSupabase,
+  saveLocalDraftBackup,
+  getLocalDraftBackup,
+  clearLocalDraftBackup
+} from '../../lib/questionMakerAutosave'
 
 const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'MATCHING', 'SEQUENCING', 'AGREE_DISAGREE', 'ESSAY']
 const SURVEY_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'LINEAR_SCALE', 'MCQ_GRID', 'CHECKBOX_GRID', 'MCQ', 'CHECKBOXES', 'DROPDOWN']
@@ -132,9 +138,21 @@ function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCou
 
 export default function CreateExam() {
   const { examId } = useParams()
-  const isEdit = Boolean(examId)
+  const [currentExamId, setCurrentExamId] = useState(examId || null)
+  const isEdit = Boolean(currentExamId)
   const navigate = useNavigate()
   const user = getCurrentUser()
+
+  // ─── Autosave Progress States (Targeting Supabase & Local Backup) ───────────
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true)
+  const [autosaveInterval, setAutosaveInterval] = useState(30) // 30s or 60s
+  const [autosaveCountdown, setAutosaveCountdown] = useState(30)
+  const [autosaveStatus, setAutosaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved' | 'error'
+  const [lastAutosavedAt, setLastAutosavedAt] = useState(null)
+  const [autosaveErrorMsg, setAutosaveErrorMsg] = useState('')
+  const [showAutosaveMenu, setShowAutosaveMenu] = useState(false)
+  const [recoverableDraft, setRecoverableDraft] = useState(null)
+  const isAutosavingRef = useRef(false)
 
   const [title, setTitle] = useState('')
   const [information, setInformation] = useState('')
@@ -278,7 +296,15 @@ export default function CreateExam() {
       const { data: classList } = await users.getDistinctKelas()
       if (classList) setDbClasses(classList)
 
-      if (!isEdit) {
+      if (!examId) {
+        // Check if there is an unsaved local backup from a recent session
+        const localBackup = getLocalDraftBackup(user?.id, 'new')
+        if (localBackup && localBackup.formData && Array.isArray(localBackup.questionItems) && localBackup.questionItems.length > 0) {
+          const ageHours = (Date.now() - (localBackup.savedAt || 0)) / (1000 * 60 * 60)
+          if (ageHours < 168) {
+            setRecoverableDraft(localBackup)
+          }
+        }
         setLoading(false)
         return
       }
@@ -442,6 +468,43 @@ export default function CreateExam() {
     load()
   }, [examId, isEdit])
 
+  function restoreDraft(draft) {
+    if (!draft) return
+    const f = draft.formData || {}
+    if (f.title) setTitle(f.title)
+    if (f.information) setInformation(f.information)
+    if (f.pdfUrl) setPdfUrl(f.pdfUrl)
+    if (f.duration) setDuration(f.duration)
+    if (f.passingGrade !== undefined) setPassingGrade(f.passingGrade)
+    if (f.targetKelas) setTargetKelas(Array.isArray(f.targetKelas) ? f.targetKelas : [])
+    if (f.mode) setMode(f.mode)
+    if (f.quizTimerType) setQuizTimerType(f.quizTimerType)
+    if (f.uniformTime) setUniformTime(f.uniformTime)
+    if (f.monitoringLevel) setMonitoringLevel(normalizeMonitoringLevel(f.monitoringLevel))
+    if (f.questionOrder) setQuestionOrder(f.questionOrder)
+    if (f.keepEssayAtEnd !== undefined) setKeepEssayAtEnd(Boolean(f.keepEssayAtEnd))
+    if (f.defaultOptionsCount) setDefaultOptionsCount(f.defaultOptionsCount)
+    if (f.defaultStatementsCount) setDefaultStatementsCount(f.defaultStatementsCount)
+    if (f.defaultMatchingCount) setDefaultMatchingCount(f.defaultMatchingCount)
+    if (f.defaultSequencingCount) setDefaultSequencingCount(f.defaultSequencingCount)
+    if (f.defaultAgreeDisagreeCount) setDefaultAgreeDisagreeCount(f.defaultAgreeDisagreeCount)
+    if (f.defaultSurveyOptionsCount) setDefaultSurveyOptionsCount(f.defaultSurveyOptionsCount)
+    if (f.defaultGridRowsCount) setDefaultGridRowsCount(f.defaultGridRowsCount)
+    if (f.defaultGridColsCount) setDefaultGridColsCount(f.defaultGridColsCount)
+
+    if (Array.isArray(draft.questionItems) && draft.questionItems.length > 0) {
+      setQuestionItems(draft.questionItems)
+    }
+
+    setRecoverableDraft(null)
+    showNotice(`Draf berhasil dipulihkan (${draft.questionItems?.length || 0} butir soal)!`)
+  }
+
+  function discardRecoverableDraft() {
+    clearLocalDraftBackup(user?.id, 'new')
+    setRecoverableDraft(null)
+  }
+
   // Compute snapshot of current form state for unsaved changes detection
   const computeSnapshot = useCallback(() => {
     return JSON.stringify({
@@ -518,6 +581,141 @@ export default function CreateExam() {
     initialSnapshotRef.current !== null &&
     initialSnapshotRef.current !== currentSnapshot
   )
+
+  // ─── Autosave Execution Controller (Direct Supabase Sync) ──────────────────
+  const performAutosave = useCallback(async () => {
+    if (saving || isAutosavingRef.current || loading || !hasUnsavedChanges) return false
+
+    isAutosavingRef.current = true
+    setAutosaveStatus('saving')
+    setAutosaveErrorMsg('')
+
+    const formData = {
+      title, information, pdfUrl, duration, passingGrade, targetKelas, mode,
+      quizTimerType, uniformTime, monitoringLevel, questionOrder, keepEssayAtEnd,
+      defaultOptionsCount, defaultStatementsCount, defaultMatchingCount,
+      defaultSequencingCount, defaultAgreeDisagreeCount, defaultSurveyOptionsCount,
+      defaultGridRowsCount, defaultGridColsCount, surveyType, surveyRecurrence,
+      surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit
+    }
+
+    try {
+      const result = await saveExamDraftToSupabase({
+        examId: currentExamId,
+        formData,
+        questionItems,
+        user,
+        publish: false
+      })
+
+      if (result.success) {
+        setAutosaveStatus('saved')
+        setLastAutosavedAt(result.savedAt)
+        setAutosaveCountdown(autosaveInterval)
+        initialSnapshotRef.current = computeSnapshot()
+
+        if (result.isNew && result.examId) {
+          setCurrentExamId(result.examId)
+          const newPath = `${user?.role === 'SUPERADMIN' ? '/admin' : '/teacher'}/edit/${result.examId}`
+          window.history.replaceState(null, '', newPath)
+        }
+        return true
+      } else {
+        setAutosaveStatus('error')
+        setAutosaveErrorMsg(result.error || 'Gagal menyimpan draf otomatis ke database Supabase')
+        return false
+      }
+    } catch (err) {
+      console.warn('[CreateExam] Autosave exception:', err)
+      setAutosaveStatus('error')
+      setAutosaveErrorMsg(err.message || 'Terjadi kesalahan saat autosave')
+      return false
+    } finally {
+      isAutosavingRef.current = false
+    }
+  }, [
+    saving, loading, hasUnsavedChanges, title, information, pdfUrl, duration,
+    passingGrade, targetKelas, mode, quizTimerType, uniformTime, monitoringLevel,
+    questionOrder, keepEssayAtEnd, defaultOptionsCount, defaultStatementsCount,
+    defaultMatchingCount, defaultSequencingCount, defaultAgreeDisagreeCount,
+    defaultSurveyOptionsCount, defaultGridRowsCount, defaultGridColsCount,
+    surveyType, surveyRecurrence, surveyNotifyTime, surveyValidFrom,
+    surveyValidUntil, surveyAllowEdit, currentExamId, questionItems, user,
+    autosaveInterval, computeSnapshot
+  ])
+
+  const triggerAutosaveRef = useRef(performAutosave)
+  useEffect(() => {
+    triggerAutosaveRef.current = performAutosave
+  }, [performAutosave])
+
+  // Heartbeat periodic timer (default 30s or 60s)
+  useEffect(() => {
+    if (!autosaveEnabled || loading) return
+
+    const timer = setInterval(() => {
+      setAutosaveCountdown(prev => {
+        if (prev <= 1) {
+          if (hasUnsavedChanges && !saving && !isAutosavingRef.current) {
+            triggerAutosaveRef.current()
+          }
+          return autosaveInterval
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [autosaveEnabled, autosaveInterval, hasUnsavedChanges, saving, loading])
+
+  // Fast-track debounced autosave: especially after creating more than 3 questions
+  const prevQuestionCountRef = useRef(questionItems.length)
+  useEffect(() => {
+    if (loading || !autosaveEnabled) return
+    const isMoreThanThree = questionItems.length >= 3
+    const countIncreased = questionItems.length > prevQuestionCountRef.current
+    prevQuestionCountRef.current = questionItems.length
+
+    if (isMoreThanThree && hasUnsavedChanges) {
+      // 3s delay if newly added question, 7s debounce while typing
+      const delay = countIncreased ? 3000 : 7000
+      const fastTrackTimer = setTimeout(() => {
+        if (hasUnsavedChanges && !saving && !isAutosavingRef.current) {
+          triggerAutosaveRef.current()
+        }
+      }, delay)
+
+      return () => clearTimeout(fastTrackTimer)
+    }
+  }, [questionItems, hasUnsavedChanges, loading, autosaveEnabled, saving])
+
+  // Continuous background local backup for 0-latency crash resilience
+  useEffect(() => {
+    if (loading) return
+    const examKey = currentExamId || 'new'
+    const formData = {
+      title, information, pdfUrl, duration, passingGrade, targetKelas, mode,
+      quizTimerType, uniformTime, monitoringLevel, questionOrder, keepEssayAtEnd,
+      defaultOptionsCount, defaultStatementsCount, defaultMatchingCount,
+      defaultSequencingCount, defaultAgreeDisagreeCount, defaultSurveyOptionsCount,
+      defaultGridRowsCount, defaultGridColsCount, surveyType, surveyRecurrence,
+      surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit
+    }
+    saveLocalDraftBackup(user?.id, examKey, {
+      examId: currentExamId,
+      formData,
+      questionItems,
+      savedAt: Date.now()
+    })
+  }, [
+    loading, currentExamId, user?.id, title, information, pdfUrl, duration,
+    passingGrade, targetKelas, mode, quizTimerType, uniformTime, monitoringLevel,
+    questionOrder, keepEssayAtEnd, defaultOptionsCount, defaultStatementsCount,
+    defaultMatchingCount, defaultSequencingCount, defaultAgreeDisagreeCount,
+    defaultSurveyOptionsCount, defaultGridRowsCount, defaultGridColsCount,
+    surveyType, surveyRecurrence, surveyNotifyTime, surveyValidFrom,
+    surveyValidUntil, surveyAllowEdit, questionItems
+  ])
 
   // Prompt before closing / reloading browser tab
   useEffect(() => {
@@ -1228,189 +1426,157 @@ export default function CreateExam() {
     }
   }
 
-  async function handleSave(publish = false, customNavPath = null) {
-    if (!title.trim()) {
-      setError(isSurvey ? 'Judul survei harus diisi.' : 'Judul harus diisi.')
-      setShowUnsavedModal(false)
-      return false
-    }
-    
-    // Validate quiz timers
-    if (mode === 'quiz') {
-      if (quizTimerType === 'uniform' && (!uniformTime || uniformTime < 1)) {
-        setError('Waktu per soal (seragam) harus > 0 detik.'); return
+  async function handleSave(publish = false, customNavPath = null, { stayOnPage = false } = {}) {
+    // Strict validation only when publishing
+    if (publish) {
+      if (!title.trim()) {
+        setError(isSurvey ? 'Judul survei harus diisi sebelum dipublikasikan.' : 'Judul ujian harus diisi sebelum dipublikasikan.')
+        setShowUnsavedModal(false)
+        return false
       }
-      if (quizTimerType === 'independent') {
-        const missingTimers = questionItems.some(q => !q.time_limit || q.time_limit < 1)
-        if (missingTimers) { setError('Setiap soal dalam mode Kuis (Timer Independen) harus memiliki waktu > 0 detik.'); return }
-      }
-    }
-    
-    // Validate questions
-    for (let i = 0; i < questionItems.length; i++) {
-      const q = questionItems[i]
       
-      // For surveys, only validate question text is filled
-      if (isSurvey) {
-        if (!q.question_text || !q.question_text.trim()) {
-          setError(`Pertanyaan no ${q.number} masih kosong, harap isi teks pertanyaan.`)
-          return
+      // Validate quiz timers
+      if (mode === 'quiz') {
+        if (quizTimerType === 'uniform' && (!uniformTime || uniformTime < 1)) {
+          setError('Waktu per soal (seragam) harus > 0 detik.')
+          return false
         }
-        // Validate grid questions have rows and columns
-        if ((q.type === 'MCQ_GRID' || q.type === 'CHECKBOX_GRID') && 
-            (!(q.grid_rows || []).some(r => r.trim()) || !(q.grid_columns || []).some(c => c.trim()))) {
-          setError(`Pertanyaan no ${q.number}: Kisi harus memiliki minimal 1 baris dan 1 kolom yang terisi.`)
-          return
-        }
-        // Validate linear scale
-        if (q.type === 'LINEAR_SCALE' && (q.scale_min ?? 1) >= (q.scale_max ?? 5)) {
-          setError(`Pertanyaan no ${q.number}: Nilai minimum skala harus lebih kecil dari nilai maksimum.`)
-          return
-        }
-        // Validate options for MCQ/CHECKBOXES/DROPDOWN
-        if (['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(q.type)) {
-          const optionValues = Object.values(q.options || {})
-          if (optionValues.length < 2 || !optionValues.some(v => v.trim())) {
-            setError(`Pertanyaan no ${q.number}: Harus memiliki minimal 2 opsi yang terisi.`)
-            return
+        if (quizTimerType === 'independent') {
+          const missingTimers = questionItems.some(q => !q.time_limit || q.time_limit < 1)
+          if (missingTimers) {
+            setError('Setiap soal dalam mode Kuis (Timer Independen) harus memiliki waktu > 0 detik.')
+            return false
           }
         }
-        continue
       }
       
-      // Exam/quiz validation (existing logic)
-      if (questionOrder === 'SHUFFLE' || !pdfUrl) {
-        if (!q.question_text || !q.question_text.trim()) {
-          setError(`Soal no ${q.number} masih kosong, harap isi teks soal terlebih dahulu.`)
-          return
+      // Validate questions for publish
+      for (let i = 0; i < questionItems.length; i++) {
+        const q = questionItems[i]
+        
+        // Survey validation
+        if (isSurvey) {
+          if (!q.question_text || !q.question_text.trim()) {
+            setError(`Pertanyaan no ${q.number} masih kosong, harap isi teks pertanyaan.`)
+            return false
+          }
+          if ((q.type === 'MCQ_GRID' || q.type === 'CHECKBOX_GRID') && 
+              (!(q.grid_rows || []).some(r => r.trim()) || !(q.grid_columns || []).some(c => c.trim()))) {
+            setError(`Pertanyaan no ${q.number}: Kisi harus memiliki minimal 1 baris dan 1 kolom yang terisi.`)
+            return false
+          }
+          if (q.type === 'LINEAR_SCALE' && (q.scale_min ?? 1) >= (q.scale_max ?? 5)) {
+            setError(`Pertanyaan no ${q.number}: Nilai minimum skala harus lebih kecil dari nilai maksimum.`)
+            return false
+          }
+          if (['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(q.type)) {
+            const optionValues = Object.values(q.options || {})
+            if (optionValues.length < 2 || !optionValues.some(v => v.trim())) {
+              setError(`Pertanyaan no ${q.number}: Harus memiliki minimal 2 opsi yang terisi.`)
+              return false
+            }
+          }
+          continue
+        }
+        
+        // Exam/quiz validation
+        if (questionOrder === 'SHUFFLE' || !pdfUrl) {
+          if (!q.question_text || !q.question_text.trim()) {
+            setError(`Soal no ${q.number} masih kosong, harap isi teks soal terlebih dahulu.`)
+            return false
+          }
+        }
+        if (q.type === 'MCQ' && !q.correct_answer) {
+          setError(`Kunci jawaban soal no ${q.number} belum dipilih.`)
+          return false
+        }
+        if (q.type === 'COMPLEX_MCQ' && (!Array.isArray(q.correct_answer) || q.correct_answer.length === 0)) {
+          setError(`Kunci jawaban soal no ${q.number} (Multi-Jawab) belum dipilih.`)
+          return false
+        }
+        if (q.type === 'TRUE_FALSE' && (!q.correct_answer || Object.keys(q.correct_answer).length === 0)) {
+          setError(`Kunci jawaban soal no ${q.number} (Benar/Salah) belum diisi semua.`)
+          return false
+        }
+        if (q.type === 'MATCHING') {
+          const leftKeys = Object.keys(q.options?.left || {})
+          const rightKeys = Object.keys(q.options?.right || {})
+          if (leftKeys.length < 2 || rightKeys.length < 2) {
+            setError(`Soal no ${q.number} (Menjodohkan) harus memiliki minimal 2 pasang premis dan jawaban.`)
+            return false
+          }
+        }
+        if (q.type === 'SEQUENCING') {
+          const items = q.options?.items || []
+          if (items.length < 2) {
+            setError(`Soal no ${q.number} (Mengurutkan) harus memiliki minimal 2 langkah urutan.`)
+            return false
+          }
+        }
+        if (q.type === 'AGREE_DISAGREE' && (!q.correct_answer || Object.keys(q.correct_answer).length === 0)) {
+          setError(`Kunci jawaban soal no ${q.number} (Setuju/Tidak Setuju) belum lengkap.`)
+          return false
         }
       }
-      if (q.type === 'MCQ' && !q.correct_answer) {
-        setError(`Kunci jawaban soal no ${q.number} belum dipilih.`)
-        return
-      }
-      if (q.type === 'COMPLEX_MCQ' && (!Array.isArray(q.correct_answer) || q.correct_answer.length === 0)) {
-        setError(`Kunci jawaban soal no ${q.number} (Multi-Jawab) belum dipilih.`)
-        return
-      }
-      if (q.type === 'TRUE_FALSE' && (!q.correct_answer || Object.keys(q.correct_answer).length === 0)) {
-        setError(`Kunci jawaban soal no ${q.number} (Benar/Salah) belum diisi semua.`)
-        return
-      }
-      if (q.type === 'MATCHING') {
-        const leftKeys = Object.keys(q.options?.left || {})
-        const rightKeys = Object.keys(q.options?.right || {})
-        if (leftKeys.length < 2 || rightKeys.length < 2) {
-          setError(`Soal no ${q.number} (Menjodohkan) harus memiliki minimal 2 pasang premis dan jawaban.`)
-          return
+
+      // Survey scheduling validation
+      if (isSurvey && surveyType === 'one_time') {
+        if (surveyValidUntil && new Date(surveyValidUntil) <= new Date()) {
+          setError('Batas waktu survei harus di masa depan.')
+          return false
         }
-      }
-      if (q.type === 'SEQUENCING') {
-        const items = q.options?.items || []
-        if (items.length < 2) {
-          setError(`Soal no ${q.number} (Mengurutkan) harus memiliki minimal 2 langkah urutan.`)
-          return
-        }
-      }
-      if (q.type === 'AGREE_DISAGREE' && (!q.correct_answer || Object.keys(q.correct_answer).length === 0)) {
-        setError(`Kunci jawaban soal no ${q.number} (Setuju/Tidak Setuju) belum lengkap.`)
-        return
       }
     }
 
-    // Validate survey scheduling
-    if (isSurvey && surveyType === 'one_time') {
-      if (publish && surveyValidUntil && new Date(surveyValidUntil) <= new Date()) {
-        setError('Batas waktu survei harus di masa depan.')
-        return
-      }
-    }
-
-    setSaving(true); setError('')
+    setSaving(true)
+    setError('')
 
     try {
-      const targetStr = targetKelas.length === 0 ? 'all' : targetKelas.join(',')
-      const examData = {
-        title: title.trim(),
-        information: information.trim() || null,
-        pdf_url: isSurvey ? null : (pdfUrl.trim() || null),
-        duration_minutes: isSurvey ? 0 : Number(duration),
-        passing_grade: isSurvey ? 0 : (Number(passingGrade) || 60),
-        target_kelas: targetStr,
-        status: publish ? 'published' : 'draft',
-        mode,
-        quiz_timer_type: mode === 'quiz' ? quizTimerType : 'uniform',
-        monitoring_level: isSurvey ? 0 : monitoringLevel,
-        question_order: isSurvey ? 'ORDER' : questionOrder,
-        keep_essay_at_end: isSurvey ? false : Boolean(keepEssayAtEnd),
-        default_options_count: Number(defaultOptionsCount) || 4,
-        default_statements_count: Number(defaultStatementsCount) || 3,
-        default_matching_count: Number(defaultMatchingCount) || 3,
-        default_sequencing_count: Number(defaultSequencingCount) || 4,
-        default_agree_disagree_count: Number(defaultAgreeDisagreeCount) || 3,
-        default_survey_options_count: Number(defaultSurveyOptionsCount) || 4,
-        default_grid_rows_count: Number(defaultGridRowsCount) || 3,
-        default_grid_cols_count: Number(defaultGridColsCount) || 3,
-        // Survey-specific fields — only included when in survey mode
-        // so regular exams work even before the survey migration is run
-        ...(isSurvey ? {
-          survey_type: surveyType,
-          survey_recurrence: surveyType === 'scheduled' ? surveyRecurrence : null,
-          survey_notify_time: surveyType === 'scheduled' ? surveyNotifyTime : null,
-          survey_valid_from: surveyValidFrom ? new Date(surveyValidFrom).toISOString() : null,
-          survey_valid_until: surveyValidUntil ? new Date(surveyValidUntil).toISOString() : null,
-          survey_allow_edit: surveyAllowEdit,
-        } : {}),
+      const formData = {
+        title, information, pdfUrl, duration, passingGrade, targetKelas, mode,
+        quizTimerType, uniformTime, monitoringLevel, questionOrder, keepEssayAtEnd,
+        defaultOptionsCount, defaultStatementsCount, defaultMatchingCount,
+        defaultSequencingCount, defaultAgreeDisagreeCount, defaultSurveyOptionsCount,
+        defaultGridRowsCount, defaultGridColsCount, surveyType, surveyRecurrence,
+        surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit
       }
 
-      let savedExamId = examId
-      if (isEdit) {
-        await exams.update(examId, examData)
-        await questions.deleteByExam(examId)
-      } else {
-        examData.created_by = user.id
-        const { data, error: createErr } = await exams.create(examData)
-        if (createErr || !data) {
-          throw new Error(createErr?.message || 'Gagal membuat — periksa kolom database.')
+      const result = await saveExamDraftToSupabase({
+        examId: currentExamId,
+        formData,
+        questionItems,
+        user,
+        publish
+      })
+
+      if (!result.success) {
+        throw new Error(result.error || 'Gagal menyimpan ke database Supabase')
+      }
+
+      const savedExamId = result.examId
+      if (result.isNew) {
+        setCurrentExamId(savedExamId)
+      }
+
+      initialSnapshotRef.current = computeSnapshot()
+      setLastAutosavedAt(result.savedAt)
+      setAutosaveStatus('saved')
+      setAutosaveCountdown(autosaveInterval)
+
+      // If user chose to stay on page (e.g. clicking "Simpan Draft" to continue editing)
+      if (stayOnPage) {
+        setSaving(false)
+        isSavedRef.current = false
+        if (result.isNew && savedExamId) {
+          const newPath = `${user?.role === 'SUPERADMIN' ? '/admin' : '/teacher'}/edit/${savedExamId}`
+          window.history.replaceState(null, '', newPath)
         }
-        savedExamId = data.id
+        showNotice(publish ? 'Ujian berhasil dipublikasikan!' : 'Draf berhasil disimpan ke database Supabase!')
+        return true
       }
-
-      // Save questions
-      const qRows = questionItems.map(q => ({
-        exam_id: savedExamId,
-        number: q.number,
-        type: q.type,
-        question_text: q.question_text || '',
-        image_url: q.image_url || null,
-        video_url: q.video_url || null,
-        audio_url: q.audio_url || null,
-        max_plays: Number(q.max_plays) || 1,
-        allow_pause: Boolean(q.allow_pause),
-        options: (q.type === 'ESSAY' || q.type === 'SHORT_ANSWER' || q.type === 'PARAGRAPH' || q.type === 'LINEAR_SCALE') ? null : (q.options || null),
-        option_images: (q.option_images && Object.keys(q.option_images).length > 0) ? q.option_images : {},
-        correct_answer: isSurvey ? null : (q.type === 'ESSAY' ? null : q.correct_answer),
-        points: isSurvey ? 0 : (Number(q.points) || 1),
-        variant: q.variant || 'A',
-        time_limit: mode === 'quiz'
-          ? (quizTimerType === 'uniform' ? Number(uniformTime) || 30 : (Number(q.time_limit) || 30))
-          : null,
-        // Survey-specific question fields — only included in survey mode
-        ...(isSurvey ? {
-          scale_min: q.type === 'LINEAR_SCALE' ? (q.scale_min ?? 1) : null,
-          scale_max: q.type === 'LINEAR_SCALE' ? (q.scale_max ?? 5) : null,
-          scale_min_label: q.type === 'LINEAR_SCALE' ? (q.scale_min_label || null) : null,
-          scale_max_label: q.type === 'LINEAR_SCALE' ? (q.scale_max_label || null) : null,
-          grid_rows: (q.type === 'MCQ_GRID' || q.type === 'CHECKBOX_GRID') ? (q.grid_rows || null) : null,
-          grid_columns: (q.type === 'MCQ_GRID' || q.type === 'CHECKBOX_GRID') ? (q.grid_columns || null) : null,
-          allow_other: q.allow_other || false,
-          required: q.required !== false,
-        } : {}),
-      }))
-      await questions.createMany(qRows)
 
       isSavedRef.current = true
-      initialSnapshotRef.current = computeSnapshot()
+      clearLocalDraftBackup(user?.id, currentExamId || 'new')
       const destination = customNavPath || returnPath
       if (destination.startsWith('http://') || destination.startsWith('https://')) {
         window.location.href = destination
@@ -1452,7 +1618,51 @@ export default function CreateExam() {
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)', lineHeight: 1.2 }}>
                   {isEdit ? `Edit ${modeLabel}` : `Buat ${modeLabel} Baru`}
                 </h2>
-                {hasUnsavedChanges ? (
+                {/* Autosave & Saved State Badges */}
+                {autosaveStatus === 'saving' || saving ? (
+                  <span
+                    className="badge"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      padding: '0.15rem 0.6rem',
+                      borderRadius: '999px',
+                      background: '#eff6ff',
+                      color: '#1d4ed8',
+                      border: '1px solid #bfdbfe'
+                    }}
+                    title="Menyimpan draf dan progres butir soal ke database Supabase"
+                  >
+                    <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                    Menyimpan ke Supabase...
+                  </span>
+                ) : autosaveStatus === 'error' ? (
+                  <button
+                    type="button"
+                    onClick={() => performAutosave()}
+                    className="badge"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      padding: '0.15rem 0.6rem',
+                      borderRadius: '999px',
+                      background: '#fef2f2',
+                      color: '#b91c1c',
+                      border: '1px solid #fecaca',
+                      cursor: 'pointer'
+                    }}
+                    title={autosaveErrorMsg || 'Gagal menyimpan draf ke Supabase. Klik untuk mencoba lagi.'}
+                  >
+                    <AlertTriangle size={11} />
+                    Gagal Simpan (Coba Lagi)
+                  </button>
+                ) : hasUnsavedChanges ? (
                   <span
                     className="badge badge-warning"
                     style={{
@@ -1467,10 +1677,10 @@ export default function CreateExam() {
                       color: '#b45309',
                       border: '1px solid #fde68a'
                     }}
-                    title="Ada perubahan yang belum disimpan ke server"
+                    title={`Ada perubahan belum tersimpan ke server. Autosave berikutnya dalam ${autosaveCountdown} detik.`}
                   >
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#d97706', display: 'inline-block' }} />
-                    Belum Disimpan
+                    Belum Disimpan {autosaveEnabled ? `(${autosaveCountdown}s)` : ''}
                   </span>
                 ) : (
                   <span
@@ -1487,12 +1697,136 @@ export default function CreateExam() {
                       color: '#047857',
                       border: '1px solid #a7f3d0'
                     }}
-                    title="Semua draf dan pengaturan telah tersimpan"
+                    title={`Semua draf dan pengaturan tersimpan aman di database Supabase ${lastAutosavedAt ? `(pk ${lastAutosavedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})` : ''}`}
                   >
                     <CheckCircle2 size={12} />
-                    Tersimpan
+                    Tersimpan {lastAutosavedAt ? `pk ${lastAutosavedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : ''}
                   </span>
                 )}
+
+                {/* Especially >= 3 Questions Protection Indicator */}
+                {questionItems.length >= 3 && (
+                  <span
+                    className="badge"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      padding: '0.15rem 0.55rem',
+                      borderRadius: '999px',
+                      background: '#f0fdf4',
+                      color: '#15803d',
+                      border: '1px solid #bbf7d0'
+                    }}
+                    title={`Fitur auto save mengamankan ${questionItems.length} soal ke Supabase secara berkala (tiap ${autosaveInterval} detik dan respons cepat saat menambah soal).`}
+                  >
+                    <Zap size={11} color="#16a34a" />
+                    {questionItems.length} Soal Dijaga Otomatis
+                  </span>
+                )}
+
+                {/* Quick Autosave Config Popover Toggle */}
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowAutosaveMenu(prev => !prev)}
+                    className="btn btn-ghost btn-sm"
+                    style={{
+                      padding: '0.18rem 0.45rem',
+                      fontSize: '0.72rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      color: 'var(--text-secondary)',
+                      border: '1px solid var(--border)',
+                      background: showAutosaveMenu ? '#f1f5f9' : 'transparent',
+                      borderRadius: '6px'
+                    }}
+                    title="Pengaturan simpan otomatis guru (Supabase & Lokal)"
+                  >
+                    <Clock size={12} />
+                    <span>Autosave: {autosaveEnabled ? `${autosaveInterval}s` : 'Nonaktif'}</span>
+                    <ChevronDown size={11} />
+                  </button>
+
+                  {showAutosaveMenu && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: 0,
+                        zIndex: 200,
+                        minWidth: 260,
+                        background: '#ffffff',
+                        border: '1px solid var(--border)',
+                        borderRadius: '10px',
+                        boxShadow: '0 10px 25px rgba(27, 51, 97, 0.15)',
+                        padding: '0.85rem',
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                        <strong style={{ color: 'var(--text-primary)', fontSize: '0.85rem' }}>⚙️ Simpan Otomatis</strong>
+                        <span style={{ fontSize: '0.68rem', color: '#059669', background: '#ecfdf5', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>Supabase Online</span>
+                      </div>
+                      
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <input
+                            type="checkbox"
+                            checked={autosaveEnabled}
+                            onChange={e => setAutosaveEnabled(e.target.checked)}
+                          />
+                          <span>Aktifkan Simpan Otomatis</span>
+                        </label>
+                        <p style={{ margin: '0.25rem 0 0 1.35rem', fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                          Mencegah soal hilang bila lupa simpan atau koneksi terputus.
+                        </p>
+                      </div>
+
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        <div style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                          Frekuensi Autosave:
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${autosaveInterval === 30 ? 'btn-gold' : 'btn-ghost'}`}
+                            style={{ flex: 1, padding: '0.25rem 0.4rem', fontSize: '0.74rem', justifyContent: 'center' }}
+                            onClick={() => { setAutosaveInterval(30); setAutosaveCountdown(30) }}
+                          >
+                            30 Detik
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${autosaveInterval === 60 ? 'btn-gold' : 'btn-ghost'}`}
+                            style={{ flex: 1, padding: '0.25rem 0.4rem', fontSize: '0.74rem', justifyContent: 'center' }}
+                            onClick={() => { setAutosaveInterval(60); setAutosaveCountdown(60) }}
+                          >
+                            60 Detik
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ paddingTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.35rem' }}
+                          onClick={() => {
+                            setShowAutosaveMenu(false)
+                            performAutosave()
+                          }}
+                          disabled={saving || isAutosavingRef.current}
+                        >
+                          <Zap size={12} /> Simpan ke Supabase Sekarang
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <p className="text-muted text-sm" style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem' }}>
                 {questionItems.length} {isSurvey ? 'pertanyaan' : 'soal'} · Mode: {modeLabel} {title ? `· "${title.length > 32 ? title.slice(0, 32) + '...' : title}"` : ''}
@@ -1503,8 +1837,8 @@ export default function CreateExam() {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => handleSave(false)}
-              disabled={saving}
+              onClick={() => handleSave(false, null, { stayOnPage: true })}
+              disabled={saving || isAutosavingRef.current}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1513,7 +1847,7 @@ export default function CreateExam() {
                 border: '1px solid var(--border)',
                 background: '#ffffff',
               }}
-              title="Simpan sebagai draf agar pekerjaan tidak hilang"
+              title="Simpan draf ke database Supabase tanpa meninggalkan halaman"
             >
               <Save size={15} />
               <span>{saving ? 'Menyimpan...' : 'Simpan Draft'}</span>
@@ -1522,7 +1856,7 @@ export default function CreateExam() {
               type="button"
               className="btn btn-gold"
               onClick={() => handleSave(true)}
-              disabled={saving}
+              disabled={saving || isAutosavingRef.current}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1539,6 +1873,49 @@ export default function CreateExam() {
       </div>
 
       <div className="page-body">
+        {/* Action Notice toast */}
+        {actionNotice && (
+          <div className="alert alert-success" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+            <CheckCircle2 size={16} />
+            <span style={{ flex: 1 }}>{actionNotice}</span>
+          </div>
+        )}
+
+        {/* Local Recoverable Draft Banner */}
+        {recoverableDraft && (
+          <div className="alert alert-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem', border: '1px solid #93c5fd', background: '#eff6ff', borderRadius: '10px', padding: '0.85rem 1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#dbeafe', color: '#1d4ed8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ClipboardList size={20} />
+              </div>
+              <div>
+                <strong style={{ color: '#1e40af', fontSize: '0.92rem' }}>Draf Belum Tersimpan Ditemukan</strong>
+                <p style={{ margin: '0.15rem 0 0', fontSize: '0.82rem', color: '#2563eb' }}>
+                  Terdapat draf pekerjaan otomatis dari sesi sebelumnya ({new Date(recoverableDraft.savedAt).toLocaleString('id-ID')} · {recoverableDraft.questionItems?.length || 0} butir soal).
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => restoreDraft(recoverableDraft)}
+                style={{ fontSize: '0.82rem', fontWeight: 600, padding: '0.4rem 0.85rem' }}
+              >
+                Pulihkan Draf
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => discardRecoverableDraft()}
+                style={{ fontSize: '0.82rem', color: '#64748b' }}
+              >
+                Abaikan
+              </button>
+            </div>
+          </div>
+        )}
+
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
         {/* ─── Lv.3 & Lv.4 Collapsible Control Toolbar ─── */}
