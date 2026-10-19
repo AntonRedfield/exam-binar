@@ -239,8 +239,36 @@ export const users = {
     if (!isSupabaseConfigured || !supabase) {
       return { data: null, error: { message: 'Supabase tidak terkonfigurasi' } }
     }
-    const { error } = await supabase.from('profiles').delete().eq('id', id)
-    return { data: null, error }
+    try {
+      // Find user profile to get both UUID id and username if available
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .or(`id.eq.${id},username.eq.${id}`)
+        .maybeSingle()
+
+      const idsToClean = [id]
+      if (prof) {
+        if (prof.id && !idsToClean.includes(prof.id)) idsToClean.push(prof.id)
+        if (prof.username && !idsToClean.includes(prof.username)) idsToClean.push(prof.username)
+      }
+
+      // Cascade delete student records across all related tables
+      await Promise.allSettled([
+        supabase.from('results').delete().in('student_id', idsToClean),
+        supabase.from('exam_sessions').delete().in('student_id', idsToClean),
+        supabase.from('survey_notifications').delete().in('user_id', idsToClean),
+        supabase.from('feature_access').delete().in('user_id', idsToClean),
+        supabase.from('student_listening_logs').delete().in('student_id', idsToClean)
+      ])
+
+      const { error } = await supabase.from('profiles').delete().or(`id.eq.${id},username.eq.${id}`)
+      return { data: null, error }
+    } catch (err) {
+      console.error('[DB] users.delete error:', err)
+      const { error } = await supabase.from('profiles').delete().eq('id', id)
+      return { data: null, error: error || err }
+    }
   },
 
   getDistinctKelas: async () => {
@@ -654,9 +682,69 @@ export const questions = {
   }
 }
 
+// ─── SHARED STUDENT PROFILES MAP HELPER ───────────────────────────────────────
+
+export async function fetchStudentProfilesMap(studentIds) {
+  if (!isSupabaseConfigured || !supabase) return {}
+  const validIds = Array.from(new Set(studentIds)).filter(Boolean)
+  if (validIds.length === 0) return {}
+  try {
+    const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+    const uuidIds = validIds.filter(isUuid)
+
+    const map = {}
+
+    if (uuidIds.length > 0) {
+      const { data: uuidMatches, error: uuidErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', uuidIds)
+
+      if (!uuidErr && uuidMatches) {
+        for (const p of uuidMatches) {
+          if (p.id) map[p.id] = p
+          if (p.username) map[p.username] = p
+        }
+      }
+    }
+
+    const missing = validIds.filter(id => !map[id])
+    if (missing.length > 0) {
+      const { data: userMatches, error: userErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('username', missing)
+
+      if (!userErr && userMatches) {
+        for (const p of userMatches) {
+          if (p.username) map[p.username] = p
+          if (p.id) map[p.id] = p
+        }
+      }
+    }
+
+    return map
+  } catch (err) {
+    console.warn('[DB] fetchStudentProfilesMap exception:', err)
+    return {}
+  }
+}
+
 // ─── SESSIONS API ─────────────────────────────────────────────────────────────
 
 export const sessions = {
+  delete: async (id) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    const { error } = await supabase.from('exam_sessions').delete().eq('id', id)
+    return { data: null, error }
+  },
+
+  deleteByStudent: async (studentId) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    const { error } = await supabase.from('exam_sessions').delete().eq('student_id', studentId)
+    return { data: null, error }
+  },
+
   getOrCreate: async (examId, studentId, variant = 'A') => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
 
@@ -739,58 +827,33 @@ export const sessions = {
     if (error) return { data: [], error }
     const sessionList = data || []
     const studentIds = sessionList.map(s => s.student_id).filter(Boolean)
-    const profMap = {}
+    const profMap = await fetchStudentProfilesMap(studentIds)
 
-    if (studentIds.length > 0) {
-      try {
-        const uniqueIds = Array.from(new Set(studentIds))
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('id', uniqueIds)
-
-        for (const p of profs || []) {
-          if (p.id) profMap[p.id] = p
-          if (p.username) profMap[p.username] = p
-        }
-
-        const missing = uniqueIds.filter(id => !profMap[id])
-        if (missing.length > 0) {
-          const { data: userMatches } = await supabase
-            .from('profiles')
-            .select('*')
-            .in('username', missing)
-          for (const p of userMatches || []) {
-            if (p.username) profMap[p.username] = p
-            if (p.id) profMap[p.id] = p
-          }
-        }
-      } catch (err) {
-        console.warn('[DB] sessions.listByExam profs error:', err)
-      }
-    }
+    const validSessions = []
 
     for (const s of sessionList) {
       const p = profMap[s.student_id]
-      const fallbackName = s.student_id ? `Siswa (${s.student_id.slice(0, 8)})` : 'Siswa'
-      const name = p?.fullname || p?.display_name || p?.full_name || p?.username || fallbackName
-      const full_name = p?.fullname || p?.display_name || p?.full_name || p?.username || fallbackName
-      const kelas = p?.class_section || p?.kelas || '—'
-      const userObj = {
-        id: s.student_id,
-        name,
-        full_name,
-        display_name: name,
-        username: p?.username || '',
-        kelas,
-        class_section: kelas,
-        classes: { name: kelas }
+      if (p) {
+        const name = p.display_name || p.fullname || p.full_name || p.username || 'Siswa'
+        const full_name = p.fullname || p.display_name || p.full_name || p.username || name
+        const kelas = p.class_section || p.kelas || '—'
+        const userObj = {
+          id: s.student_id,
+          name,
+          full_name,
+          display_name: name,
+          username: p.username || '',
+          kelas,
+          class_section: kelas,
+          classes: { name: kelas }
+        }
+        s.users = userObj
+        s.student = userObj
+        validSessions.push(s)
       }
-      s.users = userObj
-      s.student = userObj
     }
 
-    return { data: sessionList, error: null }
+    return { data: validSessions, error: null }
   },
 
   get: async (studentId, examId) => {
@@ -961,43 +1024,19 @@ export const results = {
     return { data: data || null, error }
   },
 
-  _fetchStudentProfilesMap: async (studentIds) => {
-    if (!isSupabaseConfigured || !supabase) return {}
-    const validIds = Array.from(new Set(studentIds)).filter(Boolean)
-    if (validIds.length === 0) return {}
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', validIds)
-      if (error) {
-        console.warn('[DB] results._fetchStudentProfilesMap error:', error)
-        return {}
-      }
-      const map = {}
-      for (const p of data || []) {
-        if (p.id) map[p.id] = p
-        if (p.username) map[p.username] = p
-      }
-
-      const missing = validIds.filter(id => !map[id])
-      if (missing.length > 0) {
-        const { data: userMatches } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('username', missing)
-        for (const p of userMatches || []) {
-          if (p.username) map[p.username] = p
-          if (p.id) map[p.id] = p
-        }
-      }
-
-      return map
-    } catch (err) {
-      console.warn('[DB] results._fetchStudentProfilesMap exception:', err)
-      return {}
-    }
+  delete: async (id) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    const { error } = await supabase.from('results').delete().eq('id', id)
+    return { data: null, error }
   },
+
+  deleteByStudent: async (studentId) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    const { error } = await supabase.from('results').delete().eq('student_id', studentId)
+    return { data: null, error }
+  },
+
+  _fetchStudentProfilesMap: fetchStudentProfilesMap,
 
   listByExam: async (examId) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
@@ -1012,12 +1051,17 @@ export const results = {
       return { data: [], error }
     }
     const studentIds = (data || []).map(r => r.student_id).filter(Boolean)
-    const profMap = await results._fetchStudentProfilesMap(studentIds)
-    const attached = (data || []).map(r => {
+    const profMap = await fetchStudentProfilesMap(studentIds)
+
+    const validResults = []
+    for (const r of data || []) {
       const p = profMap[r.student_id]
-      return results._attachRelations({ ...r, profiles: p })
-    })
-    return { data: attached, error: null }
+      if (p) {
+        validResults.push(results._attachRelations({ ...r, profiles: p }))
+      }
+    }
+
+    return { data: validResults, error: null }
   },
 
   getById: async (id) => {
@@ -1148,8 +1192,10 @@ export const localDb = {
       if (sessRes.data) relevantSessions = sessRes.data
       if (resultsRes.data) {
         const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
-        const profMap = await results._fetchStudentProfilesMap(studentIds)
-        relevantResults = resultsRes.data.map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+        const profMap = await fetchStudentProfilesMap(studentIds)
+        relevantResults = resultsRes.data
+          .filter(r => profMap[r.student_id])
+          .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
       }
     }
 
@@ -1193,8 +1239,10 @@ export const localDb = {
       totalSessions = sessRes.count ?? 0
       if (resultsRes.data) {
         const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
-        const profMap = await results._fetchStudentProfilesMap(studentIds)
-        recentResults = resultsRes.data.map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+        const profMap = await fetchStudentProfilesMap(studentIds)
+        recentResults = resultsRes.data
+          .filter(r => profMap[r.student_id])
+          .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
       }
     }
 
@@ -1232,8 +1280,10 @@ export const localDb = {
       totalSessions = sessRes.count ?? 0
       if (resultsRes.data) {
         const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
-        const profMap = await results._fetchStudentProfilesMap(studentIds)
-        recentResults = resultsRes.data.map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+        const profMap = await fetchStudentProfilesMap(studentIds)
+        recentResults = resultsRes.data
+          .filter(r => profMap[r.student_id])
+          .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
       }
     }
 

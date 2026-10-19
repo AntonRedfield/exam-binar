@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results, sessions, questions } from '../../lib/db'
 import { gradeExam } from '../../lib/grader'
-import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw } from 'lucide-react'
+import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2 } from 'lucide-react'
 
 export default function ResultsView() {
   const { examId } = useParams()
@@ -17,88 +17,114 @@ export default function ResultsView() {
   const [regrading, setRegrading] = useState(false)
 
   async function load() {
-    const [{ data: examData }, { data: res }, { data: sess }, { data: qs }] = await Promise.all([
-      exams.getById(examId),
-      results.listByExam(examId),
-      sessions.listByExam(examId),
-      questions.listByExam(examId)
-    ])
-    
-    const sessionMap = {}
-    ;(sess || []).forEach(s => {
-      if (s.id) sessionMap[s.id] = s
-      if (s.student_id) sessionMap[s.student_id] = s
-    })
+    try {
+      const [{ data: examData }, { data: res }, { data: sess }, { data: qs }] = await Promise.all([
+        exams.getById(examId),
+        results.listByExam(examId),
+        sessions.listByExam(examId),
+        questions.listByExam(examId)
+      ])
+      
+      const sessionMap = {}
+      ;(sess || []).forEach(s => {
+        if (s.id) sessionMap[s.id] = s
+        if (s.student_id) sessionMap[s.student_id] = s
+      })
 
-    let newRes = [...(res || [])]
-    const missingResults = (sess || []).filter(s => !newRes.find(r => r.student_id === s.student_id))
-    
-    if (missingResults.length > 0 && qs) {
-      let added = false
-      for (const s of missingResults) {
-        const isTimeUp = s.end_timestamp && new Date(s.end_timestamp).getTime() < Date.now()
-        const isAbandoned = s.status === 'time_up' || s.status === 'submitted' || isTimeUp
-        if (isAbandoned) {
-          const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers || {}, qs)
-          const { data: createdRes } = await results.create({
-            student_id: s.student_id,
-            exam_id: examId,
-            session_id: s.id,
-            auto_score: autoScore,
-            max_auto_score: maxAutoScore,
-            essay_score: 0,
-            violation_count: s.violation_count || 0,
-            breakdown: JSON.stringify(breakdown),
-          })
-          if (createdRes) {
-            createdRes.users = s.users
-            createdRes.student = s.users
-            newRes.push(createdRes)
-            added = true
-            if (s.status === 'active') {
-              await sessions.update(s.id, { status: 'time_up' })
+      // Filter out results belonging to deleted students (missing profiles)
+      let newRes = (res || []).filter(r => r.profiles != null)
+      const activeSessions = (sess || []).filter(s => s.users && s.users.id)
+      const missingResults = activeSessions.filter(s => !newRes.find(r => r.student_id === s.student_id))
+      
+      if (missingResults.length > 0 && qs) {
+        for (const s of missingResults) {
+          const isTimeUp = s.end_timestamp && new Date(s.end_timestamp).getTime() < Date.now()
+          const isAbandoned = s.status === 'time_up' || s.status === 'submitted' || isTimeUp
+          if (isAbandoned) {
+            try {
+              const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers || {}, qs)
+              const { data: createdRes } = await results.create({
+                student_id: s.student_id,
+                exam_id: examId,
+                session_id: s.id,
+                auto_score: autoScore,
+                max_auto_score: maxAutoScore,
+                essay_score: 0,
+                violation_count: s.violation_count || 0,
+                breakdown: JSON.stringify(breakdown),
+              })
+              if (createdRes) {
+                createdRes.users = s.users
+                createdRes.student = s.users
+                createdRes.profiles = s.users
+                newRes.push(createdRes)
+                if (s.status === 'active') {
+                  await sessions.update(s.id, { status: 'time_up' })
+                }
+              }
+            } catch (err) {
+              console.warn('[ResultsView] Auto-score missing result error:', err)
             }
           }
         }
       }
-    }
-    
-    // Normalize and cross-reference session data to guarantee student name & class
-    newRes = newRes.map(r => {
-      const s = sessionMap[r.session_id] || sessionMap[r.student_id]
-      const existingUser = r.users || r.student
-      const fallbackName = r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa'
       
-      const fullName = existingUser?.full_name || existingUser?.display_name || existingUser?.name || s?.users?.full_name || s?.users?.display_name || s?.users?.name || fallbackName
-      const displayName = existingUser?.display_name || existingUser?.name || existingUser?.full_name || s?.users?.display_name || s?.users?.name || s?.users?.full_name || fullName
-      const kelas = existingUser?.classes?.name || existingUser?.class_section || existingUser?.kelas || s?.users?.classes?.name || s?.users?.kelas || '—'
-      const username = existingUser?.username || s?.users?.username || ''
-      
-      const unifiedUser = {
-        id: r.student_id,
-        name: displayName,
-        full_name: fullName,
-        display_name: displayName,
-        username,
-        kelas,
-        class_section: kelas,
-        classes: { name: kelas }
-      }
-      return {
-        ...r,
-        users: unifiedUser,
-        student: unifiedUser
-      }
-    })
+      // Normalize and cross-reference session data to guarantee student name & class
+      newRes = newRes
+        .filter(r => r.profiles != null || (r.users && r.users.name !== 'Siswa' && !r.users.name?.startsWith('Siswa (')))
+        .map(r => {
+          const s = sessionMap[r.session_id] || sessionMap[r.student_id]
+          const existingUser = r.users || r.student
+          const fallbackName = r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa'
+          
+          const fullName = existingUser?.full_name || existingUser?.display_name || existingUser?.name || s?.users?.full_name || s?.users?.display_name || s?.users?.name || fallbackName
+          const displayName = existingUser?.display_name || existingUser?.name || existingUser?.full_name || s?.users?.display_name || s?.users?.name || s?.users?.full_name || fullName
+          const kelas = existingUser?.classes?.name || existingUser?.class_section || existingUser?.kelas || s?.users?.classes?.name || s?.users?.kelas || '—'
+          const username = existingUser?.username || s?.users?.username || ''
+          
+          const unifiedUser = {
+            id: r.student_id,
+            name: displayName,
+            full_name: fullName,
+            display_name: displayName,
+            username,
+            kelas,
+            class_section: kelas,
+            classes: { name: kelas }
+          }
+          return {
+            ...r,
+            users: unifiedUser,
+            student: unifiedUser
+          }
+        })
 
-    setExam(examData)
-    setResultList(newRes)
-    setLoading(false)
+      setExam(examData)
+      setResultList(newRes)
+    } catch (err) {
+      console.error('[ResultsView] load error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [examId])
 
   const passingGrade = exam?.passing_grade ?? 60
+
+  async function handleDeleteResult(resultId, studentName) {
+    if (!window.confirm(`Hapus hasil ujian untuk ${studentName || 'siswa ini'}? Tindakan ini tidak bisa dibatalkan.`)) return
+    try {
+      const { error } = await results.delete(resultId)
+      if (error) {
+        alert('Gagal menghapus hasil: ' + (error.message || 'Terjadi kesalahan'))
+        return
+      }
+      setResultList(prev => prev.filter(r => r.id !== resultId))
+    } catch (err) {
+      alert('Gagal menghapus hasil: ' + (err.message || 'Terjadi kesalahan'))
+    }
+  }
 
   async function saveEssay(resultId, essayScore) {
     setSaving(resultId)
@@ -195,6 +221,22 @@ export default function ResultsView() {
   })
 
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
+
+  if (!exam) {
+    return (
+      <div className="page-body">
+        <div className="card text-center" style={{ padding: '3.5rem 1.5rem', maxWidth: 560, margin: '2rem auto' }}>
+          <h3 style={{ marginBottom: '0.5rem', color: '#1e293b' }}>Ujian Tidak Ditemukan</h3>
+          <p className="text-muted text-sm" style={{ marginBottom: '1.5rem' }}>
+            Ujian dengan ID &ldquo;{examId}&rdquo; tidak ditemukan atau telah dihapus.
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/teacher/exams')}>
+            <ChevronLeft size={16} /> Kembali ke Daftar Ujian
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const avgPct = resultList.length
     ? (resultList.reduce((sum, r) => {
@@ -296,11 +338,18 @@ export default function ResultsView() {
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('pelanggaran')}>
                     Pelanggaran {sortConfig.key === 'pelanggaran' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
-                  <th className="no-print">Simpan Esai</th>
+                  <th className="no-print">Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedResults.map((r, i) => {
+                {sortedResults.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
+                      Belum ada hasil ujian yang diselesaikan untuk ujian ini.
+                    </td>
+                  </tr>
+                ) : (
+                  sortedResults.map((r, i) => {
                   const total = r.auto_score + (r.essay_score || 0)
                   const pctNum = r.max_auto_score > 0 ? (total / r.max_auto_score) * 100 : 0
                   const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
@@ -346,14 +395,22 @@ export default function ResultsView() {
                           <button className="btn btn-ghost btn-sm" onClick={() => setSelectedResult(r)} title="Lihat Esai">
                             <Eye size={13} />
                           </button>
-                          <button className="btn btn-primary btn-sm" onClick={() => saveEssay(r.id, essayVal)} disabled={saving === r.id}>
+                          <button className="btn btn-primary btn-sm" onClick={() => saveEssay(r.id, essayVal)} disabled={saving === r.id} title="Simpan Skor Esai">
                             {saving === r.id ? '...' : <><Save size={13} /> Simpan</>}
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => handleDeleteResult(r.id, r.users?.full_name || r.student?.full_name)}
+                            title="Hapus Hasil Ujian Siswa"
+                            style={{ color: 'var(--danger)' }}
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </td>
                     </tr>
                   )
-                })}
+                }))}
               </tbody>
             </table>
           </div>

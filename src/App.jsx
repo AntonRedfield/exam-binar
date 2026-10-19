@@ -27,6 +27,7 @@ import ExamOversight from './pages/admin/ExamOversight'
 import Analytics from './pages/admin/Analytics'
 import ClassManagement from './pages/admin/ClassManagement'
 
+import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
 // ─── Auth Context ───────────────────────────────────────────────────────────
@@ -138,73 +139,83 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<RoleRedirect />} />
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<RoleRedirect />} />
 
-          {/* Student Routes */}
-          <Route path="/home" element={
-            <ProtectedRoute roles={['USER']}>
-              <StudentHome />
-            </ProtectedRoute>
-          } />
-          <Route path="/exam/:examId/lobby" element={
-            <ProtectedRoute roles={['USER']}>
-              <ExamLobby />
-            </ProtectedRoute>
-          } />
-          <Route path="/exam/:examId/room" element={
-            <ProtectedRoute roles={['USER']}>
-              <ExamRoom />
-            </ProtectedRoute>
-          } />
-          <Route path="/results/:resultId" element={
-            <ProtectedRoute roles={['USER', 'MODERATOR', 'SUPERADMIN']}>
-              <Results />
-            </ProtectedRoute>
-          } />
-          <Route path="/survey/:examId" element={
-            <ProtectedRoute roles={['USER']}>
-              <SurveyRoom />
-            </ProtectedRoute>
-          } />
+            {/* Student Routes */}
+            <Route path="/home" element={
+              <ProtectedRoute roles={['USER']}>
+                <StudentHome />
+              </ProtectedRoute>
+            } />
+            <Route path="/exam/:examId/lobby" element={
+              <ProtectedRoute roles={['USER']}>
+                <ExamLobby />
+              </ProtectedRoute>
+            } />
+            <Route path="/exam/:examId/room" element={
+              <ProtectedRoute roles={['USER']}>
+                <ExamRoom />
+              </ProtectedRoute>
+            } />
+            <Route path="/results/:resultId" element={
+              <ProtectedRoute roles={['USER', 'MODERATOR', 'SUPERADMIN']}>
+                <Results />
+              </ProtectedRoute>
+            } />
+            <Route path="/survey/:examId" element={
+              <ProtectedRoute roles={['USER']}>
+                <SurveyRoom />
+              </ProtectedRoute>
+            } />
 
-          {/* Teacher Routes */}
-          <Route path="/teacher" element={
-            <ProtectedRoute roles={['MODERATOR', 'SUPERADMIN']}>
-              <TeacherLayout />
-            </ProtectedRoute>
-          }>
-            <Route path="dashboard" element={<TeacherDashboard />} />
-            <Route path="exams" element={<ExamList />} />
-            <Route path="create" element={<CreateExam />} />
-            <Route path="edit/:examId" element={<CreateExam />} />
-            <Route path="monitor/:examId" element={<Monitor />} />
-            <Route path="results/:examId" element={<ResultsView />} />
-            <Route path="analytics/:examId" element={<QuestionAnalytics />} />
-            <Route path="students" element={<UserManagement />} />
-            <Route path="survey-responses/:examId" element={<SurveyResponses />} />
-          </Route>
+            {/* Teacher Routes */}
+            <Route path="/teacher" element={
+              <ProtectedRoute roles={['MODERATOR', 'SUPERADMIN']}>
+                <TeacherLayout />
+              </ProtectedRoute>
+            }>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<TeacherDashboard />} />
+              <Route path="exams" element={<ExamList />} />
+              <Route path="create" element={<CreateExam />} />
+              <Route path="edit/:examId" element={<CreateExam />} />
+              <Route path="monitor" element={<Navigate to="/teacher/exams" replace />} />
+              <Route path="monitor/:examId" element={<Monitor />} />
+              <Route path="results" element={<Navigate to="/teacher/exams" replace />} />
+              <Route path="results/:examId" element={<ResultsView />} />
+              <Route path="analytics" element={<Navigate to="/teacher/exams" replace />} />
+              <Route path="analytics/:examId" element={<QuestionAnalytics />} />
+              <Route path="students" element={<UserManagement />} />
+              <Route path="survey-responses/:examId" element={<SurveyResponses />} />
+            </Route>
 
-          {/* Admin Routes */}
-          <Route path="/admin" element={
-            <ProtectedRoute roles={['SUPERADMIN']}>
-              <AdminLayout />
-            </ProtectedRoute>
-          }>
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="users" element={<UserManagement />} />
-            <Route path="classes" element={<ClassManagement />} />
-            <Route path="exams" element={<ExamOversight />} />
-            <Route path="create" element={<CreateExam />} />
-            <Route path="edit/:examId" element={<CreateExam />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="results/:examId" element={<ResultsView />} />
-            <Route path="analytics/:examId" element={<QuestionAnalytics />} />
-          </Route>
+            {/* Admin Routes */}
+            <Route path="/admin" element={
+              <ProtectedRoute roles={['SUPERADMIN']}>
+                <AdminLayout />
+              </ProtectedRoute>
+            }>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="users" element={<UserManagement />} />
+              <Route path="classes" element={<ClassManagement />} />
+              <Route path="exams" element={<ExamOversight />} />
+              <Route path="create" element={<CreateExam />} />
+              <Route path="edit/:examId" element={<CreateExam />} />
+              <Route path="analytics" element={<Analytics />} />
+              <Route path="monitor" element={<Navigate to="/admin/exams" replace />} />
+              <Route path="monitor/:examId" element={<Monitor />} />
+              <Route path="results" element={<Navigate to="/admin/exams" replace />} />
+              <Route path="results/:examId" element={<ResultsView />} />
+              <Route path="analytics/:examId" element={<QuestionAnalytics />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </AuthProvider>
     </BrowserRouter>
   )

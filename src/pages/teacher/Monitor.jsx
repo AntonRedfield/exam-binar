@@ -22,6 +22,7 @@ import {
   Zap,
   Save,
   CheckCircle2,
+  Clock,
   X
 } from 'lucide-react'
 import { questions } from '../../lib/db'
@@ -126,40 +127,28 @@ export default function Monitor() {
   }, [])
 
   const load = useCallback(async () => {
-    const [{ data: examData }, { data: sess }] = await Promise.all([
-      exams.getById(examId),
-      sessions.listByExam(examId),
-    ])
-    setExam(examData)
-    setSessionList(sess || [])
-    if (examData?.returnee_token_duration) {
-      setTokenDuration(Number(examData.returnee_token_duration))
-    } else if (examData?.survey_notify_time && Number(examData.survey_notify_time) > 0) {
-      setTokenDuration(Number(examData.survey_notify_time))
+    try {
+      const [{ data: examData }, { data: sess }] = await Promise.all([
+        exams.getById(examId),
+        sessions.listByExam(examId),
+      ])
+      setExam(examData)
+      setSessionList(sess || [])
+      if (examData?.returnee_token_duration) {
+        setTokenDuration(Number(examData.returnee_token_duration))
+      } else if (examData?.survey_notify_time && Number(examData.survey_notify_time) > 0) {
+        setTokenDuration(Number(examData.survey_notify_time))
+      }
+    } catch (err) {
+      console.error('[Monitor] Gagal memuat data ujian:', err)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [examId])
 
   useEffect(() => {
-    let ignore = false
-    exams.getById(examId).then(({ data: examData }) => {
-      if (!ignore && examData) {
-        setExam(examData)
-        if (examData.returnee_token_duration) {
-          setTokenDuration(Number(examData.returnee_token_duration))
-        } else if (examData.survey_notify_time && Number(examData.survey_notify_time) > 0) {
-          setTokenDuration(Number(examData.survey_notify_time))
-        }
-      }
-    })
-    sessions.listByExam(examId).then(({ data: sess }) => {
-      if (!ignore) {
-        setSessionList(sess || [])
-        setLoading(false)
-      }
-    })
-    return () => { ignore = true }
-  }, [examId])
+    load()
+  }, [load])
 
   // Open Quick Live Edit & load questions
   const openQuickEdit = async () => {
@@ -388,6 +377,22 @@ export default function Monitor() {
     return (
       <div className="loading-screen">
         <div className="spinner" style={{ width: 40, height: 40 }} />
+      </div>
+    )
+  }
+
+  if (!exam) {
+    return (
+      <div className="page-body">
+        <div className="card text-center" style={{ padding: '3.5rem 1.5rem', maxWidth: 560, margin: '2rem auto' }}>
+          <h3 style={{ marginBottom: '0.5rem', color: '#1e293b' }}>Ujian Tidak Ditemukan</h3>
+          <p className="text-muted text-sm" style={{ marginBottom: '1.5rem' }}>
+            Ujian dengan ID &ldquo;{examId}&rdquo; tidak ditemukan atau telah dihapus.
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/teacher/exams')}>
+            <ChevronLeft size={16} /> Kembali ke Daftar Ujian
+          </button>
+        </div>
       </div>
     )
   }

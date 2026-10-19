@@ -634,3 +634,22 @@ BEGIN
     );
 END;
 $$;
+
+-- ─── Automatic Cascade Deletion for Deleted Student Records ──────────────────
+CREATE OR REPLACE FUNCTION public.cascade_delete_student_records()
+RETURNS TRIGGER AS $$
+BEGIN
+  DELETE FROM public.results WHERE student_id = OLD.id::text OR (OLD.username IS NOT NULL AND student_id = OLD.username);
+  DELETE FROM public.exam_sessions WHERE student_id = OLD.id::text OR (OLD.username IS NOT NULL AND student_id = OLD.username);
+  DELETE FROM public.survey_notifications WHERE user_id = OLD.id::text OR (OLD.username IS NOT NULL AND user_id = OLD.username);
+  DELETE FROM public.feature_access WHERE user_id = OLD.id;
+  DELETE FROM public.student_listening_logs WHERE student_id = OLD.id;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trigger_cascade_delete_student_records ON public.profiles;
+CREATE TRIGGER trigger_cascade_delete_student_records
+AFTER DELETE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.cascade_delete_student_records();
+

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { extractDriveFileId } from '../../lib/grader'
-import { Image as ImageIcon, AlertTriangle } from 'lucide-react'
+import { Image as ImageIcon, AlertTriangle, ExternalLink } from 'lucide-react'
 
 /**
  * Lightweight, resilient image renderer for exam questions and MCQ options.
