@@ -833,14 +833,27 @@ tbody tr:hover { background: var(--glass-light); }
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
   min-height: 0;
+  touch-action: manipulation;
+  position: relative;
+  overflow: hidden;
 }
-.pdf-pane iframe { flex: 1; border: none; background: #fff; }
+.pdf-pane iframe {
+  position: absolute;
+  top: -54px;
+  left: 0;
+  width: 100%;
+  height: calc(100% + 54px);
+  border: none;
+  background: #fff;
+  touch-action: manipulation;
+}
 .answer-pane {
   width: 400px; flex-shrink: 0;
   display: flex; flex-direction: column;
   overflow: hidden;
   background: var(--navy-mid);
   min-height: 0;
+  touch-action: manipulation;
 }
 .answer-pane.no-pdf {
   flex: 1 1 0%;
@@ -850,9 +863,9 @@ tbody tr:hover { background: var(--glass-light); }
   flex: 1 1 0%;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y pinch-zoom;
   overscroll-behavior-y: contain;
   padding: 1.25rem;
 }
@@ -1069,7 +1082,7 @@ tbody tr:hover { background: var(--glass-light); }
   transition: var(--transition);
   cursor: pointer;
   font-size: 0.9rem;
-  touch-action: pan-y;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
@@ -1120,13 +1133,13 @@ tbody tr:hover { background: var(--glass-light); }
   background: var(--navy-mid);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: max-height 0.2s ease, transform 0.2s ease;
-  touch-action: pan-y;
+  touch-action: manipulation;
   -webkit-user-drag: none;
   user-select: none;
 }
 .question-image-box,
 .question-image-box img {
-  touch-action: pan-y;
+  touch-action: manipulation;
   -webkit-user-drag: none;
 }
 .option-adaptive-img:hover {
@@ -1185,7 +1198,7 @@ tbody tr:hover { background: var(--glass-light); }
   color: var(--text-secondary);
   font-size: 1.1rem; font-weight: 700;
   transition: var(--transition); cursor: pointer;
-  touch-action: pan-y;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
@@ -1202,7 +1215,7 @@ tbody tr:hover { background: var(--glass-light); }
   font-size: 0.9rem; font-weight: 700;
   transition: var(--transition); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  touch-action: pan-y;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
@@ -1942,6 +1955,8 @@ tbody tr:hover { background: var(--glass-light); }
     min-height: 0 !important;
     flex: 1 1 0% !important;
     height: 100% !important;
+    position: relative !important;
+    overflow: hidden !important;
   }
   .pdf-pane.mobile-hidden {
     display: none !important;
@@ -2020,9 +2035,9 @@ tbody tr:hover { background: var(--glass-light); }
     min-height: 0 !important;
     height: 100% !important;
     overflow-y: auto !important;
-    overflow-x: hidden !important;
+    overflow-x: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-y !important;
+    touch-action: pan-x pan-y pinch-zoom !important;
     overscroll-behavior-y: contain !important;
     padding: 0.875rem 0.75rem !important;
   }
@@ -2078,16 +2093,16 @@ tbody tr:hover { background: var(--glass-light); }
   .card:hover { transform: none; box-shadow: none; }
   .stat-card:hover { transform: none; box-shadow: none; }
   .nav-item:hover svg { transform: none; }
-  .option-btn { padding: 0.875rem 1rem; touch-action: pan-y; }
-  .tf-btn { padding: 1rem; touch-action: pan-y; }
-  .ad-btn { padding: 0.5rem 1rem; touch-action: pan-y; }
-  .q-nav-btn { width: 42px; height: 42px; touch-action: pan-x; }
-  .answer-scroll { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+  .option-btn { padding: 0.875rem 1rem; touch-action: manipulation; }
+  .tf-btn { padding: 1rem; touch-action: manipulation; }
+  .ad-btn { padding: 0.5rem 1rem; touch-action: manipulation; }
+  .q-nav-btn { width: 42px; height: 42px; touch-action: pan-x pan-y pinch-zoom; }
+  .answer-scroll { touch-action: pan-x pan-y pinch-zoom; -webkit-overflow-scrolling: touch; }
   .option-adaptive-img,
   .question-image-box img {
     -webkit-user-drag: none;
     user-select: none;
-    touch-action: pan-y;
+    touch-action: manipulation;
   }
 }
 
@@ -2348,7 +2363,7 @@ tbody tr:hover { background: var(--glass-light); }
   transition: all 0.15s ease;
   font-size: 0.92rem;
   line-height: 1.4;
-  touch-action: pan-y;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 .survey-mc-option:hover {

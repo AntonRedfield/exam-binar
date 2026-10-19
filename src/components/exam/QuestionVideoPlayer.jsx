@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { getVideoEmbedInfo } from '../../lib/grader'
-import { Video, ExternalLink, AlertCircle } from 'lucide-react'
+import { Video, AlertCircle } from 'lucide-react'
 
 export default function QuestionVideoPlayer({
   videoUrl,
@@ -48,16 +48,6 @@ export default function QuestionVideoPlayer({
               <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 400 }}>({embed.label})</span>
             )}
           </div>
-          <a
-            href={videoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.72rem', textDecoration: 'none' }}
-            title="Buka video di tab baru"
-          >
-            <span>Buka Tab Baru</span>
-            <ExternalLink size={12} />
-          </a>
         </div>
       )}
 
@@ -65,15 +55,6 @@ export default function QuestionVideoPlayer({
         <div style={{ padding: '1.5rem', textAlign: 'center', color: '#f87171', fontSize: '0.85rem' }}>
           <AlertCircle size={24} style={{ margin: '0 auto 0.5rem', display: 'block' }} />
           <div>Tidak dapat memuat pratinjau video langsung.</div>
-          <a
-            href={videoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-ghost btn-sm"
-            style={{ marginTop: '0.75rem', display: 'inline-flex', gap: '0.35rem', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' }}
-          >
-            <ExternalLink size={13} /> Tonton Video di Sumber Asli
-          </a>
         </div>
       ) : embed.type === 'video' ? (
         <video

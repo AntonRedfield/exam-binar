@@ -303,7 +303,7 @@ export function extractDriveFileId(url) {
 export function getDriveEmbedUrl(url) {
   const fileId = extractDriveFileId(url)
   if (!fileId) return url // fallback
-  return `https://drive.google.com/file/d/${fileId}/preview`
+  return `https://drive.google.com/file/d/${fileId}/preview?embedded=true&rm=minimal`
 }
 
 /**

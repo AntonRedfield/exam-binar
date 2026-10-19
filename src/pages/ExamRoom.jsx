@@ -31,7 +31,7 @@ import {
   getTimeReduction
 } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
-import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2 } from 'lucide-react'
+import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut } from 'lucide-react'
 
 // Simple seeded PRNG based on string
 function cyrb128(str) {
@@ -111,6 +111,11 @@ export default function ExamRoom() {
   const [lockedQuestions, setLockedQuestions] = useState({})
   const [questionTimeWarning, setQuestionTimeWarning] = useState(false)
   const [quizFeedback, setQuizFeedback] = useState(null)
+  const [textZoom, setTextZoom] = useState(100)
+
+  const handleZoomIn = () => setTextZoom(prev => Math.min(prev + 15, 160))
+  const handleZoomOut = () => setTextZoom(prev => Math.max(prev - 15, 85))
+  const handleZoomReset = () => setTextZoom(100)
 
   // Monitoring-specific state
   const [freezeActive, setFreezeActive] = useState(false)
@@ -722,7 +727,52 @@ export default function ExamRoom() {
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Zoom controls for Question & Answer */}
+          <div
+            className="no-print"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.2rem',
+              background: 'var(--navy-mid)',
+              padding: '0.2rem 0.35rem',
+              borderRadius: '6px',
+              border: '1px solid var(--border)'
+            }}
+            title="Pengaturan Ukuran Teks Soal & Jawaban (Pinch & Zoom diizinkan)"
+          >
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              onClick={handleZoomOut}
+              disabled={textZoom <= 85}
+              title="Perkecil Ukuran Teks (Zoom Out)"
+              style={{ padding: '0.2rem 0.35rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '2px', minHeight: 'auto', height: '26px' }}
+            >
+              <ZoomOut size={13} /> A-
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              onClick={handleZoomReset}
+              title="Reset Ukuran Teks (100%)"
+              style={{ padding: '0.2rem 0.3rem', fontSize: '0.72rem', fontWeight: 600, minWidth: '40px', textAlign: 'center', minHeight: 'auto', height: '26px' }}
+            >
+              {textZoom}%
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              onClick={handleZoomIn}
+              disabled={textZoom >= 160}
+              title="Perbesar Ukuran Teks (Zoom In)"
+              style={{ padding: '0.2rem 0.35rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '2px', minHeight: 'auto', height: '26px' }}
+            >
+              <ZoomIn size={13} /> A+
+            </button>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
             {violations === 0
               ? <><ShieldCheck size={15} color="var(--success)" /> <span style={{ color: 'var(--success)' }}>0 Pelanggaran</span></>
@@ -758,17 +808,32 @@ export default function ExamRoom() {
         )}
 
         {hasPdf && (
-          <div className={`pdf-pane ${mobileTab !== 'pdf' ? 'mobile-hidden' : ''}`}>
+          <div
+            className={`pdf-pane ${mobileTab !== 'pdf' ? 'mobile-hidden' : ''}`}
+            style={{ touchAction: 'manipulation' }}
+          >
             <iframe
               src={getDriveEmbedUrl(exam.pdf_url)}
               title="Soal Ujian"
               allow="autoplay"
+              sandbox="allow-scripts allow-same-origin allow-forms"
+              style={{ touchAction: 'manipulation' }}
             />
           </div>
         )}
 
-        <div className={`answer-pane ${hasPdf && mobileTab !== 'answer' ? 'mobile-hidden' : ''} ${!hasPdf ? 'no-pdf' : ''}`}>
-          <div className="answer-scroll" ref={answerScrollRef}>
+        <div
+          className={`answer-pane ${hasPdf && mobileTab !== 'answer' ? 'mobile-hidden' : ''} ${!hasPdf ? 'no-pdf' : ''}`}
+          style={{ touchAction: 'manipulation' }}
+        >
+          <div
+            className="answer-scroll"
+            ref={answerScrollRef}
+            style={{
+              fontSize: textZoom !== 100 ? `${textZoom}%` : undefined,
+              touchAction: 'pan-x pan-y pinch-zoom'
+            }}
+          >
             {q && (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>

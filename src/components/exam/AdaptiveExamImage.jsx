@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { extractDriveFileId } from '../../lib/grader'
-import { ExternalLink, Image as ImageIcon, AlertTriangle } from 'lucide-react'
+import { Image as ImageIcon, AlertTriangle } from 'lucide-react'
 
 /**
  * Lightweight, resilient image renderer for exam questions and MCQ options.
@@ -83,43 +83,23 @@ export default function AdaptiveExamImage({
               <ImageIcon size={15} color="#2563eb" />
               <span>Lampiran Gambar Soal {driveId ? '(Google Drive)' : ''}</span>
             </div>
-            <a
-              href={src}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                color: '#2563eb',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                textDecoration: 'none',
-                background: '#eff6ff',
-                padding: '0.2rem 0.5rem',
-                borderRadius: '4px',
-                border: '1px solid #bfdbfe',
-              }}
-            >
-              <span>Buka Gambar di Tab Baru</span>
-              <ExternalLink size={12} />
-            </a>
           </div>
 
           {/* Iframe preview for Drive images */}
           {driveId ? (
-            <div style={{ width: '100%', height: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight, minHeight: '260px', background: '#f8fafc' }}>
+            <div style={{ width: '100%', height: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight, minHeight: '260px', background: '#f8fafc', position: 'relative', overflow: 'hidden' }}>
               <iframe
-                src={`https://drive.google.com/file/d/${driveId}/preview`}
+                src={`https://drive.google.com/file/d/${driveId}/preview?embedded=true&rm=minimal`}
                 title={alt}
-                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                sandbox="allow-scripts allow-same-origin allow-forms"
+                style={{ position: 'absolute', top: '-54px', left: 0, width: '100%', height: 'calc(100% + 54px)', border: 'none', display: 'block' }}
                 allow="autoplay"
               />
             </div>
           ) : (
             <div style={{ padding: '1.25rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
               <AlertTriangle size={20} color="#f59e0b" style={{ margin: '0 auto 0.5rem', display: 'block' }} />
-              <div>Gambar tidak dapat dimuat langsung. Silakan buka melalui tautan di atas.</div>
+              <div>Gambar tidak dapat dimuat langsung.</div>
             </div>
           )}
 
@@ -134,7 +114,7 @@ export default function AdaptiveExamImage({
               lineHeight: 1.3,
             }}
           >
-            💡 Catatan: Jika pratinjau meminta izin, pastikan izin file Google Drive telah diatur ke &ldquo;Siapa saja yang memiliki tautan&rdquo;.
+            💡 Catatan: Pastikan izin file Google Drive telah diatur ke &ldquo;Siapa saja yang memiliki tautan&rdquo;.
           </div>
         </div>
       )
