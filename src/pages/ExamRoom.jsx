@@ -31,7 +31,8 @@ import {
   getTimeReduction
 } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
-import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut } from 'lucide-react'
+import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut, Sparkles } from 'lucide-react'
+import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
 
 // Simple seeded PRNG based on string
 function cyrb128(str) {
@@ -128,6 +129,10 @@ export default function ExamRoom() {
   const [kickoutActive, setKickoutActive] = useState(false)
   const [kickoutReason, setKickoutReason] = useState('')
   const kickoutLockedRef = useRef(false)
+
+  // Live Exam Question Sync (Teacher edits during active exam)
+  const [liveEditNotice, setLiveEditNotice] = useState(null)
+  const liveNoticeTimeoutRef = useRef(null)
 
   // Passive Autosave Notice state
   const [lastSaved, setLastSaved] = useState(null) // { qNum, timeStr }
@@ -274,6 +279,79 @@ export default function ExamRoom() {
       }
     }
   }, [examId])
+
+  // ─── Live Exam Sync: Listen to live question edits by teacher ──────
+  const refreshQuestionsLive = useCallback(async () => {
+    try {
+      const [{ data: latestExam }, { data: latestQs }] = await Promise.all([
+        exams.getById(examId),
+        questions.listByExam(examId)
+      ])
+
+      if (!latestQs || latestQs.length === 0) return
+
+      if (latestExam) {
+        setExam(latestExam)
+      }
+
+      setQuestionList(prevList => {
+        // If question count is the same, in-place update each question by matching id or number
+        if (prevList.length === latestQs.length) {
+          return prevList.map(existingQ => {
+            const updated = latestQs.find(lq => lq.id === existingQ.id || (lq.number === existingQ.number && !lq.id))
+            if (updated) {
+              return { ...existingQ, ...updated }
+            }
+            return existingQ
+          })
+        }
+
+        // If count changed (new question added or question removed), re-order gracefully
+        let finalQs = latestQs
+        if (latestExam?.question_order === 'SHUFFLE') {
+          if (latestExam?.keep_essay_at_end) {
+            const nonEssays = finalQs.filter(q => q.type !== 'ESSAY')
+            const essays = finalQs.filter(q => q.type === 'ESSAY')
+            const shuffledNonEssays = shuffleArray(nonEssays, sessionRef.current?.id || examId)
+            const sortedEssays = [...essays].sort((a, b) => (a.number || 0) - (b.number || 0))
+            finalQs = [...shuffledNonEssays, ...sortedEssays]
+          } else {
+            finalQs = shuffleArray(finalQs, sessionRef.current?.id || examId)
+          }
+        } else if (latestExam?.keep_essay_at_end) {
+          const nonEssays = finalQs.filter(q => q.type !== 'ESSAY')
+          const essays = finalQs.filter(q => q.type === 'ESSAY')
+          const sortedNonEssays = [...nonEssays].sort((a, b) => (a.number || 0) - (b.number || 0))
+          const sortedEssays = [...essays].sort((a, b) => (a.number || 0) - (b.number || 0))
+          finalQs = [...sortedNonEssays, ...sortedEssays]
+        }
+        return finalQs
+      })
+
+      // Show friendly non-intrusive notification to student
+      setLiveEditNotice({
+        message: 'Soal ujian telah disesuaikan dengan pembaruan langsung dari guru pengawas.',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })
+      if (liveNoticeTimeoutRef.current) clearTimeout(liveNoticeTimeoutRef.current)
+      liveNoticeTimeoutRef.current = setTimeout(() => {
+        setLiveEditNotice(null)
+      }, 5000)
+    } catch (err) {
+      console.warn('[ExamRoom] Failed to refresh live questions:', err)
+    }
+  }, [examId])
+
+  useEffect(() => {
+    if (!examId || loading) return
+    const unsubscribe = subscribeToExamLiveUpdates(examId, () => {
+      refreshQuestionsLive()
+    })
+    return () => {
+      unsubscribe()
+      if (liveNoticeTimeoutRef.current) clearTimeout(liveNoticeTimeoutRef.current)
+    }
+  }, [examId, loading, refreshQuestionsLive])
 
   const monitorLevel = exam?.monitoring_level || 1
   const isQuiz = exam?.mode === 'quiz'
@@ -589,6 +667,43 @@ export default function ExamRoom() {
   return (
     <div className="exam-layout">
       {violationMsg && <ViolationWarning message={violationMsg} />}
+
+      {/* Live Question Update Notification Toast */}
+      {liveEditNotice && (
+        <div style={{
+          position: 'fixed',
+          top: '4.5rem',
+          right: '1.5rem',
+          zIndex: 9999,
+          background: 'linear-gradient(135deg, #065f46, #047857)',
+          color: '#ffffff',
+          padding: '0.85rem 1.25rem',
+          borderRadius: '12px',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          border: '1px solid #10b981',
+          animation: 'slideInRight 0.3s ease-out'
+        }}>
+          <div style={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            background: 'rgba(255, 255, 255, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Sparkles size={18} color="#fef08a" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Pembaruan Soal Diterapkan</div>
+            <div style={{ fontSize: '0.78rem', color: '#d1fae5' }}>{liveEditNotice.message} ({liveEditNotice.time})</div>
+          </div>
+        </div>
+      )}
 
       {/* Security Kickout Modal (Split-Screen / Leaving App) */}
       {kickoutActive && (

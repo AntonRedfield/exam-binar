@@ -66,7 +66,7 @@ export default function Results() {
             )}
           </div>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
-            Siswa: <strong>{result.users?.full_name}</strong> &mdash; Kelas {result.users?.classes?.name || '—'}
+            Siswa: <strong>{result.users?.full_name || result.student?.full_name || user?.name || user?.full_name || 'Siswa'}</strong> &mdash; Kelas {result.users?.classes?.name || result.users?.kelas || result.student?.kelas || user?.kelas || '—'}
           </p>
         </div>
 

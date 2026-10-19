@@ -386,8 +386,15 @@ export default function SurveyResponses() {
                   {sessionList.map((s, i) => (
                     <tr key={s.id}>
                       <td className="text-muted">{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>{s.users?.full_name || 'Siswa Dihapus'}</td>
-                      <td>{s.users?.classes?.name || '—'}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {s.users?.full_name || s.users?.name || (s.student_id ? `Siswa (${s.student_id.slice(0, 8)})` : 'Siswa')}
+                        {s.users?.username && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                            @{s.users.username}
+                          </div>
+                        )}
+                      </td>
+                      <td>{s.users?.classes?.name || s.users?.kelas || '—'}</td>
                       <td className="text-muted text-sm">
                         {s.last_sync ? new Date(s.last_sync).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                       </td>
@@ -452,7 +459,7 @@ export default function SurveyResponses() {
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 700, maxHeight: '80vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <div>
-                <h3 style={{ margin: 0 }}>Respons: {selectedUser.users?.full_name || 'Siswa Dihapus'}</h3>
+                <h3 style={{ margin: 0 }}>Respons: {selectedUser.users?.full_name || selectedUser.users?.name || (selectedUser.student_id ? `Siswa (${selectedUser.student_id.slice(0, 8)})` : 'Siswa')}</h3>
                 <span className="text-muted text-xs">
                   Kelas {selectedUser.users?.classes?.name || '—'} · {selectedUser.last_sync ? new Date(selectedUser.last_sync).toLocaleString('id-ID') : '—'}
                 </span>

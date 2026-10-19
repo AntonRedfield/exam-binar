@@ -739,32 +739,57 @@ export const sessions = {
     if (error) return { data: [], error }
     const sessionList = data || []
     const studentIds = sessionList.map(s => s.student_id).filter(Boolean)
+    const profMap = {}
+
     if (studentIds.length > 0) {
       try {
+        const uniqueIds = Array.from(new Set(studentIds))
         const { data: profs } = await supabase
           .from('profiles')
-          .select('id, display_name, fullname, username, class_section')
-          .in('id', Array.from(new Set(studentIds)))
+          .select('*')
+          .in('id', uniqueIds)
 
-        const profMap = {}
         for (const p of profs || []) {
-          profMap[p.id] = p
+          if (p.id) profMap[p.id] = p
+          if (p.username) profMap[p.username] = p
         }
-        for (const s of sessionList) {
-          const p = profMap[s.student_id]
-          s.users = {
-            id: s.student_id,
-            name: p?.display_name || p?.fullname || p?.username || 'Siswa',
-            full_name: p?.fullname || p?.display_name || p?.username || 'Siswa',
-            username: p?.username || '',
-            kelas: p?.class_section || '—',
-            classes: { name: p?.class_section || '—' }
+
+        const missing = uniqueIds.filter(id => !profMap[id])
+        if (missing.length > 0) {
+          const { data: userMatches } = await supabase
+            .from('profiles')
+            .select('*')
+            .in('username', missing)
+          for (const p of userMatches || []) {
+            if (p.username) profMap[p.username] = p
+            if (p.id) profMap[p.id] = p
           }
         }
       } catch (err) {
         console.warn('[DB] sessions.listByExam profs error:', err)
       }
     }
+
+    for (const s of sessionList) {
+      const p = profMap[s.student_id]
+      const fallbackName = s.student_id ? `Siswa (${s.student_id.slice(0, 8)})` : 'Siswa'
+      const name = p?.fullname || p?.display_name || p?.full_name || p?.username || fallbackName
+      const full_name = p?.fullname || p?.display_name || p?.full_name || p?.username || fallbackName
+      const kelas = p?.class_section || p?.kelas || '—'
+      const userObj = {
+        id: s.student_id,
+        name,
+        full_name,
+        display_name: name,
+        username: p?.username || '',
+        kelas,
+        class_section: kelas,
+        classes: { name: kelas }
+      }
+      s.users = userObj
+      s.student = userObj
+    }
+
     return { data: sessionList, error: null }
   },
 
@@ -846,21 +871,30 @@ export const sessions = {
 export const results = {
   _attachRelations: (result) => {
     if (!result) return null
-    if (result.profiles) {
-      return {
-        ...result,
-        student: {
-          display_name: result.profiles.display_name || result.profiles.fullname,
-          full_name: result.profiles.display_name || result.profiles.fullname,
-          kelas: result.profiles.class_section || '',
-          class_section: result.profiles.class_section || '',
-          username: result.profiles.username,
-        }
-      }
+    const p = result.profiles || null
+    const fallbackName = result.student_id ? `Siswa (${result.student_id.slice(0, 8)})` : 'Siswa'
+    const name = p?.fullname || p?.display_name || p?.full_name || p?.name || p?.username || result.users?.full_name || result.users?.name || result.student?.full_name || result.student?.name || fallbackName
+    const full_name = p?.fullname || p?.display_name || p?.full_name || p?.name || p?.username || result.users?.full_name || result.student?.full_name || name
+    const kelas = p?.class_section || p?.kelas || result.users?.kelas || result.users?.classes?.name || result.student?.kelas || result.student?.class_section || '—'
+    const username = p?.username || result.users?.username || result.student?.username || ''
+
+    const userObj = {
+      id: p?.id || result.student_id,
+      name,
+      full_name,
+      display_name: name,
+      username,
+      email: p?.email || p?.contact_email || result.users?.email || '',
+      kelas,
+      class_section: kelas,
+      classes: { name: kelas }
     }
+
     return {
       ...result,
-      student: null
+      student: userObj,
+      users: userObj,
+      profiles: p || result.profiles || null
     }
   },
 
@@ -934,7 +968,7 @@ export const results = {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, display_name, fullname, username, class_section')
+        .select('*')
         .in('id', validIds)
       if (error) {
         console.warn('[DB] results._fetchStudentProfilesMap error:', error)
@@ -942,8 +976,22 @@ export const results = {
       }
       const map = {}
       for (const p of data || []) {
-        map[p.id] = p
+        if (p.id) map[p.id] = p
+        if (p.username) map[p.username] = p
       }
+
+      const missing = validIds.filter(id => !map[id])
+      if (missing.length > 0) {
+        const { data: userMatches } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('username', missing)
+        for (const p of userMatches || []) {
+          if (p.username) map[p.username] = p
+          if (p.id) map[p.id] = p
+        }
+      }
+
       return map
     } catch (err) {
       console.warn('[DB] results._fetchStudentProfilesMap exception:', err)
@@ -984,6 +1032,10 @@ export const results = {
     if (data.student_id) {
       const profMap = await results._fetchStudentProfilesMap([data.student_id])
       data.profiles = profMap[data.student_id] || null
+    }
+    if (data.exam_id) {
+      const { data: examData } = await exams.getById(data.exam_id)
+      data.exams = examData || null
     }
     return { data: results._attachRelations(data), error: null }
   },

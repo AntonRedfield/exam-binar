@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { exams } from '../../lib/db'
-import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock } from 'lucide-react'
+import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap } from 'lucide-react'
 
 export default function ExamOversight() {
   const navigate = useNavigate()
@@ -82,7 +82,14 @@ export default function ExamOversight() {
                       <td className="text-muted text-sm">{new Date(exam.created_at).toLocaleDateString('id-ID')}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/admin/edit/${exam.id}`)} title="Edit"><Edit2 size={13} /></button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => navigate(`/admin/edit/${exam.id}`)}
+                            title={exam.status === 'published' ? 'Live Edit Soal (Ujian Berlangsung)' : 'Edit'}
+                            style={exam.status === 'published' ? { color: '#059669', borderColor: '#a7f3d0' } : {}}
+                          >
+                            {exam.status === 'published' ? <Zap size={13} color="#059669" /> : <Edit2 size={13} />}
+                          </button>
                           <button className="btn btn-ghost btn-sm" onClick={() => togglePublish(exam)} title="Toggle status">
                             {exam.status === 'published' ? <Lock size={13} /> : <Globe size={13} />}
                           </button>

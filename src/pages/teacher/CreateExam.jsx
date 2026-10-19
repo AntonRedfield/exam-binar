@@ -179,6 +179,7 @@ export default function CreateExam() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(isEdit)
+  const [examStatus, setExamStatus] = useState('draft')
   const [dbClasses, setDbClasses] = useState([])
   const [monitoringLevel, setMonitoringLevel] = useState(1)
   const [showMonitorInfo, setShowMonitorInfo] = useState(false)
@@ -312,6 +313,7 @@ export default function CreateExam() {
       const { data: exam } = await exams.getById(examId)
       const { data: qs } = await questions.listByExam(examId)
       if (exam) {
+        setExamStatus(exam.status || 'draft')
         setTitle(exam.title)
         setInformation(exam.information || '')
         setPdfUrl(exam.pdf_url || '')
@@ -596,7 +598,8 @@ export default function CreateExam() {
       defaultOptionsCount, defaultStatementsCount, defaultMatchingCount,
       defaultSequencingCount, defaultAgreeDisagreeCount, defaultSurveyOptionsCount,
       defaultGridRowsCount, defaultGridColsCount, surveyType, surveyRecurrence,
-      surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit
+      surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit,
+      status: examStatus
     }
 
     try {
@@ -1426,9 +1429,9 @@ export default function CreateExam() {
     }
   }
 
-  async function handleSave(publish = false, customNavPath = null, { stayOnPage = false } = {}) {
-    // Strict validation only when publishing
-    if (publish) {
+  async function handleSave(publish = false, customNavPath = null, { stayOnPage = false, isLiveApply = false, unpublish = false } = {}) {
+    // Strict validation only when publishing or live applying
+    if (publish || isLiveApply) {
       if (!title.trim()) {
         setError(isSurvey ? 'Judul survei harus diisi sebelum dipublikasikan.' : 'Judul ujian harus diisi sebelum dipublikasikan.')
         setShowUnsavedModal(false)
@@ -1538,7 +1541,8 @@ export default function CreateExam() {
         defaultOptionsCount, defaultStatementsCount, defaultMatchingCount,
         defaultSequencingCount, defaultAgreeDisagreeCount, defaultSurveyOptionsCount,
         defaultGridRowsCount, defaultGridColsCount, surveyType, surveyRecurrence,
-        surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit
+        surveyNotifyTime, surveyValidFrom, surveyValidUntil, surveyAllowEdit,
+        status: unpublish ? 'draft' : examStatus
       }
 
       const result = await saveExamDraftToSupabase({
@@ -1546,7 +1550,9 @@ export default function CreateExam() {
         formData,
         questionItems,
         user,
-        publish
+        publish: (publish || isLiveApply) && !unpublish,
+        unpublish,
+        isLiveApply
       })
 
       if (!result.success) {
@@ -1558,12 +1564,18 @@ export default function CreateExam() {
         setCurrentExamId(savedExamId)
       }
 
+      if (result.status) {
+        setExamStatus(result.status)
+      } else if (unpublish) {
+        setExamStatus('draft')
+      }
+
       initialSnapshotRef.current = computeSnapshot()
       setLastAutosavedAt(result.savedAt)
       setAutosaveStatus('saved')
       setAutosaveCountdown(autosaveInterval)
 
-      // If user chose to stay on page (e.g. clicking "Simpan Draft" to continue editing)
+      // If user chose to stay on page (e.g. clicking "Simpan Draft" or "Terapkan Langsung")
       if (stayOnPage) {
         setSaving(false)
         isSavedRef.current = false
@@ -1571,7 +1583,17 @@ export default function CreateExam() {
           const newPath = `${user?.role === 'SUPERADMIN' ? '/admin' : '/teacher'}/edit/${savedExamId}`
           window.history.replaceState(null, '', newPath)
         }
-        showNotice(publish ? 'Ujian berhasil dipublikasikan!' : 'Draf berhasil disimpan ke database Supabase!')
+        if (unpublish) {
+          showNotice('Publikasi ujian dibatalkan. Status ujian kini kembali menjadi Draf.')
+        } else if (isLiveApply) {
+          showNotice('⚡ Perubahan butir soal berhasil diterapkan langsung ke seluruh peserta ujian!')
+        } else if (publish) {
+          showNotice('Ujian berhasil dipublikasikan!')
+        } else if (examStatus === 'published') {
+          showNotice('Perubahan berhasil disimpan tanpa membatalkan publikasi ujian!')
+        } else {
+          showNotice('Draf berhasil disimpan ke database Supabase!')
+        }
         return true
       }
 
@@ -1830,49 +1852,172 @@ export default function CreateExam() {
               </div>
               <p className="text-muted text-sm" style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem' }}>
                 {questionItems.length} {isSurvey ? 'pertanyaan' : 'soal'} · Mode: {modeLabel} {title ? `· "${title.length > 32 ? title.slice(0, 32) + '...' : title}"` : ''}
+                {examStatus === 'published' && (
+                  <span className="badge badge-active" style={{ marginLeft: '0.5rem', fontSize: '0.72rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                    🟢 Terpublikasi / Sedang Berlangsung
+                  </span>
+                )}
               </p>
             </div>
           </div>
           <div className="sticky-exam-actions">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => handleSave(false, null, { stayOnPage: true })}
-              disabled={saving || isAutosavingRef.current}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                fontWeight: 600,
-                border: '1px solid var(--border)',
-                background: '#ffffff',
-              }}
-              title="Simpan draf ke database Supabase tanpa meninggalkan halaman"
-            >
-              <Save size={15} />
-              <span>{saving ? 'Menyimpan...' : 'Simpan Draft'}</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-gold"
-              onClick={() => handleSave(true)}
-              disabled={saving || isAutosavingRef.current}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                fontWeight: 700,
-                boxShadow: '0 2px 10px rgba(223, 174, 52, 0.35)'
-              }}
-              title="Publikasikan ujian sekarang"
-            >
-              <span>{saving ? 'Menyimpan...' : '🚀 Publikasikan'}</span>
-            </button>
+            {examStatus === 'published' ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={async () => {
+                    if (window.confirm('Batalkan publikasi ujian ini dan kembalikan ke status Draf? Peserta tidak akan bisa mengakses atau mengerjakan ujian ini sampai dipublikasikan kembali.')) {
+                      await handleSave(false, null, { stayOnPage: true, unpublish: true })
+                    }
+                  }}
+                  disabled={saving || isAutosavingRef.current}
+                  style={{ color: '#ef4444', borderColor: '#fca5a5' }}
+                  title="Batalkan publikasi ujian (kembalikan ke Draft)"
+                >
+                  <Lock size={14} />
+                  <span>Jadikan Draft</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => handleSave(false, null, { stayOnPage: true })}
+                  disabled={saving || isAutosavingRef.current}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    fontWeight: 600,
+                    border: '1px solid var(--border)',
+                    background: '#ffffff',
+                  }}
+                  title="Simpan perubahan tanpa membatalkan publikasi ujian"
+                >
+                  <Save size={15} />
+                  <span>{saving ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gold"
+                  onClick={() => handleSave(true, null, { stayOnPage: true, isLiveApply: true })}
+                  disabled={saving || isAutosavingRef.current}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#ffffff',
+                    border: 'none',
+                    boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)'
+                  }}
+                  title="Terapkan perbaikan soal langsung ke seluruh peserta ujian yang sedang aktif"
+                >
+                  <Zap size={15} />
+                  <span>{saving ? 'Menerapkan...' : '⚡ Terapkan Langsung'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => handleSave(false, null, { stayOnPage: true })}
+                  disabled={saving || isAutosavingRef.current}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    fontWeight: 600,
+                    border: '1px solid var(--border)',
+                    background: '#ffffff',
+                  }}
+                  title="Simpan draf ke database Supabase tanpa meninggalkan halaman"
+                >
+                  <Save size={15} />
+                  <span>{saving ? 'Menyimpan...' : 'Simpan Draft'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gold"
+                  onClick={() => handleSave(true)}
+                  disabled={saving || isAutosavingRef.current}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    fontWeight: 700,
+                    boxShadow: '0 2px 10px rgba(223, 174, 52, 0.35)'
+                  }}
+                  title="Publikasikan ujian sekarang"
+                >
+                  <span>{saving ? 'Menyimpan...' : '🚀 Publikasikan'}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       <div className="page-body">
+        {/* Live Edit Banner for Published Exam */}
+        {examStatus === 'published' && (
+          <div className="live-edit-banner" style={{
+            background: 'linear-gradient(90deg, #ecfdf5, #f0fdf4)',
+            border: '1.5px solid #10b981',
+            borderLeft: '6px solid #059669',
+            borderRadius: '12px',
+            padding: '1rem 1.25rem',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.1)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: '#d1fae5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Zap size={20} color="#059669" />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <strong style={{ color: '#065f46', fontSize: '0.98rem' }}>Mode Live Edit — Ujian Sedang Aktif</strong>
+                  <span className="badge badge-active" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', background: '#d1fae5', color: '#047857' }}>
+                    <span className="live-pulse-dot" /> LIVE AKTIF
+                  </span>
+                </div>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.84rem', color: '#047857', lineHeight: 1.45 }}>
+                  Ujian ini sedang berlangsung. Setiap koreksi nomor soal, teks narasi, opsi, kunci jawaban, atau poin dapat langsung disimpan dan <strong>tidak akan otomatis ter-unpublish</strong>. Klik <strong>"Terapkan Langsung"</strong> untuk mengirim pembaruan secara instan ke layar peserta yang sedang mengerjakan.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-gold"
+              onClick={() => handleSave(true, null, { stayOnPage: true, isLiveApply: true })}
+              disabled={saving || isAutosavingRef.current}
+              style={{
+                background: 'linear-gradient(135deg, #059669, #047857)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 700,
+                padding: '0.45rem 0.95rem'
+              }}
+            >
+              <Zap size={14} /> Terapkan Langsung
+            </button>
+          </div>
+        )}
         {/* Action Notice toast */}
         {actionNotice && (
           <div className="alert alert-success" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>

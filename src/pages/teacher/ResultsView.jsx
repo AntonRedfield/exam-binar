@@ -24,6 +24,12 @@ export default function ResultsView() {
       questions.listByExam(examId)
     ])
     
+    const sessionMap = {}
+    ;(sess || []).forEach(s => {
+      if (s.id) sessionMap[s.id] = s
+      if (s.student_id) sessionMap[s.student_id] = s
+    })
+
     let newRes = [...(res || [])]
     const missingResults = (sess || []).filter(s => !newRes.find(r => r.student_id === s.student_id))
     
@@ -46,6 +52,7 @@ export default function ResultsView() {
           })
           if (createdRes) {
             createdRes.users = s.users
+            createdRes.student = s.users
             newRes.push(createdRes)
             added = true
             if (s.status === 'active') {
@@ -54,11 +61,36 @@ export default function ResultsView() {
           }
         }
       }
-      if (added) {
-        setResultList([...newRes])
-      }
     }
     
+    // Normalize and cross-reference session data to guarantee student name & class
+    newRes = newRes.map(r => {
+      const s = sessionMap[r.session_id] || sessionMap[r.student_id]
+      const existingUser = r.users || r.student
+      const fallbackName = r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa'
+      
+      const fullName = existingUser?.full_name || existingUser?.display_name || existingUser?.name || s?.users?.full_name || s?.users?.display_name || s?.users?.name || fallbackName
+      const displayName = existingUser?.display_name || existingUser?.name || existingUser?.full_name || s?.users?.display_name || s?.users?.name || s?.users?.full_name || fullName
+      const kelas = existingUser?.classes?.name || existingUser?.class_section || existingUser?.kelas || s?.users?.classes?.name || s?.users?.kelas || '—'
+      const username = existingUser?.username || s?.users?.username || ''
+      
+      const unifiedUser = {
+        id: r.student_id,
+        name: displayName,
+        full_name: fullName,
+        display_name: displayName,
+        username,
+        kelas,
+        class_section: kelas,
+        classes: { name: kelas }
+      }
+      return {
+        ...r,
+        users: unifiedUser,
+        student: unifiedUser
+      }
+    })
+
     setExam(examData)
     setResultList(newRes)
     setLoading(false)
@@ -100,6 +132,7 @@ export default function ResultsView() {
       const updatedRes = []
       for (const r of currentRes) {
         const s = sessionMap[r.session_id] || sessionMap[r.student_id]
+        const mergedUser = r.users || r.student || s?.users
         if (s && s.answers) {
           const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers, qs)
           const { data: updated } = await results.update(r.id, {
@@ -108,13 +141,14 @@ export default function ResultsView() {
             breakdown: JSON.stringify(breakdown)
           })
           if (updated) {
-            updated.users = r.users
+            updated.users = mergedUser
+            updated.student = mergedUser
             updatedRes.push(updated)
           } else {
-            updatedRes.push({ ...r, auto_score: autoScore, max_auto_score: maxAutoScore, breakdown: JSON.stringify(breakdown) })
+            updatedRes.push({ ...r, auto_score: autoScore, max_auto_score: maxAutoScore, breakdown: JSON.stringify(breakdown), users: mergedUser, student: mergedUser })
           }
         } else {
-          updatedRes.push(r)
+          updatedRes.push({ ...r, users: mergedUser, student: mergedUser })
         }
       }
       setResultList(updatedRes)
@@ -145,9 +179,14 @@ export default function ResultsView() {
     } else if (key === 'pelanggaran') {
       aVal = a.violation_count || 0
       bVal = b.violation_count || 0
+    } else if (key === 'kelas') {
+      aVal = String(a.users?.classes?.name || a.users?.kelas || a.student?.kelas || '').toLowerCase()
+      bVal = String(b.users?.classes?.name || b.users?.kelas || b.student?.kelas || '').toLowerCase()
     } else {
-      aVal = String(a.users?.[key] || '').toLowerCase()
-      bVal = String(b.users?.[key] || '').toLowerCase()
+      const aName = a.users?.full_name || a.users?.name || a.student?.full_name || a.student?.name || ''
+      const bName = b.users?.full_name || b.users?.name || b.student?.full_name || b.student?.name || ''
+      aVal = String(a.users?.[key] || aName).toLowerCase()
+      bVal = String(b.users?.[key] || bName).toLowerCase()
     }
 
     if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
@@ -270,8 +309,15 @@ export default function ResultsView() {
                   return (
                     <tr key={r.id}>
                       <td className="text-muted no-print">{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>{r.users?.full_name || 'Siswa Dihapus'}</td>
-                      <td>{r.users?.classes?.name}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {r.users?.full_name || r.student?.full_name || r.users?.name || r.student?.name || (r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa')}
+                        {r.users?.username && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                            @{r.users.username}
+                          </div>
+                        )}
+                      </td>
+                      <td>{r.users?.classes?.name || r.users?.kelas || r.student?.kelas || '—'}</td>
                       <td className="no-print">{r.auto_score}</td>
                       <td className="no-print">
                         <div className="no-print">
@@ -318,7 +364,7 @@ export default function ResultsView() {
         <div className="modal-overlay" onClick={() => setSelectedResult(null)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 700 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0 }}>Jawaban {selectedResult.users?.name}</h3>
+              <h3 style={{ margin: 0 }}>Jawaban {selectedResult.users?.full_name || selectedResult.users?.name || selectedResult.student?.full_name || 'Siswa'}</h3>
               <button className="btn btn-ghost btn-sm" style={{ padding: '0.3rem' }} onClick={() => setSelectedResult(null)}><X size={18} /></button>
             </div>
             

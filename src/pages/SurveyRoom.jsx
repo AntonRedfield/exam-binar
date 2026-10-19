@@ -12,6 +12,7 @@ import QuestionCheckboxGrid from '../components/survey/QuestionCheckboxGrid'
 import QuestionMultipleChoice from '../components/survey/QuestionMultipleChoice'
 import QuestionCheckboxes from '../components/survey/QuestionCheckboxes'
 import QuestionDropdown from '../components/survey/QuestionDropdown'
+import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
 
 export default function SurveyRoom() {
   const { examId } = useParams()
@@ -28,6 +29,7 @@ export default function SurveyRoom() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [error, setError] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+  const [liveNotice, setLiveNotice] = useState(null)
 
   const answersRef = useRef({})
 
@@ -88,6 +90,36 @@ export default function SurveyRoom() {
     }
     load()
   }, [examId, user?.id, navigate])
+
+  // Realtime Live Sync: Update questions live if teacher makes changes
+  useEffect(() => {
+    if (!examId || loading || submitted) return
+    const unsubscribe = subscribeToExamLiveUpdates(examId, async () => {
+      try {
+        const [{ data: latestExam }, { data: latestQs }] = await Promise.all([
+          exams.getById(examId),
+          questions.listByExam(examId)
+        ])
+        if (latestExam) setExam(latestExam)
+        if (latestQs && latestQs.length > 0) {
+          setQuestionList(prev => {
+            if (prev.length === latestQs.length) {
+              return prev.map(pq => {
+                const u = latestQs.find(lq => lq.id === pq.id || (lq.number === pq.number && !lq.id))
+                return u ? { ...pq, ...u } : pq
+              })
+            }
+            return latestQs
+          })
+          setLiveNotice('Pertanyaan survei telah disesuaikan dengan pembaruan dari guru.')
+          setTimeout(() => setLiveNotice(null), 4000)
+        }
+      } catch (err) {
+        console.warn('[SurveyRoom] Live sync error:', err)
+      }
+    })
+    return () => unsubscribe()
+  }, [examId, loading, submitted])
 
   // Auto-save session answers every 15 seconds
   useEffect(() => {
@@ -290,6 +322,16 @@ export default function SurveyRoom() {
       <div className="survey-progress">
         <div className="survey-progress-bar" style={{ width: `${progressPct}%` }} />
       </div>
+
+      {liveNotice && (
+        <div style={{
+          maxWidth: 720, margin: '1rem auto 0', padding: '0.65rem 1rem',
+          background: '#ecfdf5', color: '#065f46', border: '1px solid #10b981',
+          borderRadius: 8, fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem'
+        }}>
+          <span>🔔 {liveNotice}</span>
+        </div>
+      )}
 
       {/* Survey info */}
       <main style={{ maxWidth: 720, margin: '0 auto', padding: '2rem 1rem' }}>

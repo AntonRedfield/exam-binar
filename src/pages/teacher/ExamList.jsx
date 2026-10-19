@@ -134,8 +134,13 @@ export default function ExamList() {
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           {(user.role === 'SUPERADMIN' || user.role === 'MODERATOR' || exam.created_by === user.id) && (
                             <>
-                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/edit/${exam.id}`)} title="Edit">
-                                <Edit2 size={13} />
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => navigate(`/teacher/edit/${exam.id}`)}
+                                title={exam.status === 'published' ? 'Live Edit Soal (Ujian Berlangsung)' : 'Edit'}
+                                style={exam.status === 'published' ? { color: '#059669', borderColor: '#a7f3d0' } : {}}
+                              >
+                                {exam.status === 'published' ? <Zap size={13} color="#059669" /> : <Edit2 size={13} />}
                               </button>
                               <button className="btn btn-ghost btn-sm" onClick={() => togglePublish(exam)} title={exam.status === 'published' ? 'Unpublish' : 'Publish'}>
                                 {exam.status === 'published' ? <Lock size={13} /> : <Globe size={13} />}

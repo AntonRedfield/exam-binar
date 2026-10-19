@@ -14,6 +14,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabase.js'
+import { broadcastExamLiveUpdate } from './liveExamSync.js'
 
 export const AUTOSAVE_STORAGE_PREFIX = 'binar_exam_teacher_draft_'
 
@@ -22,7 +23,14 @@ export function generateExamId(prefix = 'exam') {
 }
 
 export function generateQuestionId(prefix = 'q') {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0
+    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
 }
 
 /**
@@ -90,6 +98,14 @@ export function formatExamPayload(formData, user, options = {}) {
   const cleanTitle = (formData.title || '').trim()
   const fallbackTitle = buildDefaultDraftTitle(user, formData.mode)
 
+  // Status resolution:
+  // If options.status is provided, use it.
+  // Otherwise preserve formData.status (if already published/closed).
+  // Otherwise default to 'draft'.
+  const resolvedStatus = options.status !== undefined
+    ? options.status
+    : (formData.status || 'draft')
+
   const payload = {
     title: cleanTitle.length > 0 ? cleanTitle : fallbackTitle,
     information: (formData.information || '').trim() || null,
@@ -97,7 +113,7 @@ export function formatExamPayload(formData, user, options = {}) {
     duration_minutes: isSurvey ? 0 : (Number(formData.duration) || 60),
     passing_grade: isSurvey ? 0 : (Number(formData.passingGrade) || 60),
     target_kelas: targetStr,
-    status: options.status || formData.status || 'draft',
+    status: resolvedStatus,
     mode: formData.mode || 'exam',
     quiz_timer_type: formData.mode === 'quiz' ? (formData.quizTimerType || 'uniform') : 'uniform',
     monitoring_level: isSurvey ? 0 : (Number(formData.monitoringLevel) || 1),
@@ -136,8 +152,10 @@ export function formatExamPayload(formData, user, options = {}) {
  * @param {Object} params.formData - Current exam form state
  * @param {Array} params.questionItems - Current questions array
  * @param {Object} params.user - Current logged in user object
- * @param {boolean} [params.publish=false] - Whether this is a publish or draft save
- * @returns {Promise<{ success: boolean, examId: string, isNew: boolean, savedAt: Date, questionCount: number, error?: string }>}
+ * @param {boolean} [params.publish=false] - Whether this is an initial publish
+ * @param {boolean} [params.unpublish=false] - Whether to explicitly revert to draft
+ * @param {boolean} [params.isLiveApply=false] - Whether this is a live apply update during active exam
+ * @returns {Promise<{ success: boolean, examId: string, isNew: boolean, savedAt: Date, questionCount: number, status: string, error?: string }>}
  */
 export async function saveExamDraftToSupabase({
   examId,
@@ -145,6 +163,8 @@ export async function saveExamDraftToSupabase({
   questionItems,
   user,
   publish = false,
+  unpublish = false,
+  isLiveApply = false,
 }) {
   if (!isSupabaseConfigured || !supabase) {
     return {
@@ -156,7 +176,24 @@ export async function saveExamDraftToSupabase({
   const isSurvey = formData.mode === 'survey'
   const isNew = !examId
   const targetExamId = examId || generateExamId('exam')
-  const examPayload = formatExamPayload(formData, user, { status: publish ? 'published' : 'draft' })
+
+  // Resolve target status:
+  // - If explicitly unpublishing: 'draft'
+  // - If publish is true: 'published'
+  // - If exam is already published or closed: KEEP current status so it NEVER autounpublishes!
+  // - Otherwise: 'draft'
+  let targetStatus = 'draft'
+  if (unpublish) {
+    targetStatus = 'draft'
+  } else if (publish) {
+    targetStatus = 'published'
+  } else if (formData?.status === 'published' || formData?.status === 'closed') {
+    targetStatus = formData.status
+  } else {
+    targetStatus = formData?.status || 'draft'
+  }
+
+  const examPayload = formatExamPayload(formData, user, { status: targetStatus })
 
   try {
     if (isNew) {
@@ -197,24 +234,66 @@ export async function saveExamDraftToSupabase({
       )
     )
 
-    // Replace questions for this exam
-    const { error: delErr } = await supabase
+    // Safe Question Sync (Prevent deleting questions during active exam)
+    // 1. Fetch current questions in DB for this exam
+    const { data: existingQs, error: fetchErr } = await supabase
       .from('questions')
-      .delete()
+      .select('id, number')
       .eq('exam_id', targetExamId)
 
-    if (delErr) {
-      console.warn('[Autosave] Warning deleting previous questions:', delErr)
+    if (fetchErr) {
+      console.warn('[Autosave] Warning fetching existing questions:', fetchErr)
     }
 
-    if (preparedQuestions.length > 0) {
-      const { error: insErr } = await supabase
-        .from('questions')
-        .insert(preparedQuestions)
+    const existingIdSet = new Set((existingQs || []).map(q => q.id).filter(Boolean))
+    const currentIdSet = new Set(preparedQuestions.map(q => q.id).filter(Boolean))
 
-      if (insErr) {
-        throw new Error(`Gagal menyimpan butir soal: ${insErr.message}`)
+    // 2. Delete ONLY questions that were explicitly removed by the teacher
+    const idsToDelete = [...existingIdSet].filter(id => !currentIdSet.has(id))
+    if (idsToDelete.length > 0) {
+      const { error: delErr } = await supabase
+        .from('questions')
+        .delete()
+        .in('id', idsToDelete)
+
+      if (delErr) {
+        console.warn('[Autosave] Warning deleting removed questions:', delErr)
       }
+    }
+
+    // 3. Upsert questions (updates matching question IDs in place, inserts newly added ones)
+    if (preparedQuestions.length > 0) {
+      const { error: upsertErr } = await supabase
+        .from('questions')
+        .upsert(preparedQuestions, { onConflict: 'id' })
+
+      if (upsertErr) {
+        console.warn('[Autosave] Upsert error, trying individual update/insert fallback:', upsertErr)
+        for (const pq of preparedQuestions) {
+          if (existingIdSet.has(pq.id)) {
+            const { error: upErr } = await supabase
+              .from('questions')
+              .update(pq)
+              .eq('id', pq.id)
+            if (upErr) console.warn('[Autosave] Fallback update error for question', pq.number, upErr)
+          } else {
+            const { error: inErr } = await supabase
+              .from('questions')
+              .insert([pq])
+            if (inErr) console.warn('[Autosave] Fallback insert error for question', pq.number, inErr)
+          }
+        }
+      }
+    }
+
+    // 4. If exam is published (live) or live apply triggered, broadcast update to all connected students
+    if (targetStatus === 'published' || isLiveApply) {
+      broadcastExamLiveUpdate(targetExamId, {
+        type: 'LIVE_QUESTIONS_UPDATED',
+        examId: targetExamId,
+        timestamp: Date.now(),
+        message: 'Soal ujian telah diperbarui secara langsung oleh guru pengawas.'
+      }).catch(err => console.warn('[Autosave] Broadcast failed:', err))
     }
 
     const savedAt = new Date()
@@ -226,6 +305,7 @@ export async function saveExamDraftToSupabase({
       questionItems,
       savedAt: savedAt.getTime(),
       syncedWithSupabase: true,
+      status: targetStatus,
     })
 
     return {
@@ -234,6 +314,7 @@ export async function saveExamDraftToSupabase({
       isNew,
       savedAt,
       questionCount: preparedQuestions.length,
+      status: targetStatus,
     }
   } catch (err) {
     console.error('[Autosave] Error saving to Supabase:', err)

@@ -17,9 +17,15 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
-  Clock,
-  Timer
+  Timer,
+  Edit2,
+  Zap,
+  Save,
+  CheckCircle2,
+  X
 } from 'lucide-react'
+import { questions } from '../../lib/db'
+import { liveUpdateSingleQuestion } from '../../lib/liveExamSync'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 import {
@@ -102,6 +108,15 @@ export default function Monitor() {
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [, setTimerTick] = useState(0)
 
+  // Quick Live Edit State
+  const [quickEditOpen, setQuickEditOpen] = useState(false)
+  const [examQuestions, setExamQuestions] = useState([])
+  const [selectedQIndex, setSelectedQIndex] = useState(0)
+  const [editingQ, setEditingQ] = useState(null)
+  const [quickSaving, setQuickSaving] = useState(false)
+  const [quickNotice, setQuickNotice] = useState('')
+  const [quickError, setQuickError] = useState('')
+
   // 1-second countdown tick for live token timer
   useEffect(() => {
     const timer = setInterval(() => {
@@ -145,6 +160,69 @@ export default function Monitor() {
     })
     return () => { ignore = true }
   }, [examId])
+
+  // Open Quick Live Edit & load questions
+  const openQuickEdit = async () => {
+    setQuickEditOpen(true)
+    setQuickError('')
+    setQuickNotice('')
+    try {
+      const { data: qs } = await questions.listByExam(examId)
+      const list = qs || []
+      setExamQuestions(list)
+      if (list.length > 0) {
+        setSelectedQIndex(0)
+        setEditingQ(JSON.parse(JSON.stringify(list[0])))
+      }
+    } catch (err) {
+      setQuickError('Gagal memuat butir soal: ' + err.message)
+    }
+  }
+
+  const handleSelectQuestion = (idx) => {
+    setSelectedQIndex(idx)
+    if (examQuestions[idx]) {
+      setEditingQ(JSON.parse(JSON.stringify(examQuestions[idx])))
+      setQuickNotice('')
+      setQuickError('')
+    }
+  }
+
+  const handleQuickApply = async () => {
+    if (!editingQ?.id) return
+    setQuickSaving(true)
+    setQuickError('')
+    setQuickNotice('')
+    try {
+      const res = await liveUpdateSingleQuestion(examId, editingQ.id, {
+        number: Number(editingQ.number) || 1,
+        question_text: editingQ.question_text || '',
+        options: editingQ.options || null,
+        option_images: editingQ.option_images || {},
+        correct_answer: editingQ.correct_answer,
+        points: Number(editingQ.points) || 1,
+        image_url: editingQ.image_url || null,
+      })
+
+      if (!res.success) throw new Error(res.error)
+
+      setQuickNotice(`✅ Soal No. ${editingQ.number} berhasil diperbarui & langsung diterapkan ke seluruh siswa!`)
+
+      // Refresh local questions list
+      const { data: qs } = await questions.listByExam(examId)
+      if (qs) {
+        setExamQuestions(qs)
+        if (qs[selectedQIndex]) {
+          setEditingQ(JSON.parse(JSON.stringify(qs[selectedQIndex])))
+        }
+      }
+      setTimeout(() => setQuickNotice(''), 4500)
+    } catch (err) {
+      setQuickError(err.message || 'Gagal menerapkan perubahan butir soal')
+    } finally {
+      setQuickSaving(false)
+    }
+  }
 
   // Refresh every 10s for student session states
   useEffect(() => {
@@ -340,7 +418,34 @@ export default function Monitor() {
               </div>
             </div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={load}><RefreshCcw size={15} /> Refresh</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-gold btn-sm"
+              onClick={openQuickEdit}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: 'linear-gradient(135deg, #059669, #047857)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 700,
+                boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)'
+              }}
+              title="Koreksi nomor soal, teks narasi, opsi, atau kunci jawaban secara langsung"
+            >
+              <Zap size={14} /> Live Edit Soal
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => navigate(`/teacher/edit/${examId}`)}
+              title="Buka Question Maker lengkap"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <Edit2 size={13} /> Edit Lengkap
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={load}><RefreshCcw size={15} /> Refresh</button>
+          </div>
         </div>
       </div>
 
@@ -752,7 +857,7 @@ export default function Monitor() {
                   return (
                     <tr key={sess.id} style={isReturnee ? { background: 'rgba(239, 68, 68, 0.04)' } : {}}>
                       <td style={{ fontWeight: 600 }}>
-                        {sess.users?.full_name || sess.users?.name || 'Siswa Dihapus'}
+                        {sess.users?.full_name || sess.users?.name || (sess.student_id ? `Siswa (${sess.student_id.slice(0, 8)})` : 'Siswa')}
                         {sess.users?.username && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
                             @{sess.users.username}
@@ -837,6 +942,348 @@ export default function Monitor() {
           </div>
         </div>
       </div>
+
+      {/* Quick Live Edit Modal */}
+      {quickEditOpen && (
+        <div className="modal-overlay" style={{ zIndex: 99999, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="modal card" style={{ maxWidth: 840, width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', border: '1.5px solid #10b981', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+            
+            {/* Modal Header */}
+            <div style={{ padding: '1.25rem 1.5rem', background: 'linear-gradient(90deg, #064e3b, #065f46)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #047857' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255, 255, 255, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Zap size={20} color="#fef08a" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    Quick Live Edit Soal
+                    <span className="badge badge-active" style={{ fontSize: '0.68rem', background: '#d1fae5', color: '#065f46' }}>
+                      <span className="live-pulse-dot" /> AKTIF
+                    </span>
+                  </h3>
+                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.78rem', color: '#a7f3d0' }}>
+                    Perbaiki nomor, teks soal, opsi, atau kunci jawaban saat ujian berlangsung tanpa membatalkan publikasi ujian.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setQuickEditOpen(false)}
+                style={{ color: '#ffffff', padding: '0.3rem', minHeight: 'auto' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Notification alert */}
+            {quickNotice && (
+              <div style={{ padding: '0.75rem 1.5rem', background: '#ecfdf5', color: '#065f46', borderBottom: '1px solid #a7f3d0', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle2 size={16} color="#059669" />
+                <span>{quickNotice}</span>
+              </div>
+            )}
+            {quickError && (
+              <div style={{ padding: '0.75rem 1.5rem', background: '#fef2f2', color: '#991b1b', borderBottom: '1px solid #fecaca', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertTriangle size={16} color="#dc2626" />
+                <span>{quickError}</span>
+              </div>
+            )}
+
+            {/* Modal Body */}
+            <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              
+              {/* Question list sidebar */}
+              <div style={{ width: 180, borderRight: '1px solid var(--border)', background: 'var(--bg-card)', padding: '0.75rem', overflowY: 'auto' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Daftar Soal ({examQuestions.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  {examQuestions.map((q, idx) => {
+                    const isSelected = idx === selectedQIndex
+                    return (
+                      <button
+                        key={q.id || idx}
+                        type="button"
+                        onClick={() => handleSelectQuestion(idx)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.45rem 0.65rem',
+                          borderRadius: '6px',
+                          border: isSelected ? '1.5px solid #10b981' : '1px solid var(--border)',
+                          background: isSelected ? '#ecfdf5' : '#ffffff',
+                          color: isSelected ? '#065f46' : 'var(--text)',
+                          fontWeight: isSelected ? 700 : 500,
+                          fontSize: '0.82rem',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <span>Soal #{q.number || idx + 1}</span>
+                        <span style={{ fontSize: '0.65rem', opacity: 0.8, textTransform: 'uppercase' }}>
+                          {q.type === 'COMPLEX_MCQ' ? 'Multi' : q.type}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Question editor pane */}
+              <div style={{ flex: 1, padding: '1.25rem 1.5rem', overflowY: 'auto' }}>
+                {editingQ ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    
+                    {/* Top Row: Question Number & Points */}
+                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                      <div style={{ width: 140 }}>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                          Nomor Urut Soal:
+                        </label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={editingQ.number}
+                          onChange={e => setEditingQ(prev => ({ ...prev, number: parseInt(e.target.value) || 1 }))}
+                          style={{ padding: '0.4rem 0.6rem', fontSize: '0.88rem', fontWeight: 700 }}
+                        />
+                      </div>
+                      <div style={{ width: 120 }}>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                          Bobot Poin:
+                        </label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          className="form-control"
+                          value={editingQ.points}
+                          onChange={e => setEditingQ(prev => ({ ...prev, points: parseFloat(e.target.value) || 1 }))}
+                          style={{ padding: '0.4rem 0.6rem', fontSize: '0.88rem' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, textAlign: 'right' }}>
+                        <span className="badge badge-gold" style={{ fontSize: '0.72rem' }}>
+                          Tipe: {editingQ.type}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Question text */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                        Teks / Narasi Pertanyaan:
+                      </label>
+                      <textarea
+                        className="form-control"
+                        rows={3}
+                        value={editingQ.question_text || ''}
+                        onChange={e => setEditingQ(prev => ({ ...prev, question_text: e.target.value }))}
+                        placeholder="Ketik teks pertanyaan..."
+                        style={{ fontSize: '0.9rem', lineHeight: 1.5, fontFamily: 'inherit' }}
+                      />
+                    </div>
+
+                    {/* Options editing for MCQ / COMPLEX_MCQ */}
+                    {['MCQ', 'COMPLEX_MCQ'].includes(editingQ.type) && editingQ.options && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                          Pilihan Jawaban (Opsi):
+                        </label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {Object.keys(editingQ.options).map((key) => {
+                            const isMcq = editingQ.type === 'MCQ'
+                            const isCorrect = isMcq
+                              ? editingQ.correct_answer === key
+                              : Array.isArray(editingQ.correct_answer) && editingQ.correct_answer.includes(key)
+
+                            return (
+                              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isMcq) {
+                                      setEditingQ(prev => ({ ...prev, correct_answer: key }))
+                                    } else {
+                                      const cur = Array.isArray(editingQ.correct_answer) ? [...editingQ.correct_answer] : []
+                                      const next = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key]
+                                      setEditingQ(prev => ({ ...prev, correct_answer: next }))
+                                    }
+                                  }}
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: '6px',
+                                    fontWeight: 800,
+                                    fontSize: '0.85rem',
+                                    border: isCorrect ? '2px solid #059669' : '1px solid var(--border)',
+                                    background: isCorrect ? '#10b981' : '#f1f5f9',
+                                    color: isCorrect ? '#ffffff' : 'var(--text)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                  }}
+                                  title={isCorrect ? 'Kunci jawaban benar' : 'Klik untuk jadikan kunci jawaban benar'}
+                                >
+                                  {key}
+                                </button>
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  value={editingQ.options[key] || ''}
+                                  onChange={e => {
+                                    const val = e.target.value
+                                    setEditingQ(prev => ({
+                                      ...prev,
+                                      options: { ...prev.options, [key]: val }
+                                    }))
+                                  }}
+                                  placeholder={`Teks pilihan ${key}...`}
+                                  style={{ flex: 1, padding: '0.4rem 0.65rem', fontSize: '0.88rem' }}
+                                />
+                                {isCorrect && (
+                                  <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 700, flexShrink: 0 }}>
+                                    ✓ KUNCI BENAR
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* True / False correct answer selector */}
+                    {editingQ.type === 'TRUE_FALSE' && editingQ.options && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                          Pernyataan & Kunci Benar / Salah:
+                        </label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {Object.keys(editingQ.options).map((key, i) => {
+                            const curAns = editingQ.correct_answer?.[key] || 'true'
+                            return (
+                              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f8fafc', padding: '0.5rem', borderRadius: 8 }}>
+                                <span style={{ fontWeight: 700, fontSize: '0.8rem', width: 24 }}>#{i + 1}</span>
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  value={editingQ.options[key] || ''}
+                                  onChange={e => {
+                                    const val = e.target.value
+                                    setEditingQ(prev => ({
+                                      ...prev,
+                                      options: { ...prev.options, [key]: val }
+                                    }))
+                                  }}
+                                  style={{ flex: 1, padding: '0.35rem 0.55rem', fontSize: '0.85rem' }}
+                                />
+                                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingQ(prev => ({
+                                        ...prev,
+                                        correct_answer: { ...(prev.correct_answer || {}), [key]: 'true' }
+                                      }))
+                                    }}
+                                    className={`btn btn-xs ${curAns === 'true' ? 'btn-success' : 'btn-ghost'}`}
+                                    style={{ fontSize: '0.72rem', fontWeight: 700 }}
+                                  >
+                                    Benar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingQ(prev => ({
+                                        ...prev,
+                                        correct_answer: { ...(prev.correct_answer || {}), [key]: 'false' }
+                                      }))
+                                    }}
+                                    className={`btn btn-xs ${curAns === 'false' ? 'btn-danger' : 'btn-ghost'}`}
+                                    style={{ fontSize: '0.72rem', fontWeight: 700 }}
+                                  >
+                                    Salah
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Image URL (Optional) */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                        URL Gambar Soal (Google Drive / Link langsung):
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={editingQ.image_url || ''}
+                        onChange={e => setEditingQ(prev => ({ ...prev, image_url: e.target.value }))}
+                        placeholder="https://drive.google.com/file/d/..."
+                        style={{ padding: '0.4rem 0.6rem', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                    Pilih butir soal di samping untuk mulai mengedit.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div style={{ padding: '1rem 1.5rem', background: '#f8fafc', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate(`/teacher/edit/${examId}`)}
+                style={{ fontSize: '0.82rem' }}
+              >
+                <Edit2 size={13} /> Buka Question Maker Lengkap
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setQuickEditOpen(false)}
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gold btn-sm"
+                  onClick={handleQuickApply}
+                  disabled={quickSaving || !editingQ}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    background: 'linear-gradient(135deg, #059669, #047857)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 700,
+                    padding: '0.45rem 1rem',
+                    boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)'
+                  }}
+                >
+                  <Zap size={14} />
+                  <span>{quickSaving ? 'Menerapkan...' : '⚡ Terapkan Langsung ke Siswa'}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
     </>
   )
 }
