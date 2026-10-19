@@ -686,13 +686,28 @@ export const questions = {
 
 export async function fetchStudentProfilesMap(studentIds) {
   if (!isSupabaseConfigured || !supabase) return {}
-  const validIds = Array.from(new Set(studentIds)).filter(Boolean)
-  if (validIds.length === 0) return {}
+  const rawIds = Array.from(new Set(studentIds)).filter(Boolean)
+  if (rawIds.length === 0) return {}
   try {
-    const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
-    const uuidIds = validIds.filter(isUuid)
+    const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str).trim())
+    const uuidIds = rawIds.filter(isUuid).map(id => String(id).trim().toLowerCase())
 
     const map = {}
+    const addProfileToMap = (p) => {
+      if (!p) return
+      if (p.id) {
+        map[p.id] = p
+        map[String(p.id).toLowerCase()] = p
+      }
+      if (p.username) {
+        map[p.username] = p
+        map[String(p.username).toLowerCase()] = p
+      }
+      if (p.email) {
+        map[p.email] = p
+        map[String(p.email).toLowerCase()] = p
+      }
+    }
 
     if (uuidIds.length > 0) {
       const { data: uuidMatches, error: uuidErr } = await supabase
@@ -702,28 +717,33 @@ export async function fetchStudentProfilesMap(studentIds) {
 
       if (!uuidErr && uuidMatches) {
         for (const p of uuidMatches) {
-          if (p.id) map[p.id] = p
-          if (p.username) map[p.username] = p
+          addProfileToMap(p)
         }
       }
     }
 
-    const missing = validIds.filter(id => !map[id])
+    const missing = rawIds.filter(id => !map[id] && !map[String(id).toLowerCase()])
     if (missing.length > 0) {
       const { data: userMatches, error: userErr } = await supabase
         .from('profiles')
         .select('*')
-        .in('username', missing)
+        .in('username', missing.map(m => String(m).trim().toLowerCase()))
 
       if (!userErr && userMatches) {
         for (const p of userMatches) {
-          if (p.username) map[p.username] = p
-          if (p.id) map[p.id] = p
+          addProfileToMap(p)
         }
       }
     }
 
-    return map
+    return new Proxy(map, {
+      get(target, prop) {
+        if (typeof prop === 'string') {
+          return target[prop] || target[prop.trim()] || target[prop.trim().toLowerCase()] || null
+        }
+        return target[prop]
+      }
+    })
   } catch (err) {
     console.warn('[DB] fetchStudentProfilesMap exception:', err)
     return {}
