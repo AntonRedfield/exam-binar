@@ -75,42 +75,47 @@ export function getTabInstanceId() {
  * Generates a unique token, saves it locally, and updates profiles table in Supabase.
  */
 export async function registerActiveSession(userId, level) {
-  if (!isSingleSessionEnforced(level)) {
-    setLocalSessionToken(null)
-    return null
-  }
-
-  const token = `ds_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  const isEnforced = isSingleSessionEnforced(level)
+  const token = isEnforced ? `ds_${Date.now()}_${Math.random().toString(36).slice(2, 10)}` : null
   const tabId = `tab_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 
-  setLocalSessionToken(token)
-  try {
-    sessionStorage.setItem(TAB_ID_KEY, tabId)
-    // Claim tab lock
-    localStorage.setItem(
-      `${TAB_LOCK_PREFIX}${userId}`,
-      JSON.stringify({ tabId, token, time: Date.now() })
-    )
-  } catch (e) {}
+  if (isEnforced) {
+    setLocalSessionToken(token)
+    try {
+      sessionStorage.setItem(TAB_ID_KEY, tabId)
+      // Claim tab lock
+      localStorage.setItem(
+        `${TAB_LOCK_PREFIX}${userId}`,
+        JSON.stringify({ tabId, token, time: Date.now() })
+      )
+    } catch (e) {}
+  } else {
+    setLocalSessionToken(null)
+  }
 
-  if (isSupabaseConfigured && supabase) {
+  // ALWAYS update last_login_at and last_login_device for ALL users (including Teachers & Admins)
+  if (isSupabaseConfigured && supabase && userId) {
     try {
       const deviceName = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 150) : 'web'
+      const updateData = {
+        last_login_at: new Date().toISOString(),
+        last_login_device: deviceName
+      }
+      if (isEnforced && token) {
+        updateData.active_session_id = token
+      }
+
       await supabase
         .from('profiles')
-        .update({
-          active_session_id: token,
-          last_login_at: new Date().toISOString(),
-          last_login_device: deviceName
-        })
+        .update(updateData)
         .eq('id', userId)
     } catch (err) {
-      console.warn('[SessionGuard] Failed to register active_session_id in database:', err)
+      console.warn('[SessionGuard] Failed to register login in database:', err)
     }
   }
 
-  // Broadcast to any other open tabs on this browser to terminate immediately
-  if (typeof BroadcastChannel !== 'undefined') {
+  // Broadcast to any other open tabs on this browser if single session is enforced
+  if (isEnforced && typeof BroadcastChannel !== 'undefined') {
     try {
       const bc = new BroadcastChannel(CHANNEL_NAME)
       bc.postMessage({
