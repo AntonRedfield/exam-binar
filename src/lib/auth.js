@@ -137,15 +137,18 @@ export async function login(username, password) {
   let email = usernameToEmail(cleanUsername)
 
   // ── Pre-login resolution via Supabase RPC ──────────────────────────────
-  // Resolves identifier (username / student ID / NISN / full name / email),
-  // and dynamically synchronizes student password if using default 'password' or student ID
+  // Resolves identifier (username / student ID / NISN / full name / email).
+  // IMPORTANT: We pass p_password: '' so that prepare_student_login does NOT
+  // overwrite user passwords with default credentials during identifier resolution.
+  let prepResult = null
   try {
-    const { data: prepResult, error: prepError } = await supabase.rpc('prepare_student_login', {
+    const { data: res, error: prepError } = await supabase.rpc('prepare_student_login', {
       p_identifier: cleanUsername,
-      p_password: cleanPassword
+      p_password: ''
     })
-    if (!prepError && prepResult?.found && prepResult?.email) {
-      email = prepResult.email
+    if (!prepError && res?.found && res?.email) {
+      prepResult = res
+      email = res.email
     }
   } catch (rpcErr) {
     console.warn('[Auth] prepare_student_login RPC call skipped or failed:', rpcErr?.message)
@@ -160,6 +163,35 @@ export async function login(username, password) {
   } catch (netErr) {
     console.error('[Auth] Network error during sign-in:', netErr)
     throw new Error(`Tidak dapat terhubung ke server autentikasi (${netErr?.message || 'network error'}).`)
+  }
+
+  // If initial sign-in fails, check if this is an uncustomized student/officer account
+  // (Level 1 or 2) who needs dynamic default credential synchronization.
+  // CRITICAL: We NEVER trigger this fallback for Teachers (Level 3) or Admin (Level 4),
+  // ensuring their custom passwords are fully respected and old/default passwords are rejected.
+  if (
+    error &&
+    prepResult?.found &&
+    (prepResult?.role_level === null || Number(prepResult?.role_level) <= 2)
+  ) {
+    try {
+      const { data: retryPrep } = await supabase.rpc('prepare_student_login', {
+        p_identifier: cleanUsername,
+        p_password: cleanPassword
+      })
+      if (retryPrep?.found) {
+        const retryResult = await supabase.auth.signInWithPassword({
+          email: retryPrep.email || email,
+          password: cleanPassword
+        })
+        if (!retryResult.error && retryResult.data?.user && retryResult.data?.session) {
+          data = retryResult.data
+          error = null
+        }
+      }
+    } catch (retryErr) {
+      console.warn('[Auth] Student credential sync retry skipped:', retryErr?.message)
+    }
   }
 
   if (error || !data?.user || !data?.session) {
@@ -485,12 +517,34 @@ export async function updateOwnPassword(newPassword) {
 
   const cleanPassword = newPassword.trim()
   const { data, error } = await supabase.auth.updateUser({
-    password: cleanPassword
+    password: cleanPassword,
+    data: {
+      has_custom_password: true,
+      password_updated_at: new Date().toISOString()
+    }
   })
 
   if (error) {
     console.error('[Auth] updateOwnPassword error:', error)
     throw new Error(error.message || 'Gagal mengubah password.')
+  }
+
+  // Keep local session storage in sync with updated user metadata
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+    if (raw) {
+      const session = JSON.parse(raw)
+      if (session?.user) {
+        session.user.user_metadata = {
+          ...session.user.user_metadata,
+          has_custom_password: true,
+          password_updated_at: new Date().toISOString()
+        }
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
+      }
+    }
+  } catch (syncErr) {
+    console.warn('[Auth] Error updating cached session metadata:', syncErr)
   }
 
   return { success: true, message: 'Password berhasil diperbarui!' }

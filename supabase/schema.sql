@@ -474,24 +474,15 @@ BEGIN
     END IF;
   END IF;
 
-  -- Dynamic password synchronization for standard default credentials across all roles
+  -- Dynamic password synchronization for default credentials (strictly for Students/Officers Level 1 & 2 only)
+  -- Teachers (Level 3) and Admins (Level 4) MUST NEVER have their passwords dynamically overwritten.
   IF (
-    -- Students (Level 1) & Officers (Level 2)
+    -- Students (Level 1) & Officers (Level 2) only
     ((v_role_level IS NULL OR v_role_level <= 2) AND (
       lower(p_password) IN ('password', '123456', '12345678')
       OR lower(p_password) = lower(v_username) 
       OR lower(p_password) = lower(v_clean_ident)
       OR lower(regexp_replace(p_password, '[\s\-_]', '', 'g')) = lower(regexp_replace(v_username, '[\s\-_]', '', 'g'))
-    ))
-    -- Teachers (Level 3)
-    OR (v_role_level = 3 AND (
-      lower(p_password) = 'password'
-      OR lower(p_password) = lower(v_username)
-    ))
-    -- Admin (Level 4)
-    OR (v_role_level = 4 AND (
-      lower(p_password) IN ('password', 'admin')
-      OR lower(p_password) = lower(v_username)
     ))
   ) THEN
     v_enc_pass := extensions.crypt(p_password, extensions.gen_salt('bf', 10));

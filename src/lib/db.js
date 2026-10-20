@@ -25,6 +25,8 @@ import {
   sanitizeReturneeToken,
   getExamTokenInfo
 } from './returnee.js'
+import { broadcastExamLiveUpdate } from './liveExamSync.js'
+import { getCurrentUser } from './auth.js'
 
 // ─── Clean up any conflicting legacy local mock storage ─────────────────────
 try {
@@ -914,8 +916,17 @@ export const sessions = {
     return { data: created, error: null }
   },
 
-  // Accepts reset(sessionId) or reset(studentId, examId)
+  // Accepts reset(sessionId) or reset(studentId, examId) — strictly restricted to Admin account only
   reset: async (sessionIdOrStudentId, examId) => {
+    const currentUser = getCurrentUser()
+    const isAdmin = currentUser?.level === 4 || currentUser?.role === 'SUPERADMIN' || currentUser?.dbRole === 'admin' || currentUser?.role === 'admin'
+    if (currentUser && !isAdmin) {
+      return {
+        data: null,
+        error: { message: 'Akses ditolak: Fitur reset sesi ujian hanya diizinkan untuk akun Admin guna mencegah terhapusnya jawaban siswa secara tidak sengaja.' }
+      }
+    }
+
     let sessionId = sessionIdOrStudentId
     if (examId) {
       const { data: existing } = await sessions.get(sessionIdOrStudentId, examId)
@@ -932,6 +943,96 @@ export const sessions = {
       returnee_token: null,
       returnee_reason: null
     })
+  },
+
+  // Add extra time to a student's session (in minute units) without resetting existing answers
+  addExtraTime: async (sessionIdOrStudentId, extraMinutes, examId = null) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    let session = null
+    const { data: byId } = await sessions.getById(sessionIdOrStudentId)
+    if (byId) {
+      session = byId
+    } else if (examId) {
+      const { data: byStudent } = await sessions.get(sessionIdOrStudentId, examId)
+      session = byStudent
+    }
+    if (!session) return { data: null, error: { message: 'Sesi ujian tidak ditemukan' } }
+
+    const minutes = Number(extraMinutes) || 0
+    if (minutes <= 0) {
+      return { data: null, error: { message: 'Jumlah menit tambahan harus lebih dari 0' } }
+    }
+
+    const now = Date.now()
+    const currentEnd = session.end_timestamp ? new Date(session.end_timestamp).getTime() : now
+    // If the session is already expired or ended, start the extra time from NOW.
+    // If it's still running, extend from the current end_timestamp.
+    const baseTime = currentEnd < now ? now : currentEnd
+    const newEndTimestamp = new Date(baseTime + minutes * 60 * 1000).toISOString()
+
+    const updatePayload = {
+      status: 'active',
+      end_timestamp: newEndTimestamp,
+      returnee_token_required: false,
+      returnee_token: null,
+      returnee_reason: null,
+      returnee_unlocked_at: new Date().toISOString(),
+      last_sync: new Date().toISOString()
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('exam_sessions')
+      .update(updatePayload)
+      .eq('id', session.id)
+      .select()
+      .single()
+
+    if (updateErr) return { data: null, error: updateErr }
+
+    // If an auto-submitted premature result exists, remove it so the student can complete the exam
+    try {
+      await supabase
+        .from('results')
+        .delete()
+        .eq('student_id', session.student_id)
+        .eq('exam_id', session.exam_id)
+    } catch (delErr) {
+      console.warn('[DB] Failed to remove premature result on extra time grant:', delErr)
+    }
+
+    // Broadcast live event to open exam room
+    try {
+      await broadcastExamLiveUpdate(session.exam_id, {
+        type: 'EXTRA_TIME_GRANTED',
+        studentId: session.student_id,
+        sessionId: session.id,
+        extraMinutes: minutes,
+        newEndTimestamp,
+        message: `Pengawas telah menambahkan waktu ujian sebesar +${minutes} menit.`
+      })
+    } catch (bcErr) {
+      console.warn('[DB] Broadcast extra time event error:', bcErr)
+    }
+
+    return { data: updated, error: null, newEndTimestamp }
+  },
+
+  // Bulk add extra time for multiple sessions
+  addExtraTimeBulk: async (sessionIds, extraMinutes, examId = null) => {
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      return { data: [], error: { message: 'Daftar sesi kosong' } }
+    }
+    const resultsList = []
+    const errors = []
+    for (const sid of sessionIds) {
+      const res = await sessions.addExtraTime(sid, extraMinutes, examId)
+      if (res.error) {
+        errors.push({ id: sid, error: res.error.message })
+      } else {
+        resultsList.push(res.data)
+      }
+    }
+    return { data: resultsList, errors: errors.length > 0 ? errors : null, success: resultsList.length > 0 }
   },
 
   // Returnee helpers

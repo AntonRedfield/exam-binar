@@ -31,7 +31,7 @@ import {
   getTimeReduction
 } from '../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
-import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut, Sparkles } from 'lucide-react'
+import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut, Sparkles, Clock } from 'lucide-react'
 import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
 
 // Simple seeded PRNG based on string
@@ -133,6 +133,10 @@ export default function ExamRoom() {
   // Live Exam Question Sync (Teacher edits during active exam)
   const [liveEditNotice, setLiveEditNotice] = useState(null)
   const liveNoticeTimeoutRef = useRef(null)
+
+  // Extra Time Granted Notification state
+  const [extraTimeNotice, setExtraTimeNotice] = useState(null)
+  const extraNoticeTimeoutRef = useRef(null)
 
   // Passive Autosave Notice state
   const [lastSaved, setLastSaved] = useState(null) // { qNum, timeStr }
@@ -344,14 +348,83 @@ export default function ExamRoom() {
 
   useEffect(() => {
     if (!examId || loading) return
-    const unsubscribe = subscribeToExamLiveUpdates(examId, () => {
-      refreshQuestionsLive()
+    const unsubscribe = subscribeToExamLiveUpdates(examId, (payload) => {
+      if (payload?.type === 'EXTRA_TIME_GRANTED') {
+        const isTarget = !payload.studentId || payload.studentId === user?.id
+        if (isTarget && payload.newEndTimestamp) {
+          setSession(prev => prev ? ({
+            ...prev,
+            end_timestamp: payload.newEndTimestamp,
+            status: 'active',
+            returnee_token_required: false
+          }) : prev)
+          if (sessionRef.current) {
+            sessionRef.current.end_timestamp = payload.newEndTimestamp
+            sessionRef.current.status = 'active'
+            sessionRef.current.returnee_token_required = false
+          }
+          setTimeUp(false)
+          setSubmitting(false)
+          submitLock.current = false
+          setExtraTimeNotice({
+            minutes: payload.extraMinutes || 10,
+            message: payload.message || `Pengawas telah menambahkan waktu ujian +${payload.extraMinutes} menit.`
+          })
+          if (extraNoticeTimeoutRef.current) clearTimeout(extraNoticeTimeoutRef.current)
+          extraNoticeTimeoutRef.current = setTimeout(() => setExtraTimeNotice(null), 8000)
+        }
+      } else {
+        refreshQuestionsLive()
+      }
     })
     return () => {
       unsubscribe()
       if (liveNoticeTimeoutRef.current) clearTimeout(liveNoticeTimeoutRef.current)
+      if (extraNoticeTimeoutRef.current) clearTimeout(extraNoticeTimeoutRef.current)
     }
-  }, [examId, loading, refreshQuestionsLive])
+  }, [examId, loading, refreshQuestionsLive, user?.id])
+
+  // Fallback heartbeat to detect extra time if realtime websocket event was missed
+  useEffect(() => {
+    if (!user?.id || !examId || loading) return
+    const interval = setInterval(async () => {
+      try {
+        const { data: latestSess } = await sessions.get(user.id, examId)
+        if (latestSess?.end_timestamp) {
+          const serverEnd = new Date(latestSess.end_timestamp).getTime()
+          const currentEnd = sessionRef.current?.end_timestamp ? new Date(sessionRef.current.end_timestamp).getTime() : 0
+          if (serverEnd > currentEnd + 15000) {
+            const extraMins = Math.round((serverEnd - currentEnd) / 60000)
+            setSession(prev => prev ? ({
+              ...prev,
+              end_timestamp: latestSess.end_timestamp,
+              status: 'active',
+              returnee_token_required: false
+            }) : latestSess)
+            if (sessionRef.current) {
+              sessionRef.current.end_timestamp = latestSess.end_timestamp
+              sessionRef.current.status = 'active'
+              sessionRef.current.returnee_token_required = false
+            }
+            setTimeUp(false)
+            setSubmitting(false)
+            submitLock.current = false
+            if (extraMins > 0) {
+              setExtraTimeNotice({
+                minutes: extraMins,
+                message: `Pengawas telah menambahkan waktu ujian +${extraMins} menit.`
+              })
+              if (extraNoticeTimeoutRef.current) clearTimeout(extraNoticeTimeoutRef.current)
+              extraNoticeTimeoutRef.current = setTimeout(() => setExtraTimeNotice(null), 8000)
+            }
+          }
+        }
+      } catch (e) {
+        // quiet ignore
+      }
+    }, 25000)
+    return () => clearInterval(interval)
+  }, [user?.id, examId, loading])
 
   const monitorLevel = exam?.monitoring_level || 1
   const isQuiz = exam?.mode === 'quiz'
@@ -667,6 +740,48 @@ export default function ExamRoom() {
   return (
     <div className="exam-layout">
       {violationMsg && <ViolationWarning message={violationMsg} />}
+
+      {/* Extra Time Toast Notification */}
+      {extraTimeNotice && (
+        <div style={{
+          position: 'fixed',
+          top: '4.5rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 99999,
+          background: 'linear-gradient(135deg, #1e3a8a, #1e40af)',
+          color: '#ffffff',
+          padding: '0.9rem 1.6rem',
+          borderRadius: '12px',
+          boxShadow: '0 12px 30px rgba(0, 0, 0, 0.35)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem',
+          border: '1.5px solid #60a5fa',
+          animation: 'bounceIn 0.4s ease-out'
+        }}>
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: 'rgba(255, 255, 255, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Clock size={20} color="#fef08a" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fef08a' }}>
+              ⏱️ Waktu Ujian Diperpanjang! (+{extraTimeNotice.minutes} Menit)
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#e0f2fe' }}>
+              {extraTimeNotice.message}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Live Question Update Notification Toast */}
       {liveEditNotice && (

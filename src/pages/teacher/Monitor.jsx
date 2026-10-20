@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, sessions } from '../../lib/db'
+import { getCurrentUser } from '../../lib/auth'
 import {
   Activity,
   Lock,
@@ -23,6 +24,7 @@ import {
   Save,
   CheckCircle2,
   Clock,
+  Plus,
   X
 } from 'lucide-react'
 import { questions } from '../../lib/db'
@@ -92,6 +94,8 @@ const DURATION_PRESETS = [
 export default function Monitor() {
   const { examId } = useParams()
   const navigate = useNavigate()
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.level === 4 || currentUser?.role === 'SUPERADMIN' || currentUser?.dbRole === 'admin' || currentUser?.role === 'admin'
   const [exam, setExam] = useState(null)
   const [sessionList, setSessionList] = useState([])
   const [loading, setLoading] = useState(true)
@@ -117,6 +121,21 @@ export default function Monitor() {
   const [quickSaving, setQuickSaving] = useState(false)
   const [quickNotice, setQuickNotice] = useState('')
   const [quickError, setQuickError] = useState('')
+
+  // Extra Time Management State (Per-student & Bulk in Minute Units)
+  const [extraTimeModalOpen, setExtraTimeModalOpen] = useState(false)
+  const [selectedSessionForExtraTime, setSelectedSessionForExtraTime] = useState(null)
+  const [extraMinutes, setExtraMinutes] = useState(10)
+  const [extraTimeLoading, setExtraTimeLoading] = useState(false)
+  const [extraTimeError, setExtraTimeError] = useState('')
+  const [extraTimeSuccess, setExtraTimeSuccess] = useState('')
+
+  // Bulk Extra Time Management State
+  const [bulkExtraTimeOpen, setBulkExtraTimeOpen] = useState(false)
+  const [bulkTargetFilter, setBulkTargetFilter] = useState('time_up') // 'time_up' | 'active' | 'all'
+  const [bulkExtraMinutes, setBulkExtraMinutes] = useState(10)
+  const [bulkExtraLoading, setBulkExtraLoading] = useState(false)
+  const [bulkExtraNotice, setBulkExtraNotice] = useState('')
 
   // 1-second countdown tick for live token timer
   useEffect(() => {
@@ -255,9 +274,17 @@ export default function Monitor() {
   }, [autoRefresh, tokenInfo.token, tokenInfo.isExpired, examTokenLoading, handleAutoGenerateExamToken])
 
   async function handleReset(sess) {
+    if (!isAdmin) {
+      alert('Kebijakan Akses: Fitur Reset Sesi Ujian hanya diizinkan untuk akun Admin guna mencegah terhapusnya jawaban siswa secara tidak sengaja.\n\nSilakan gunakan tombol "+ Waktu" jika siswa mengalami kendala waktu habis.')
+      return
+    }
     const studentName = sess.users?.full_name || sess.users?.name || 'Siswa'
-    if (!confirm(`Reset ujian ${studentName}? Jawaban akan terhapus.`)) return
-    await sessions.reset(sess.student_id, examId)
+    if (!confirm(`⚠️ PERINGATAN ADMIN: Reset sesi ujian ${studentName}?\n\nPERHATIAN: Seluruh jawaban yang telah dikerjakan siswa akan DIHAPUS PERMANEN dan timer akan dimulai ulang dari nol.\n\nApakah Anda yakin ingin mereset?`)) return
+    const { error } = await sessions.reset(sess.student_id, examId)
+    if (error) {
+      alert('Gagal mereset: ' + error.message)
+      return
+    }
     await load()
   }
 
@@ -351,6 +378,84 @@ export default function Monitor() {
     await load()
   }
 
+  // ─── Extra Time Handlers (Minute Units) ──────────────────────────────
+  const openExtraTimeModal = (sess) => {
+    setSelectedSessionForExtraTime(sess)
+    setExtraMinutes(10)
+    setExtraTimeError('')
+    setExtraTimeSuccess('')
+    setExtraTimeModalOpen(true)
+  }
+
+  const handleApplyExtraTime = async () => {
+    if (!selectedSessionForExtraTime) return
+    const mins = parseInt(extraMinutes, 10)
+    if (isNaN(mins) || mins <= 0) {
+      setExtraTimeError('Masukkan jumlah menit tambahan yang valid (minimal 1 menit).')
+      return
+    }
+
+    setExtraTimeLoading(true)
+    setExtraTimeError('')
+    setExtraTimeSuccess('')
+    try {
+      const { error } = await sessions.addExtraTime(
+        selectedSessionForExtraTime.id,
+        mins,
+        examId
+      )
+      if (error) throw error
+
+      setExtraTimeSuccess(`Berhasil menambahkan +${mins} menit untuk ${selectedSessionForExtraTime.users?.full_name || 'siswa'}! Waktu ujian langsung diperpanjang tanpa mereset jawaban.`)
+      await load()
+      setTimeout(() => {
+        setExtraTimeModalOpen(false)
+        setExtraTimeSuccess('')
+        setSelectedSessionForExtraTime(null)
+      }, 1600)
+    } catch (err) {
+      setExtraTimeError(err.message || 'Gagal menambahkan waktu ekstra')
+    } finally {
+      setExtraTimeLoading(false)
+    }
+  }
+
+  const handleApplyBulkExtraTime = async () => {
+    const mins = parseInt(bulkExtraMinutes, 10)
+    if (isNaN(mins) || mins <= 0) return
+
+    let targets = []
+    if (bulkTargetFilter === 'time_up') {
+      targets = sessionList.filter(s => s.status === 'time_up' || (s.end_timestamp && new Date(s.end_timestamp).getTime() <= Date.now()))
+    } else if (bulkTargetFilter === 'active') {
+      targets = sessionList.filter(s => s.status === 'active')
+    } else {
+      targets = sessionList.filter(s => s.status !== 'reset')
+    }
+
+    if (targets.length === 0) {
+      setBulkExtraNotice('Tidak ada siswa yang sesuai dengan filter target yang dipilih.')
+      return
+    }
+
+    setBulkExtraLoading(true)
+    setBulkExtraNotice('')
+    try {
+      const targetIds = targets.map(t => t.id)
+      await sessions.addExtraTimeBulk(targetIds, mins, examId)
+      setBulkExtraNotice(`Berhasil menambahkan +${mins} menit ke ${targets.length} siswa secara serentak!`)
+      await load()
+      setTimeout(() => {
+        setBulkExtraTimeOpen(false)
+        setBulkExtraNotice('')
+      }, 1800)
+    } catch (err) {
+      setBulkExtraNotice('Gagal menerapkan perpanjangan waktu massal: ' + err.message)
+    } finally {
+      setBulkExtraLoading(false)
+    }
+  }
+
   const active = sessionList.filter(s => s.status === 'active' && !s.returnee_token_required).length
   const returnees = sessionList.filter(s => s.returnee_token_required).length
   const done = sessionList.filter(s => s.status === 'submitted' || s.status === 'time_up').length
@@ -440,6 +545,28 @@ export default function Monitor() {
               title="Koreksi nomor soal, teks narasi, opsi, atau kunci jawaban secara langsung"
             >
               <Zap size={14} /> Live Edit Soal
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                setBulkExtraMinutes(10)
+                setBulkTargetFilter('time_up')
+                setBulkExtraNotice('')
+                setBulkExtraTimeOpen(true)
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: 'linear-gradient(135deg, #b45309, #d97706)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 700,
+                boxShadow: '0 2px 8px rgba(217, 119, 6, 0.25)'
+              }}
+              title="Tambah waktu ujian massal untuk siswa terkendala / waktu habis"
+            >
+              <Clock size={14} /> + Tambah Waktu Massal
             </button>
             <button
               className="btn btn-ghost btn-sm"
@@ -930,13 +1057,46 @@ export default function Monitor() {
                           )}
 
                           <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => handleReset(sess)}
-                            title="Reset sesi siswa ini"
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            className="btn btn-sm"
+                            onClick={() => openExtraTimeModal(sess)}
+                            title="Beri tambahan waktu ujian (dalam menit) tanpa mereset jawaban siswa"
+                            style={{
+                              padding: '0.28rem 0.6rem',
+                              fontSize: '0.76rem',
+                              fontWeight: 700,
+                              background: '#fef3c7',
+                              color: '#92400e',
+                              border: '1px solid #fde68a',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              cursor: 'pointer'
+                            }}
                           >
-                            <RotateCcw size={12} /> Reset
+                            <Clock size={12} color="#b45309" /> + Waktu
                           </button>
+
+                          {/* Tombol Reset Sesi: Khusus Admin untuk mencegah Guru salah klik / tidak sengaja mereset ujian siswa */}
+                          {isAdmin && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => handleReset(sess)}
+                              title="[Khusus Admin] Reset sesi siswa ini dari nol (seluruh jawaban akan terhapus)"
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                fontSize: '0.75rem',
+                                color: '#ef4444',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                background: 'rgba(239, 68, 68, 0.05)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}
+                            >
+                              <RotateCcw size={12} color="#ef4444" /> Reset
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1286,6 +1446,414 @@ export default function Monitor() {
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Individual Extra Time Modal */}
+      {extraTimeModalOpen && selectedSessionForExtraTime && (
+        <div className="modal-overlay" style={{ zIndex: 99999, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="modal card" style={{ maxWidth: 480, width: '100%', padding: 0, overflow: 'hidden', border: '1.5px solid #dfae34', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+            
+            {/* Modal Header */}
+            <div style={{ padding: '1.15rem 1.4rem', background: 'linear-gradient(90deg, #1e3a8a, #1e40af)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1d4ed8' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: 34, height: 34, borderRadius: '8px', background: 'rgba(223, 174, 52, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fef08a' }}>
+                  <Clock size={19} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#ffffff' }}>
+                    Tambah Waktu Ujian Siswa
+                  </h3>
+                  <p style={{ margin: '0.1rem 0 0', fontSize: '0.74rem', color: '#bfdbfe' }}>
+                    Perpanjang waktu tanpa mereset jawaban yang sudah diisi
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setExtraTimeModalOpen(false)}
+                disabled={extraTimeLoading}
+                style={{ color: '#ffffff', padding: '0.25rem', minHeight: 'auto' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.4rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              
+              {/* Student Info Card */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '0.85rem 1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.35rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>
+                    {selectedSessionForExtraTime.users?.full_name || selectedSessionForExtraTime.users?.name || 'Siswa'}
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Kelas: <strong>{selectedSessionForExtraTime.users?.kelas || '—'}</strong>
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#475569', marginTop: '0.2rem' }}>
+                  <span>Status Saat Ini:</span>
+                  <span>{statusBadge(selectedSessionForExtraTime.status, selectedSessionForExtraTime.returnee_token_required, selectedSessionForExtraTime.returnee_reason)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#475569' }}>
+                  <span>Sisa Waktu:</span>
+                  <strong style={{ fontFamily: 'monospace', color: selectedSessionForExtraTime.status === 'time_up' ? '#dc2626' : '#0284c7' }}>
+                    {selectedSessionForExtraTime.status === 'time_up' ? 'Waktu Habis (00:00)' : getRemaining(selectedSessionForExtraTime.end_timestamp)}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#475569' }}>
+                  <span>Jawaban Tersimpan:</span>
+                  <strong style={{ color: '#16a34a' }}>{selectedSessionForExtraTime.answers ? Object.keys(selectedSessionForExtraTime.answers).length : 0} butir soal (Tetap Aman)</strong>
+                </div>
+              </div>
+
+              {/* Minute Presets */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.45rem' }}>
+                  Pilih Tambahan Waktu (Menit):
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem' }}>
+                  {[5, 10, 15, 20, 30, 45, 60].map(m => {
+                    const isSelected = Number(extraMinutes) === m
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setExtraMinutes(m)}
+                        style={{
+                          padding: '0.35rem 0.65rem',
+                          borderRadius: '6px',
+                          border: isSelected ? '1.5px solid #b45309' : '1px solid #cbd5e1',
+                          background: isSelected ? '#fef3c7' : '#ffffff',
+                          color: isSelected ? '#92400e' : '#334155',
+                          fontWeight: isSelected ? 800 : 600,
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        +{m} Menit
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Custom Minutes Input */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={180}
+                      className="form-input"
+                      value={extraMinutes}
+                      onChange={(e) => setExtraMinutes(e.target.value)}
+                      placeholder="Masukkan menit kustom..."
+                      style={{ paddingRight: '3.5rem', width: '100%', fontWeight: 700, fontSize: '0.95rem' }}
+                      disabled={extraTimeLoading}
+                    />
+                    <span style={{
+                      position: 'absolute',
+                      right: '0.85rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      color: '#64748b',
+                      pointerEvents: 'none'
+                    }}>
+                      Menit
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informational Live Preview */}
+              <div style={{
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '8px',
+                padding: '0.75rem 0.9rem',
+                fontSize: '0.78rem',
+                color: '#1e40af',
+                lineHeight: 1.45
+              }}>
+                <div style={{ fontWeight: 700, marginBottom: '0.15rem' }}>
+                  💡 Dampak Penambahan Waktu:
+                </div>
+                <div>
+                  Sesi siswa akan langsung aktif kembali selama <strong>+{extraMinutes || 0} menit</strong>. Jika siswa sebelumnya terhenti karena waktu habis atau terkunci (Returnee), siswa langsung dapat masuk kembali melanjutkan ujian dengan seluruh jawaban yang tetap utuh.
+                </div>
+              </div>
+
+              {extraTimeError && (
+                <div className="alert alert-error" style={{ margin: 0, fontSize: '0.82rem', padding: '0.65rem 0.85rem' }}>
+                  <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                  <span>{extraTimeError}</span>
+                </div>
+              )}
+
+              {extraTimeSuccess && (
+                <div className="alert alert-success" style={{ margin: 0, fontSize: '0.82rem', padding: '0.65rem 0.85rem' }}>
+                  <CheckCircle2 size={15} style={{ flexShrink: 0 }} />
+                  <span>{extraTimeSuccess}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setExtraTimeModalOpen(false)}
+                  disabled={extraTimeLoading}
+                  style={{ flex: 1 }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gold"
+                  onClick={handleApplyExtraTime}
+                  disabled={extraTimeLoading || !extraMinutes || Number(extraMinutes) <= 0}
+                  style={{
+                    flex: 1.5,
+                    fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.4rem',
+                    background: '#dfae34',
+                    color: '#0a1628'
+                  }}
+                >
+                  {extraTimeLoading ? (
+                    <><div className="spinner" style={{ width: 16, height: 16 }} /> Memperpanjang...</>
+                  ) : (
+                    <><Clock size={16} /> Terapkan +{extraMinutes || 0} Menit</>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Extra Time Modal */}
+      {bulkExtraTimeOpen && (
+        <div className="modal-overlay" style={{ zIndex: 99999, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="modal card" style={{ maxWidth: 500, width: '100%', padding: 0, overflow: 'hidden', border: '1.5px solid #d97706', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+            
+            {/* Modal Header */}
+            <div style={{ padding: '1.15rem 1.4rem', background: 'linear-gradient(90deg, #78350f, #92400e)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #b45309' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: 34, height: 34, borderRadius: '8px', background: 'rgba(254, 240, 138, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fef08a' }}>
+                  <Clock size={19} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#ffffff' }}>
+                    Tambah Waktu Massal (Serentak)
+                  </h3>
+                  <p style={{ margin: '0.1rem 0 0', fontSize: '0.74rem', color: '#fde68a' }}>
+                    Perpanjang waktu untuk kelompok siswa terkendala tanpa reset
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setBulkExtraTimeOpen(false)}
+                disabled={bulkExtraLoading}
+                style={{ color: '#ffffff', padding: '0.25rem', minHeight: 'auto' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.4rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              
+              {/* Target Selector */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.45rem' }}>
+                  Target Siswa yang Diberi Tambahan Waktu:
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', borderRadius: '8px',
+                    border: bulkTargetFilter === 'time_up' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                    background: bulkTargetFilter === 'time_up' ? '#fef3c7' : '#ffffff',
+                    cursor: 'pointer', fontSize: '0.85rem', fontWeight: bulkTargetFilter === 'time_up' ? 700 : 500
+                  }}>
+                    <input
+                      type="radio"
+                      name="bulkTarget"
+                      value="time_up"
+                      checked={bulkTargetFilter === 'time_up'}
+                      onChange={() => setBulkTargetFilter('time_up')}
+                    />
+                    <span>
+                      Siswa Waktu Habis / Expired ({sessionList.filter(s => s.status === 'time_up' || (s.end_timestamp && new Date(s.end_timestamp).getTime() <= Date.now())).length} siswa)
+                    </span>
+                  </label>
+
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', borderRadius: '8px',
+                    border: bulkTargetFilter === 'active' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                    background: bulkTargetFilter === 'active' ? '#fef3c7' : '#ffffff',
+                    cursor: 'pointer', fontSize: '0.85rem', fontWeight: bulkTargetFilter === 'active' ? 700 : 500
+                  }}>
+                    <input
+                      type="radio"
+                      name="bulkTarget"
+                      value="active"
+                      checked={bulkTargetFilter === 'active'}
+                      onChange={() => setBulkTargetFilter('active')}
+                    />
+                    <span>
+                      Semua Siswa Sedang Mengerjakan / Aktif ({sessionList.filter(s => s.status === 'active').length} siswa)
+                    </span>
+                  </label>
+
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.75rem', borderRadius: '8px',
+                    border: bulkTargetFilter === 'all' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                    background: bulkTargetFilter === 'all' ? '#fef3c7' : '#ffffff',
+                    cursor: 'pointer', fontSize: '0.85rem', fontWeight: bulkTargetFilter === 'all' ? 700 : 500
+                  }}>
+                    <input
+                      type="radio"
+                      name="bulkTarget"
+                      value="all"
+                      checked={bulkTargetFilter === 'all'}
+                      onChange={() => setBulkTargetFilter('all')}
+                    />
+                    <span>
+                      Seluruh Peserta Sesi Ujian ({sessionList.filter(s => s.status !== 'reset').length} siswa)
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Minute Presets */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.45rem' }}>
+                  Durasi Tambahan (Satuan Menit):
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem' }}>
+                  {[5, 10, 15, 20, 30, 45, 60].map(m => {
+                    const isSelected = Number(bulkExtraMinutes) === m
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setBulkExtraMinutes(m)}
+                        style={{
+                          padding: '0.35rem 0.65rem',
+                          borderRadius: '6px',
+                          border: isSelected ? '1.5px solid #b45309' : '1px solid #cbd5e1',
+                          background: isSelected ? '#fef3c7' : '#ffffff',
+                          color: isSelected ? '#92400e' : '#334155',
+                          fontWeight: isSelected ? 800 : 600,
+                          fontSize: '0.8rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        +{m} Menit
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={180}
+                    className="form-input"
+                    value={bulkExtraMinutes}
+                    onChange={(e) => setBulkExtraMinutes(e.target.value)}
+                    placeholder="Masukkan menit..."
+                    style={{ paddingRight: '3.5rem', width: '100%', fontWeight: 700, fontSize: '0.95rem' }}
+                    disabled={bulkExtraLoading}
+                  />
+                  <span style={{
+                    position: 'absolute',
+                    right: '0.85rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color: '#64748b',
+                    pointerEvents: 'none'
+                  }}>
+                    Menit
+                  </span>
+                </div>
+              </div>
+
+              {bulkExtraNotice && (
+                <div style={{
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  background: bulkExtraNotice.includes('✅') || bulkExtraNotice.includes('Berhasil') ? '#ecfdf5' : '#fef2f2',
+                  color: bulkExtraNotice.includes('✅') || bulkExtraNotice.includes('Berhasil') ? '#065f46' : '#991b1b',
+                  fontSize: '0.82rem',
+                  fontWeight: 600
+                }}>
+                  {bulkExtraNotice}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setBulkExtraTimeOpen(false)}
+                  disabled={bulkExtraLoading}
+                  style={{ flex: 1 }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gold"
+                  onClick={handleApplyBulkExtraTime}
+                  disabled={bulkExtraLoading || !bulkExtraMinutes || Number(bulkExtraMinutes) <= 0}
+                  style={{
+                    flex: 1.5,
+                    fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.4rem',
+                    background: 'linear-gradient(135deg, #b45309, #d97706)',
+                    color: '#ffffff',
+                    border: 'none'
+                  }}
+                >
+                  {bulkExtraLoading ? (
+                    <><div className="spinner" style={{ width: 16, height: 16 }} /> Memperpanjang Massal...</>
+                  ) : (
+                    <><Clock size={16} /> Terapkan Tambahan Massal</>
+                  )}
+                </button>
+              </div>
+
+            </div>
           </div>
         </div>
       )}

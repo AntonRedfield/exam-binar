@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
-import { results, exams } from '../lib/db'
+import { results, exams, sessions } from '../lib/db'
 import { CheckCircle, XCircle, Clock, ShieldAlert, Printer, ArrowLeft } from 'lucide-react'
 
 export default function Results() {
@@ -9,6 +9,7 @@ export default function Results() {
   const navigate = useNavigate()
   const user = getCurrentUser()
   const [result, setResult] = useState(null)
+  const [activeSession, setActiveSession] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -17,6 +18,33 @@ export default function Results() {
       setLoading(false)
     })
   }, [resultId])
+
+  useEffect(() => {
+    if (!result?.exam_id || !user?.id) return
+    let isMounted = true
+
+    const checkActiveSession = async () => {
+      try {
+        const { data: sess } = await sessions.get(user.id, result.exam_id)
+        if (isMounted) {
+          if (sess && sess.status === 'active') {
+            setActiveSession(sess)
+          } else {
+            setActiveSession(null)
+          }
+        }
+      } catch (e) {
+        // quiet ignore
+      }
+    }
+
+    checkActiveSession()
+    const interval = setInterval(checkActiveSession, 3500)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [result?.exam_id, user?.id])
 
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 40, height: 40 }} /></div>
   if (!result) return <div className="loading-screen"><p className="text-muted">Hasil tidak ditemukan.</p></div>
@@ -43,6 +71,43 @@ export default function Results() {
             </button>
           )}
         </div>
+
+        {/* Banner if Teacher has granted extra time and re-activated session */}
+        {activeSession && (
+          <div style={{
+            background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
+            borderRadius: 12,
+            padding: '1.25rem 1.5rem',
+            color: '#ffffff',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            boxShadow: '0 8px 24px rgba(37, 99, 235, 0.25)',
+            border: '1.5px solid #60a5fa'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <Clock size={28} color="#fef08a" />
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fef08a' }}>
+                  Waktu Tambahan Diberikan oleh Pengawas!
+                </h3>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#e0f2fe' }}>
+                  Sesi ujian Anda telah dibuka kembali dengan waktu tambahan. Seluruh jawaban sebelumnya tetap aman tersimpan.
+                </p>
+              </div>
+            </div>
+            <button
+              className="btn btn-gold btn-sm"
+              onClick={() => navigate(`/exam/${result.exam_id}/lobby`)}
+              style={{ fontWeight: 800, padding: '0.55rem 1.25rem', fontSize: '0.88rem' }}
+            >
+              Lanjutkan Ujian Sekarang →
+            </button>
+          </div>
+        )}
 
         {/* Score card */}
         <div className="card results-score" style={{ textAlign: 'center', marginBottom: '1.5rem', background: 'linear-gradient(135deg, var(--navy-mid), var(--navy-light))' }}>
