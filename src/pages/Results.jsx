@@ -56,13 +56,14 @@ export default function Results() {
   const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
   const essayPending = breakdown.some(b => b.status === 'pending')
   const passingGrade = result.exams?.passing_grade ?? 60
+  const backPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : (user?.role === 'MODERATOR' ? '/teacher/exams' : '/home')
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--navy)', padding: '2rem 1rem' }}>
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }} className="no-print">
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/home')}>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate(backPath)}>
             <ArrowLeft size={15} /> Kembali
           </button>
           {result.exams?.status !== 'published' && (

@@ -151,6 +151,7 @@ export default function ExamRoom() {
   const engineRef = useRef(null)
   const submitLock = useRef(false)
   const answerScrollRef = useRef(null)
+  const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
 
   // Scroll answer pane to top when navigating questions
   useEffect(() => {
@@ -167,7 +168,7 @@ export default function ExamRoom() {
         questions.listByExam(examId),
         sessions.get(user.id, examId),
       ])
-      if (!sess || sess.status === 'submitted' || sess.status === 'time_up' || sess.returnee_token_required) {
+      if (!isPrivileged && (!sess || sess.status === 'submitted' || sess.status === 'time_up' || sess.returnee_token_required)) {
         navigate(`/exam/${examId}/lobby`)
         return
       }
@@ -175,14 +176,20 @@ export default function ExamRoom() {
       // Guard: must have passed lobby unlock
       const inRoom = sessionStorage.getItem('binar_exam_active_room') === examId
       if (!inRoom) {
-        const isRecentlyUnlocked = sess.returnee_unlocked_at && 
-          (Date.now() - new Date(sess.returnee_unlocked_at).getTime() < 15 * 60 * 1000)
-        if (isRecentlyUnlocked && !sess.returnee_token_required) {
+        if (isPrivileged) {
           sessionStorage.setItem('binar_exam_active_room', examId)
         } else {
-          await markSessionAsReturnee(sess.id, 'Sesi terputus / akses langsung')
-          navigate(`/exam/${examId}/lobby`)
-          return
+          const isRecentlyUnlocked = sess?.returnee_unlocked_at && 
+            (Date.now() - new Date(sess.returnee_unlocked_at).getTime() < 15 * 60 * 1000)
+          if (isRecentlyUnlocked && !sess?.returnee_token_required) {
+            sessionStorage.setItem('binar_exam_active_room', examId)
+          } else {
+            if (sess?.id) {
+              await markSessionAsReturnee(sess.id, 'Sesi terputus / akses langsung')
+            }
+            navigate(`/exam/${examId}/lobby`)
+            return
+          }
         }
       }
       
@@ -544,7 +551,7 @@ export default function ExamRoom() {
 
   // ─── Anti-cheat hook ──────────────────────────────────────────────
   useAntiCheat({
-    enabled: !loading && !submitting && !freezeActive && !kickoutActive && !timeUp,
+    enabled: !isPrivileged && !loading && !submitting && !freezeActive && !kickoutActive && !timeUp,
     monitoringLevel: monitorLevel,
     isQuiz,
     onViolation: handleViolation,
@@ -553,7 +560,7 @@ export default function ExamRoom() {
 
   // ─── Face detection (Level 4 only) ────────────────────────────────
   const faceDetection = useFaceDetection({
-    enabled: !loading && !submitting && !freezeActive && monitorLevel === 4,
+    enabled: !isPrivileged && !loading && !submitting && !freezeActive && monitorLevel === 4,
     onViolation: handleViolation,
   })
 

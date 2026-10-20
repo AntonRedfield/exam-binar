@@ -152,12 +152,12 @@ export default function App() {
               </ProtectedRoute>
             } />
             <Route path="/exam/:examId/lobby" element={
-              <ProtectedRoute roles={['USER']}>
+              <ProtectedRoute roles={['USER', 'MODERATOR', 'SUPERADMIN']}>
                 <ExamLobby />
               </ProtectedRoute>
             } />
             <Route path="/exam/:examId/room" element={
-              <ProtectedRoute roles={['USER']}>
+              <ProtectedRoute roles={['USER', 'MODERATOR', 'SUPERADMIN']}>
                 <ExamRoom />
               </ProtectedRoute>
             } />
@@ -167,7 +167,7 @@ export default function App() {
               </ProtectedRoute>
             } />
             <Route path="/survey/:examId" element={
-              <ProtectedRoute roles={['USER']}>
+              <ProtectedRoute roles={['USER', 'MODERATOR', 'SUPERADMIN']}>
                 <SurveyRoom />
               </ProtectedRoute>
             } />

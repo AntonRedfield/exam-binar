@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { exams } from '../../lib/db'
-import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap } from 'lucide-react'
+import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, Play } from 'lucide-react'
 
 export default function ExamOversight() {
   const navigate = useNavigate()
@@ -93,8 +93,9 @@ export default function ExamOversight() {
                           <button className="btn btn-ghost btn-sm" onClick={() => togglePublish(exam)} title="Toggle status">
                             {exam.status === 'published' ? <Lock size={13} /> : <Globe size={13} />}
                           </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/monitor/${exam.id}`)} title="Monitor"><Activity size={13} /></button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/results/${exam.id}`)} title="Hasil"><BarChart2 size={13} /></button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/admin/monitor/${exam.id}`)} title="Monitor"><Activity size={13} /></button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/admin/results/${exam.id}`)} title="Hasil"><BarChart2 size={13} /></button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/exam/${exam.id}/lobby`)} title="Pratinjau / Uji Coba Ujian"><Play size={13} /></button>
                           <button className="btn btn-danger btn-sm" onClick={() => handleDelete(exam.id)} title="Hapus"><Trash2 size={13} /></button>
                         </div>
                       </td>

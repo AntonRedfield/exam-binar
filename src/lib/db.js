@@ -764,6 +764,30 @@ export async function fetchStudentProfilesMap(studentIds) {
 // ─── SESSIONS API ─────────────────────────────────────────────────────────────
 
 export const sessions = {
+  create: async (data) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+    const newSession = {
+      id: data.id || generateId('sess'),
+      variant: data.variant || 'A',
+      status: data.status || 'active',
+      answers: data.answers || {},
+      violation_count: data.violation_count || 0,
+      current_question: data.current_question || 1,
+      started_at: data.started_at || new Date().toISOString(),
+      last_sync: new Date().toISOString(),
+      ...data,
+    }
+
+    const { data: created, error } = await supabase
+      .from('exam_sessions')
+      .insert([newSession])
+      .select()
+      .single()
+
+    if (error) return { data: null, error }
+    return { data: created, error: null }
+  },
+
   delete: async (id) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
     const { error } = await supabase.from('exam_sessions').delete().eq('id', id)

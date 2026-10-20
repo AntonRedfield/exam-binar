@@ -69,8 +69,10 @@ export default function ExamLobby() {
       }
 
       let currentSess = sess
+      const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
+
       // Check if student has active session that was interrupted / from outside the room
-      if (sess && sess.status === 'active') {
+      if (!isPrivileged && sess && sess.status === 'active') {
         const inRoom = sessionStorage.getItem('binar_exam_active_room') === examId
         const isRecentlyUnlocked = sess.returnee_unlocked_at && 
           (Date.now() - new Date(sess.returnee_unlocked_at).getTime() < 15 * 60 * 1000)
@@ -84,6 +86,9 @@ export default function ExamLobby() {
           // Proctor unlocked them! Auto-grant active room permission and proceed
           sessionStorage.setItem('binar_exam_active_room', examId)
         }
+      } else if (isPrivileged) {
+        // Auto-grant active room access for admin & teachers testing/previewing
+        sessionStorage.setItem('binar_exam_active_room', examId)
       }
 
       setExam(examData)
@@ -208,8 +213,9 @@ export default function ExamLobby() {
       return
     }
 
+    const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
     // If session requires returnee token, student cannot directly start
-    if (session?.returnee_token_required) {
+    if (!isPrivileged && session?.returnee_token_required) {
       setReturneeError('Anda berstatus Returnee. Masukkan token dari pengawas untuk melanjutkan.')
       return
     }
@@ -333,10 +339,12 @@ export default function ExamLobby() {
     </div>
   )
 
+  const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
   const isDone = session?.status === 'submitted' || session?.status === 'time_up'
   const isActive = session?.status === 'active'
-  const isReturneeRequired = Boolean(isActive && session?.returnee_token_required)
+  const isReturneeRequired = !isPrivileged && Boolean(isActive && session?.returnee_token_required)
   const canStart = !needsCamera || cameraGranted
+  const backPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : (user?.role === 'MODERATOR' ? '/teacher/exams' : '/home')
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy)', padding: '1rem' }}>
@@ -346,7 +354,7 @@ export default function ExamLobby() {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() => navigate('/home')}
+            onClick={() => navigate(backPath)}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -542,7 +550,7 @@ export default function ExamLobby() {
             <button
               type="button"
               className="btn btn-secondary w-full"
-              onClick={() => navigate('/home')}
+              onClick={() => navigate(backPath)}
               style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}
             >
               <ArrowLeft size={16} /> Kembali ke Daftar Ujian

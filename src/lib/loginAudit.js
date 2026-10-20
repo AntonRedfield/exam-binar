@@ -515,6 +515,130 @@ export async function updateLoginLogLocation({
 }
 
 /**
+ * Baseline showcase audit logs including Mikhail on iPad Pro (±250m precision),
+ * Admin on Windows PC Desktop, Budi on Samsung Galaxy S23 Ultra, and a flagged breach attempt.
+ * Permanently available so showcase & critical logs are NEVER lost when admin accesses/updates exams.
+ */
+export function getSeedAuditLogs() {
+  const now = Date.now()
+  return [
+    {
+      id: 'demo_log_mikhail_ipad_pro',
+      user_id: null,
+      identifier: 'mikhail',
+      full_name: 'Mikhail Tal',
+      role: 'student',
+      role_level: 1,
+      status: 'success',
+      failure_reason: null,
+      ip_address: '114.10.156.217',
+      user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+      device_name: 'iPad Pro (Safari 17)',
+      location: 'Kupang, NTT',
+      is_suspicious: false,
+      metadata: {
+        deviceModel: 'iPad Pro',
+        deviceName: 'iPad Pro (Safari 17)',
+        actionNarrative: 'mikhail login at iPad Pro',
+        os: 'iPadOS 17',
+        browser: 'Safari 17',
+        deviceType: 'Tablet',
+        screen: '1024x1366',
+        latitude: -10.1772,
+        longitude: 123.607,
+        location_precision: '±250m',
+        location_details: 'Kupang Barat, NTT (radius ~250m)'
+      },
+      created_at: new Date(now - 12 * 60000).toISOString()
+    },
+    {
+      id: 'demo_log_admin_pc',
+      user_id: null,
+      identifier: 'admin',
+      full_name: 'Super Admin',
+      role: 'admin',
+      role_level: 4,
+      status: 'success',
+      failure_reason: null,
+      ip_address: '114.10.156.217',
+      user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      device_name: 'Windows PC Desktop (Chrome 122)',
+      location: 'Kupang, NTT',
+      is_suspicious: false,
+      metadata: {
+        deviceModel: 'Windows PC Desktop',
+        deviceName: 'Windows PC Desktop (Chrome 122)',
+        actionNarrative: 'admin login at Windows PC Desktop',
+        os: 'Windows 10/11',
+        browser: 'Chrome 122',
+        deviceType: 'Desktop',
+        latitude: -10.171,
+        longitude: 123.598,
+        location_precision: '±280m',
+        location_details: 'Oebobo, Kota Kupang, NTT (radius ~280m)'
+      },
+      created_at: new Date(now - 45 * 60000).toISOString()
+    },
+    {
+      id: 'demo_log_budi_samsung',
+      user_id: null,
+      identifier: 'budi_santoso',
+      full_name: 'Budi Santoso',
+      role: 'student',
+      role_level: 1,
+      status: 'success',
+      failure_reason: null,
+      ip_address: '180.252.164.88',
+      user_agent: 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+      device_name: 'Samsung Galaxy S23 Ultra (Chrome 122)',
+      location: 'Kupang, NTT',
+      is_suspicious: false,
+      metadata: {
+        deviceModel: 'Samsung Galaxy S23 Ultra',
+        deviceName: 'Samsung Galaxy S23 Ultra (Chrome 122)',
+        actionNarrative: 'budi_santoso login at Samsung Galaxy S23 Ultra',
+        os: 'Android 14',
+        browser: 'Chrome 122',
+        deviceType: 'Mobile',
+        latitude: -10.182,
+        longitude: 123.612,
+        location_precision: '±220m',
+        location_details: 'Maulafa, Kota Kupang, NTT (radius ~220m)'
+      },
+      created_at: new Date(now - 110 * 60000).toISOString()
+    },
+    {
+      id: 'demo_log_suspicious_attempt',
+      user_id: null,
+      identifier: 'mikhail',
+      full_name: 'Mikhail Tal',
+      role: 'student',
+      role_level: 1,
+      status: 'failed',
+      failure_reason: 'Password atau username salah (3x beruntun)',
+      ip_address: '103.111.240.12',
+      user_agent: 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36',
+      device_name: 'Google Pixel 6 (Chrome 100)',
+      location: 'Jakarta, DKI',
+      is_suspicious: true,
+      metadata: {
+        deviceModel: 'Google Pixel 6',
+        deviceName: 'Google Pixel 6 (Chrome 100)',
+        actionNarrative: 'mikhail gagal login di Google Pixel 6',
+        os: 'Android 12',
+        browser: 'Chrome 100',
+        deviceType: 'Mobile',
+        latitude: -6.2088,
+        longitude: 106.8456,
+        location_precision: '±300m',
+        location_details: 'Jakarta Pusat, DKI Jakarta (radius ~300m)'
+      },
+      created_at: new Date(now - 220 * 60000).toISOString()
+    }
+  ]
+}
+
+/**
  * Fetch login audit logs for Admin / Teachers.
  * Queries Supabase `login_logs`, merging with local cache if needed.
  */
@@ -606,63 +730,6 @@ export async function fetchLoginLogs({
         console.warn('[LoginAudit] Fallback profiles fetch notice:', profErr?.message)
       }
     }
-
-    // Include Teacher & Admin exam access activities if no teacher logs present
-    const hasTeacherLogs = remoteLogs.some(x => x.role === 'teacher' || x.role === 'admin')
-    if (!hasTeacherLogs) {
-      try {
-        const { data: teacherExams } = await supabase
-          .from('exams')
-          .select('id, title, created_by, created_at, updated_at')
-          .gte('updated_at', '2026-10-18T00:00:00Z')
-          .order('updated_at', { ascending: false })
-
-        const { data: allTeachers } = await supabase
-          .from('profiles')
-          .select('id, username, fullname, role_level')
-          .gte('role_level', 3)
-
-        const teacherMap = new Map()
-        for (const t of allTeachers || []) teacherMap.set(t.id, t)
-
-        for (const ex of teacherExams || []) {
-          const t = teacherMap.get(ex.created_by)
-          if (!t) continue
-          const time = ex.updated_at || ex.created_at
-          const teacherIdent = t.username || t.fullname || 'Guru'
-          remoteLogs.push({
-            id: `teacher_act_${t.id}_${time}`,
-            user_id: t.id,
-            identifier: teacherIdent,
-            full_name: t.fullname,
-            role: t.role_level === 4 ? 'admin' : 'teacher',
-            role_level: t.role_level,
-            status: 'success',
-            failure_reason: null,
-            ip_address: '114.10.156.217',
-            user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            device_name: 'Windows PC Desktop (Chrome 122)',
-            location: 'Kupang, NTT',
-            is_suspicious: false,
-            metadata: {
-              deviceModel: 'Windows PC Desktop',
-              deviceName: 'Windows PC Desktop (Chrome 122)',
-              actionNarrative: `${teacherIdent} login at Windows PC Desktop`,
-              os: 'Windows 10/11',
-              browser: 'Chrome 122',
-              deviceType: 'Desktop',
-              exam_id: ex.id,
-              exam_title: ex.title,
-              action: 'Akses & Kelola Ujian / Kunci Jawaban',
-              source: 'exam_management_activity'
-            },
-            created_at: time
-          })
-        }
-      } catch (examErr) {
-        console.warn('[LoginAudit] Teacher activity fetch notice:', examErr?.message)
-      }
-    }
   }
 
   // Load local cache as supplement/fallback
@@ -671,128 +738,40 @@ export async function fetchLoginLogs({
     localLogs = JSON.parse(localStorage.getItem(LOCAL_AUDIT_KEY) || '[]')
   } catch (e) {}
 
-  // If no logs found anywhere (fresh setup), provide showcase logs including Mikhail on iPad Pro
-  if (remoteLogs.length === 0 && localLogs.length === 0) {
-    const now = Date.now()
-    localLogs = [
-      {
-        id: 'demo_log_mikhail_ipad_pro',
-        user_id: null,
-        identifier: 'mikhail',
-        full_name: 'Mikhail Tal',
-        role: 'student',
-        role_level: 1,
-        status: 'success',
-        failure_reason: null,
-        ip_address: '114.10.156.217',
-        user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-        device_name: 'iPad Pro (Safari 17)',
-        location: 'Kupang, NTT',
-        is_suspicious: false,
-        metadata: {
-          deviceModel: 'iPad Pro',
-          deviceName: 'iPad Pro (Safari 17)',
-          actionNarrative: 'mikhail login at iPad Pro',
-          os: 'iPadOS 17',
-          browser: 'Safari 17',
-          deviceType: 'Tablet',
-          screen: '1024x1366'
-        },
-        created_at: new Date(now - 12 * 60000).toISOString()
-      },
-      {
-        id: 'demo_log_admin_pc',
-        user_id: null,
-        identifier: 'admin',
-        full_name: 'Super Admin',
-        role: 'admin',
-        role_level: 4,
-        status: 'success',
-        failure_reason: null,
-        ip_address: '114.10.156.217',
-        user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        device_name: 'Windows PC Desktop (Chrome 122)',
-        location: 'Kupang, NTT',
-        is_suspicious: false,
-        metadata: {
-          deviceModel: 'Windows PC Desktop',
-          deviceName: 'Windows PC Desktop (Chrome 122)',
-          actionNarrative: 'admin login at Windows PC Desktop',
-          os: 'Windows 10/11',
-          browser: 'Chrome 122',
-          deviceType: 'Desktop'
-        },
-        created_at: new Date(now - 45 * 60000).toISOString()
-      },
-      {
-        id: 'demo_log_budi_samsung',
-        user_id: null,
-        identifier: 'budi_santoso',
-        full_name: 'Budi Santoso',
-        role: 'student',
-        role_level: 1,
-        status: 'success',
-        failure_reason: null,
-        ip_address: '180.252.164.88',
-        user_agent: 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-        device_name: 'Samsung Galaxy S23 Ultra (Chrome 122)',
-        location: 'Kupang, NTT',
-        is_suspicious: false,
-        metadata: {
-          deviceModel: 'Samsung Galaxy S23 Ultra',
-          deviceName: 'Samsung Galaxy S23 Ultra (Chrome 122)',
-          actionNarrative: 'budi_santoso login at Samsung Galaxy S23 Ultra',
-          os: 'Android 14',
-          browser: 'Chrome 122',
-          deviceType: 'Mobile'
-        },
-        created_at: new Date(now - 110 * 60000).toISOString()
-      },
-      {
-        id: 'demo_log_suspicious_attempt',
-        user_id: null,
-        identifier: 'mikhail',
-        full_name: 'Mikhail Tal',
-        role: 'student',
-        role_level: 1,
-        status: 'failed',
-        failure_reason: 'Password atau username salah (3x beruntun)',
-        ip_address: '103.111.240.12',
-        user_agent: 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Mobile Safari/537.36',
-        device_name: 'Google Pixel 6 (Chrome 100)',
-        location: 'Jakarta, DKI',
-        is_suspicious: true,
-        metadata: {
-          deviceModel: 'Google Pixel 6',
-          deviceName: 'Google Pixel 6 (Chrome 100)',
-          actionNarrative: 'mikhail gagal login di Google Pixel 6',
-          os: 'Android 12',
-          browser: 'Chrome 100',
-          deviceType: 'Mobile'
-        },
-        created_at: new Date(now - 220 * 60000).toISOString()
-      }
-    ]
+  // Baseline showcase audit logs including Mikhail on iPad Pro (±250m precision),
+  // Admin on PC Desktop, Budi on Samsung Galaxy S23 Ultra, and flagged breach attempt.
+  const seedLogs = getSeedAuditLogs()
+
+  // Ensure baseline showcase logs are stored in localStorage if local cache is empty
+  if (!Array.isArray(localLogs) || localLogs.length === 0) {
+    try {
+      localStorage.setItem(LOCAL_AUDIT_KEY, JSON.stringify(seedLogs))
+      localLogs = seedLogs
+    } catch (e) {}
   }
 
   // Merge unique logs by ID and normalize deviceModel & actionNarrative
+  // Order of merging into Map:
+  // 1. Seed showcase logs (permanent baseline reference)
+  // 2. Local logs (real logins captured locally)
+  // 3. Remote logs (Supabase database records)
+  // This ensures Mikhail on iPad Pro and other baseline records NEVER disappear when admin accesses or updates exams.
   const map = new Map()
-  for (const item of [...remoteLogs, ...localLogs]) {
-    if (item?.id && !map.has(item.id)) {
-      // Normalize item metadata to always include deviceModel and actionNarrative
-      item.metadata = item.metadata || {}
-      if (!item.metadata.deviceModel) {
-        const parsed = parseDeviceInfo(item.device_name || item.user_agent || '')
-        item.metadata.deviceModel = parsed.deviceModel || parsed.deviceName || 'Perangkat'
-        item.metadata.os = item.metadata.os || parsed.os
-        item.metadata.browser = item.metadata.browser || parsed.browser
-        item.metadata.deviceType = item.metadata.deviceType || parsed.deviceType
-      }
-      if (!item.metadata.actionNarrative) {
-        item.metadata.actionNarrative = formatLoginNarrative(item)
-      }
-      map.set(item.id, item)
+
+  for (const item of [...seedLogs, ...(localLogs || []), ...remoteLogs]) {
+    if (!item?.id) continue
+    const cloned = { ...item, metadata: { ...(item.metadata || {}) } }
+    if (!cloned.metadata.deviceModel) {
+      const parsed = parseDeviceInfo(cloned.device_name || cloned.user_agent || '')
+      cloned.metadata.deviceModel = parsed.deviceModel || parsed.deviceName || 'Perangkat'
+      cloned.metadata.os = cloned.metadata.os || parsed.os
+      cloned.metadata.browser = cloned.metadata.browser || parsed.browser
+      cloned.metadata.deviceType = cloned.metadata.deviceType || parsed.deviceType
     }
+    if (!cloned.metadata.actionNarrative) {
+      cloned.metadata.actionNarrative = formatLoginNarrative(cloned)
+    }
+    map.set(item.id, cloned)
   }
 
   let merged = Array.from(map.values())
