@@ -11,6 +11,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabase.js'
+import { parseDeviceInfo } from './loginAudit.js'
 
 const SESSION_TOKEN_KEY = 'binar_active_session_token'
 const TAB_ID_KEY = 'binar_active_tab_id'
@@ -96,10 +97,11 @@ export async function registerActiveSession(userId, level) {
   // ALWAYS update last_login_at and last_login_device for ALL users (including Teachers & Admins)
   if (isSupabaseConfigured && supabase && userId) {
     try {
-      const deviceName = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 150) : 'web'
+      const { deviceName, deviceModel } = parseDeviceInfo()
+      const cleanDeviceName = deviceName || deviceModel || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 150) : 'web')
       const updateData = {
         last_login_at: new Date().toISOString(),
-        last_login_device: deviceName
+        last_login_device: cleanDeviceName
       }
       if (isEnforced && token) {
         updateData.active_session_id = token

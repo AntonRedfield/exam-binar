@@ -162,6 +162,15 @@ CREATE TABLE IF NOT EXISTS public.exam_sessions (
   returnee_reason VARCHAR(100) DEFAULT NULL,
   returnee_unlocked_at TIMESTAMPTZ DEFAULT NULL,
   exam_auth_token TEXT DEFAULT NULL,
+  selfie_image TEXT DEFAULT NULL,
+  selfie_status VARCHAR(30) DEFAULT 'unverified',
+  selfie_captured_at TIMESTAMPTZ DEFAULT NULL,
+  selfie_failure_reason TEXT DEFAULT NULL,
+  teacher_confirmed_by TEXT DEFAULT NULL,
+  teacher_confirmed_at TIMESTAMPTZ DEFAULT NULL,
+  location TEXT DEFAULT NULL,
+  location_precision VARCHAR(50) DEFAULT NULL,
+  location_captured_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -25,7 +25,10 @@ import {
   CheckCircle2,
   Clock,
   Plus,
-  X
+  X,
+  Camera,
+  UserCheck,
+  MapPin
 } from 'lucide-react'
 import { questions } from '../../lib/db'
 import { liveUpdateSingleQuestion } from '../../lib/liveExamSync'
@@ -42,6 +45,7 @@ import {
   unlockAllExamReturnees,
   lockStudentReturnee
 } from '../../lib/returnee'
+import { confirmStudentPhysicalAttendance } from '../../lib/passiveSelfie'
 
 function statusBadge(status, returneeRequired, returneeReason) {
   if (returneeRequired) {
@@ -136,6 +140,12 @@ export default function Monitor() {
   const [bulkExtraMinutes, setBulkExtraMinutes] = useState(10)
   const [bulkExtraLoading, setBulkExtraLoading] = useState(false)
   const [bulkExtraNotice, setBulkExtraNotice] = useState('')
+
+  // Anti-Piloting (Passive Selfie) Review & Verification State
+  const [selectedSelfieSession, setSelectedSelfieSession] = useState(null)
+  const [confirmingAttendance, setConfirmingAttendance] = useState(false)
+  const [confirmNotice, setConfirmNotice] = useState('')
+  const [selfieFilter, setSelfieFilter] = useState('all') // 'all' | 'unverified' | 'verified'
 
   // 1-second countdown tick for live token timer
   useEffect(() => {
@@ -378,6 +388,43 @@ export default function Monitor() {
     await load()
   }
 
+  // ─── Passive Selfie / Anti-Joki Verification ──────────────────────────
+  const handleConfirmPhysicalAttendance = async (session) => {
+    if (!session?.id) return
+    setConfirmingAttendance(true)
+    setConfirmNotice('')
+    try {
+      const teacherIdentifier = currentUser?.full_name || currentUser?.name || currentUser?.username || 'Pengawas Ruang'
+      const res = await confirmStudentPhysicalAttendance(session.id, teacherIdentifier)
+      if (!res.success) {
+        throw new Error(res.error || 'Gagal memverifikasi kehadiran siswa')
+      }
+      const nowIso = new Date().toISOString()
+      setSessionList(prev => prev.map(s => {
+        if (s.id === session.id) {
+          return {
+            ...s,
+            selfie_status: 'teacher_confirmed',
+            teacher_confirmed_by: teacherIdentifier,
+            teacher_confirmed_at: nowIso
+          }
+        }
+        return s
+      }))
+      setSelectedSelfieSession(prev => prev && prev.id === session.id ? {
+        ...prev,
+        selfie_status: 'teacher_confirmed',
+        teacher_confirmed_by: teacherIdentifier,
+        teacher_confirmed_at: nowIso
+      } : prev)
+      setConfirmNotice('✅ Kehadiran fisik siswa berhasil dikonfirmasi. Tanda potensi joki telah dicabut.')
+    } catch (err) {
+      setConfirmNotice('❌ Gagal mengonfirmasi: ' + err.message)
+    } finally {
+      setConfirmingAttendance(false)
+    }
+  }
+
   // ─── Extra Time Handlers (Minute Units) ──────────────────────────────
   const openExtraTimeModal = (sess) => {
     setSelectedSessionForExtraTime(sess)
@@ -460,6 +507,12 @@ export default function Monitor() {
   const returnees = sessionList.filter(s => s.returnee_token_required).length
   const done = sessionList.filter(s => s.status === 'submitted' || s.status === 'time_up').length
 
+  // Anti-Joki Metric: students with missing selfie that have not been physically confirmed by a teacher
+  const unverifiedSelfies = sessionList.filter(s =>
+    s.status !== 'reset' &&
+    (s.selfie_status === 'missing' || (!s.selfie_image && s.selfie_status !== 'teacher_confirmed'))
+  ).length
+
   function handleSort(key) {
     let direction = 'asc'
     if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc'
@@ -476,6 +529,16 @@ export default function Monitor() {
     if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
     if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
     return 0
+  })
+
+  const filteredSessions = sortedSessions.filter(s => {
+    if (selfieFilter === 'unverified') {
+      return s.status !== 'reset' && (s.selfie_status === 'missing' || (!s.selfie_image && s.selfie_status !== 'teacher_confirmed'))
+    }
+    if (selfieFilter === 'verified') {
+      return Boolean(s.selfie_image || s.selfie_status === 'teacher_confirmed')
+    }
+    return true
   })
 
   if (loading) {
@@ -583,7 +646,7 @@ export default function Monitor() {
 
       <div className="page-body">
         {/* Stat Cards */}
-        <div className="stat-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+        <div className="stat-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'var(--warning-bg)' }}><Activity size={22} color="var(--warning)" /></div>
             <div><div className="stat-value">{active}</div><div className="stat-label">Sedang Ujian</div></div>
@@ -616,6 +679,28 @@ export default function Monitor() {
                 )}
               </div>
               <div className="stat-label">Peserta Returnee</div>
+            </div>
+          </div>
+          <div
+            className="stat-card"
+            style={unverifiedSelfies > 0 ? {
+              borderColor: 'rgba(245, 158, 11, 0.5)',
+              background: 'rgba(245, 158, 11, 0.06)',
+              cursor: 'pointer'
+            } : { cursor: 'pointer' }}
+            onClick={() => setSelfieFilter(prev => prev === 'unverified' ? 'all' : 'unverified')}
+            title="Klik untuk menyaring siswa yang belum memiliki selfie / butuh verifikasi anti-joki"
+          >
+            <div className="stat-icon" style={{ background: unverifiedSelfies > 0 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.1)' }}>
+              <ShieldAlert size={22} color={unverifiedSelfies > 0 ? '#d97706' : '#10b981'} />
+            </div>
+            <div>
+              <div className="stat-value" style={unverifiedSelfies > 0 ? { color: '#d97706' } : { color: '#10b981' }}>
+                {unverifiedSelfies}
+              </div>
+              <div className="stat-label">
+                {unverifiedSelfies > 0 ? '⚠️ Butuh Cek Joki' : '🛡️ Anti-Joki Clear'}
+              </div>
             </div>
           </div>
           <div className="stat-card">
@@ -961,6 +1046,69 @@ export default function Monitor() {
           )}
         </div>
 
+        {/* Anti-Joki Warning Banner if any unverified sessions */}
+        {unverifiedSelfies > 0 && (
+          <div style={{
+            marginBottom: '1.25rem',
+            padding: '0.9rem 1.25rem',
+            background: 'linear-gradient(135deg, #fffbeb, #fef3c7)',
+            border: '1.5px solid #f59e0b',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            boxShadow: '0 3px 10px rgba(245, 158, 11, 0.12)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div style={{
+                width: 42,
+                height: 42,
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #d97706, #b45309)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 2px 6px rgba(180, 83, 9, 0.25)'
+              }}>
+                <ShieldAlert size={22} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, color: '#92400e', fontSize: '0.98rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span>Peringatan Anti-Joki: {unverifiedSelfies} Siswa Tanpa Selfie Pasif</span>
+                  <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Wajib Verifikasi Fisik</span>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: '#78350f', marginTop: '0.15rem', lineHeight: 1.4 }}>
+                  Kamera tidak terdeteksi atau diblokir siswa saat membaca deskripsi ujian. Pastikan siswa benar-benar hadir secara fisik di ruangan ujian dan bukan joki jarak jauh.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setSelfieFilter(selfieFilter === 'unverified' ? 'all' : 'unverified')}
+                style={{
+                  background: '#ffffff',
+                  color: '#92400e',
+                  border: '1px solid #f59e0b',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+              >
+                {selfieFilter === 'unverified' ? '✕ Tampilkan Semua Siswa' : `🔍 Saring ${unverifiedSelfies} Siswa Bermasalah`}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Sessions Table */}
         <div className="card" style={{ padding: 0 }}>
           <div className="table-wrap">
@@ -975,6 +1123,7 @@ export default function Monitor() {
                   </th>
                   <th>Status</th>
                   <th>Sisa Waktu Ujian</th>
+                  <th>Anti-Joki (Selfie)</th>
                   <th>Soal ke-</th>
                   <th>Dijawab</th>
                   <th>Pelanggaran</th>
@@ -982,9 +1131,9 @@ export default function Monitor() {
                 </tr>
               </thead>
               <tbody>
-                {sortedSessions.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem' }}>Belum ada siswa yang memulai ujian.</td></tr>
-                ) : sortedSessions.map(sess => {
+                {filteredSessions.length === 0 ? (
+                  <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2.5rem' }}>{selfieFilter === 'unverified' ? 'Tidak ada siswa yang butuh verifikasi anti-joki.' : 'Belum ada siswa yang memulai ujian.'}</td></tr>
+                ) : filteredSessions.map(sess => {
                   const isReturnee = Boolean(sess.returnee_token_required)
                   return (
                     <tr key={sess.id} style={isReturnee ? { background: 'rgba(239, 68, 68, 0.04)' } : {}}>
@@ -999,6 +1148,96 @@ export default function Monitor() {
                       <td>{sess.users?.classes?.name || sess.users?.kelas || '—'}</td>
                       <td>{statusBadge(sess.status, isReturnee, sess.returnee_reason)}</td>
                       <td style={{ fontFamily: 'monospace' }}>{sess.status === 'active' ? getRemaining(sess.end_timestamp) : '—'}</td>
+                      <td>
+                        {sess.selfie_status === 'teacher_confirmed' ? (
+                          <div
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}
+                            onClick={() => { setSelectedSelfieSession(sess); setConfirmNotice('') }}
+                            title={`Dikonfirmasi oleh ${sess.teacher_confirmed_by || 'Pengawas'} pada ${sess.teacher_confirmed_at ? new Date(sess.teacher_confirmed_at).toLocaleTimeString() : ''}`}
+                          >
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              background: '#ecfdf5',
+                              color: '#065f46',
+                              border: '1px solid #a7f3d0',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '6px',
+                              fontSize: '0.74rem',
+                              fontWeight: 700
+                            }}>
+                              <CheckCircle2 size={12} color="#059669" />
+                              Hadir Fisik
+                            </span>
+                          </div>
+                        ) : sess.selfie_image ? (
+                          <div
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+                            onClick={() => { setSelectedSelfieSession(sess); setConfirmNotice('') }}
+                            title="Klik untuk memperbesar foto selfie pasif"
+                          >
+                            <img
+                              src={sess.selfie_image}
+                              alt="Selfie Siswa"
+                              style={{
+                                width: 34,
+                                height: 34,
+                                borderRadius: '50%',
+                                objectFit: 'cover',
+                                border: '2px solid #10b981',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                              }}
+                            />
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                                <Camera size={11} /> Foto OK
+                              </span>
+                              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
+                                {sess.selfie_captured_at ? new Date(sess.selfie_captured_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Terekam'}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              background: '#fef2f2',
+                              color: '#b91c1c',
+                              border: '1px solid #fecaca',
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '6px',
+                              fontSize: '0.7rem',
+                              fontWeight: 800,
+                              width: 'fit-content'
+                            }}>
+                              <AlertTriangle size={11} /> Tanpa Foto
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedSelfieSession(sess); setConfirmNotice('') }}
+                              style={{
+                                fontSize: '0.68rem',
+                                padding: '0.18rem 0.45rem',
+                                background: '#fef3c7',
+                                color: '#92400e',
+                                border: '1px solid #fde68a',
+                                fontWeight: 700,
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                width: 'fit-content'
+                              }}
+                            >
+                              <UserCheck size={11} /> Verifikasi
+                            </button>
+                          </div>
+                        )}
+                      </td>
                       <td>{sess.current_question || 1}</td>
                       <td>{sess.answers ? Object.keys(sess.answers).length : 0}</td>
                       <td>
@@ -1851,6 +2090,296 @@ export default function Monitor() {
                     <><Clock size={16} /> Terapkan Tambahan Massal</>
                   )}
                 </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Verifikasi Identitas & Anti-Joki */}
+      {selectedSelfieSession && (
+        <div className="modal-overlay" style={{ zIndex: 99999, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="modal card" style={{ maxWidth: 540, width: '100%', padding: 0, overflow: 'hidden', border: '1.5px solid #2563eb', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.3)' }}>
+            
+            {/* Header */}
+            <div style={{ padding: '1.15rem 1.4rem', background: 'linear-gradient(90deg, #1e3a8a, #2563eb)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #3b82f6' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '8px', background: 'rgba(255, 255, 255, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff' }}>
+                  <ShieldAlert size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#ffffff' }}>
+                    Verifikasi Anti-Joki &amp; Identitas Siswa
+                  </h3>
+                  <p style={{ margin: '0.1rem 0 0', fontSize: '0.74rem', color: '#bfdbfe' }}>
+                    Pemeriksaan selfie pasif &amp; kehadiran fisik peserta
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setSelectedSelfieSession(null); setConfirmNotice('') }}
+                style={{ color: '#ffffff', padding: '0.25rem', minHeight: 'auto' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.4rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              
+              {/* Student Info Card */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '0.85rem 1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.5rem'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1e293b' }}>
+                    {selectedSelfieSession.users?.full_name || selectedSelfieSession.users?.name || 'Siswa'}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.15rem' }}>
+                    Username: @{selectedSelfieSession.users?.username || '—'} &bull; Kelas: {selectedSelfieSession.users?.classes?.name || selectedSelfieSession.users?.kelas || '—'}
+                  </div>
+                </div>
+                <div>
+                  {statusBadge(selectedSelfieSession.status, Boolean(selectedSelfieSession.returnee_token_required), selectedSelfieSession.returnee_reason)}
+                </div>
+              </div>
+
+              {/* Device Location Card (Anti-Joki Geolocation 200-300m) */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '0.75rem 1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.75rem',
+                flexWrap: 'wrap'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <div style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: '8px',
+                    background: '#e0f2fe',
+                    color: '#0284c7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <MapPin size={17} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: 600 }}>
+                      Lokasi Perangkat (Presisi 200-300m):
+                    </div>
+                    <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#0f172a' }}>
+                      {selectedSelfieSession.location || 'Diverifikasi perlahan (1-5 mnt setelah mulai)...'}
+                    </div>
+                    {selectedSelfieSession.location_captured_at && (
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '0.1rem' }}>
+                        Terekam: {new Date(selectedSelfieSession.location_captured_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &bull; Presisi: {selectedSelfieSession.location_precision || '200-300m'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {selectedSelfieSession.location && (
+                  <span className="badge badge-active" style={{ fontSize: '0.7rem' }}>
+                    📍 Lokasi Terekam
+                  </span>
+                )}
+              </div>
+
+              {/* Photo Display or Missing Alert */}
+              {selectedSelfieSession.selfie_image ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '3px solid #10b981', boxShadow: '0 4px 15px rgba(16, 185, 129, 0.2)' }}>
+                    <img
+                      src={selectedSelfieSession.selfie_image}
+                      alt="Selfie Pasif Siswa"
+                      style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain', display: 'block', background: '#0f172a' }}
+                    />
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      background: 'rgba(15, 23, 42, 0.8)',
+                      backdropFilter: 'blur(4px)',
+                      color: '#ffffff',
+                      fontSize: '0.72rem',
+                      padding: '0.35rem 0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <Camera size={12} /> Diambil diam-diam saat membaca deskripsi
+                      </span>
+                      <span>
+                        {selectedSelfieSession.selfie_captured_at ? new Date(selectedSelfieSession.selfie_captured_at).toLocaleTimeString() : ''}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#15803d', textAlign: 'center', background: '#f0fdf4', padding: '0.5rem 0.85rem', borderRadius: '8px', border: '1px solid #bbf7d0', width: '100%' }}>
+                    ✓ <strong>Foto Berhasil Terekam</strong>: Pastikan wajah pada foto di atas sesuai dengan siswa yang sedang mengerjakan ujian di hadapan Anda.
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  padding: '1.1rem',
+                  borderRadius: '10px',
+                  background: '#fef2f2',
+                  border: '1.5px solid #f87171',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                    <div style={{ width: 38, height: 38, borderRadius: '8px', background: '#fee2e2', color: '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <AlertTriangle size={22} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#991b1b', fontSize: '0.92rem' }}>
+                        Tidak Ada Foto Selfie Pasif (Potensi Joki / Remote Piloting)
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#7f1d1d', marginTop: '0.25rem', lineHeight: 1.45 }}>
+                        Kamera tidak dapat diakses saat siswa mulai membaca deskripsi ujian.
+                        {selectedSelfieSession.selfie_failure_reason && (
+                          <div style={{ marginTop: '0.35rem', fontStyle: 'italic', background: '#fee2e2', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
+                            Penyebab: {selectedSelfieSession.selfie_failure_reason}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    fontSize: '0.78rem',
+                    color: '#991b1b',
+                    background: '#ffffff',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1px dashed #fca5a5',
+                    lineHeight: 1.4
+                  }}>
+                    <strong>Instruksi Pengawas:</strong> Datangi meja siswa di ruangan fisik. Jika siswa benar-benar hadir dan bukan joki yang mengerjakan dari luar, klik tombol <strong>&ldquo;Konfirmasi Hadir Fisik (Bukan Joki)&rdquo;</strong> di bawah. Jika siswa tidak ada di ruangan fisik, segera <strong>Kunci Sesi</strong> siswa!
+                  </div>
+                </div>
+              )}
+
+              {/* Already confirmed info */}
+              {selectedSelfieSession.selfie_status === 'teacher_confirmed' && (
+                <div style={{
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  background: '#ecfdf5',
+                  border: '1px solid #10b981',
+                  color: '#065f46',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <CheckCircle2 size={16} color="#059669" />
+                  <div>
+                    <strong>Siswa Telah Dikonfirmasi Hadir Fisik</strong>
+                    <div style={{ fontSize: '0.74rem', color: '#047857' }}>
+                      Oleh: {selectedSelfieSession.teacher_confirmed_by || 'Pengawas'} &bull; Waktu: {selectedSelfieSession.teacher_confirmed_at ? new Date(selectedSelfieSession.teacher_confirmed_at).toLocaleString() : '—'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notice Message */}
+              {confirmNotice && (
+                <div style={{
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '8px',
+                  background: confirmNotice.includes('✅') ? '#ecfdf5' : '#fef2f2',
+                  color: confirmNotice.includes('✅') ? '#065f46' : '#991b1b',
+                  fontSize: '0.82rem',
+                  fontWeight: 600
+                }}>
+                  {confirmNotice}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => { setSelectedSelfieSession(null); setConfirmNotice('') }}
+                  style={{ flex: 1, minWidth: 100 }}
+                >
+                  Tutup
+                </button>
+
+                {/* If missing or not confirmed: Button to confirm physically */}
+                {selectedSelfieSession.selfie_status !== 'teacher_confirmed' && (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => handleConfirmPhysicalAttendance(selectedSelfieSession)}
+                    disabled={confirmingAttendance}
+                    style={{
+                      flex: 2,
+                      minWidth: 200,
+                      fontWeight: 800,
+                      background: 'linear-gradient(135deg, #059669, #047857)',
+                      border: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.4rem',
+                      boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)'
+                    }}
+                  >
+                    {confirmingAttendance ? (
+                      <><div className="spinner" style={{ width: 15, height: 15 }} /> Memproses Konfirmasi...</>
+                    ) : (
+                      <><UserCheck size={16} /> Konfirmasi Hadir Fisik (Bukan Joki)</>
+                    )}
+                  </button>
+                )}
+
+                {/* Suspicious Joki Action: Lock Student */}
+                {selectedSelfieSession.status === 'active' && !selectedSelfieSession.returnee_token_required && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={async () => {
+                      if (!confirm(`Kunci sesi ${selectedSelfieSession.users?.full_name || 'siswa'} sekarang karena terindikasi joki / tidak hadir di ruangan?`)) return
+                      await lockStudentReturnee(selectedSelfieSession.id, 'Terkunci: Indikasi Joki (Tidak ada selfie pasif & tidak hadir fisik)')
+                      await load()
+                      setSelectedSelfieSession(null)
+                    }}
+                    style={{
+                      flex: 1.2,
+                      minWidth: 160,
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <Lock size={14} /> Kunci (Curiga Joki)
+                  </button>
+                )}
               </div>
 
             </div>

@@ -15,9 +15,18 @@ import {
   Check,
   Info,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Edit3,
+  MapPin
 } from 'lucide-react'
-import { fetchLoginLogs, fetchLoginAuditStats } from '../../lib/loginAudit'
+import {
+  fetchLoginLogs,
+  fetchLoginAuditStats,
+  getDetailedDeviceInfo,
+  getDeviceNickname,
+  setDeviceNickname,
+  formatLoginNarrative
+} from '../../lib/loginAudit'
 
 export default function LoginLogs() {
   const [logs, setLogs] = useState([])
@@ -25,6 +34,11 @@ export default function LoginLogs() {
   const [loading, setLoading] = useState(true)
   const [isTableMissing, setIsTableMissing] = useState(false)
   
+  // Current client device info & custom device nickname
+  const [currentDevice, setCurrentDevice] = useState(null)
+  const [nicknameModal, setNicknameModal] = useState(false)
+  const [nicknameInput, setNicknameInput] = useState('')
+
   // Filters
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all') // all | failed | success | suspicious
@@ -69,12 +83,21 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON public.login_logs(create
 CREATE INDEX IF NOT EXISTS idx_login_logs_identifier ON public.login_logs(identifier);
 CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
 
--- Tarik Otomatis Riwayat Login 2 Hari Terakhir dari Profiles:
+-- Tarik Otomatis Riwayat Login dari Profiles dengan Model Perangkat:
 INSERT INTO public.login_logs (user_id, identifier, full_name, role, role_level, status, ip_address, user_agent, device_name, location, created_at)
 SELECT p.id, COALESCE(p.username, p.fullname), p.fullname,
   CASE WHEN p.role_level = 4 THEN 'admin' WHEN p.role_level = 3 THEN 'teacher' ELSE 'student' END,
   COALESCE(p.role_level, 1), 'success', '114.10.156.217', p.last_login_device,
-  CASE WHEN p.last_login_device ILIKE '%mobile%' OR p.last_login_device ILIKE '%android%' THEN 'Android Mobile Browser' ELSE 'Windows PC Desktop' END,
+  CASE 
+    WHEN p.last_login_device ILIKE '%ipad pro%' THEN 'iPad Pro'
+    WHEN p.last_login_device ILIKE '%ipad%' THEN 'Apple iPad'
+    WHEN p.last_login_device ILIKE '%iphone%' THEN 'Apple iPhone'
+    WHEN p.last_login_device ILIKE '%samsung%' OR p.last_login_device ILIKE '%sm-%' THEN 'Samsung Galaxy'
+    WHEN p.last_login_device ILIKE '%mobile%' OR p.last_login_device ILIKE '%android%' THEN 'Android Smartphone'
+    WHEN p.last_login_device ILIKE '%windows%' THEN 'Windows PC Desktop'
+    WHEN p.last_login_device ILIKE '%macintosh%' OR p.last_login_device ILIKE '%mac os%' THEN 'Apple MacBook'
+    ELSE 'Web Browser'
+  END,
   'Kupang, NTT', p.last_login_at
 FROM public.profiles p WHERE p.last_login_at IS NOT NULL AND p.last_login_at >= now() - interval '3 days'
 ON CONFLICT DO NOTHING;`
@@ -104,7 +127,21 @@ ON CONFLICT DO NOTHING;`
 
   useEffect(() => {
     loadData()
+    // Detect current client device model
+    getDetailedDeviceInfo().then(dev => {
+      setCurrentDevice(dev)
+      setNicknameInput(dev.deviceNickname || dev.deviceModel || '')
+    })
   }, [statusFilter, roleFilter])
+
+  function handleSaveNickname(e) {
+    e.preventDefault()
+    setDeviceNickname(nicknameInput)
+    setNicknameModal(false)
+    getDetailedDeviceInfo().then(dev => {
+      setCurrentDevice(dev)
+    })
+  }
 
   function handleSearchSubmit(e) {
     e.preventDefault()
@@ -149,10 +186,10 @@ ON CONFLICT DO NOTHING;`
     }
   }
 
-  function getDeviceIcon(deviceType) {
-    if (deviceType === 'Mobile') return <Smartphone size={15} style={{ color: '#0284c7' }} />
-    if (deviceType === 'Tablet') return <Tablet size={15} style={{ color: '#8b5cf6' }} />
-    return <Monitor size={15} style={{ color: '#64748b' }} />
+  function getDeviceIcon(deviceType, size = 15) {
+    if (deviceType === 'Mobile') return <Smartphone size={size} style={{ color: '#0284c7' }} />
+    if (deviceType === 'Tablet') return <Tablet size={size} style={{ color: '#8b5cf6' }} />
+    return <Monitor size={size} style={{ color: '#64748b' }} />
   }
 
   function getRoleBadge(role, roleLevel) {
@@ -185,8 +222,37 @@ ON CONFLICT DO NOTHING;`
               <h2 style={{ margin: 0 }}>Audit Log Login &amp; Deteksi Breach</h2>
             </div>
             <p className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-              Pantau seluruh riwayat login untuk mendeteksi pembajakan akun (account takeover), percobaan password ilegal, dan anomali perangkat.
+              Pantau seluruh riwayat login untuk mendeteksi pembajakan akun (account takeover), percobaan password ilegal, dan nama perangkat login (cth: mikhail login at iPad Pro).
             </p>
+
+            {/* Current Device Pill & Nickname */}
+            {currentDevice && (
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                padding: '0.25rem 0.65rem',
+                borderRadius: '6px',
+                fontSize: '0.78rem',
+                color: '#334155',
+                marginTop: '0.4rem'
+              }}>
+                {getDeviceIcon(currentDevice.deviceType, 14)}
+                <span>Perangkat Anda Saat Ini: <strong style={{ color: '#0f172a' }}>{currentDevice.deviceModel}</strong> ({currentDevice.browser})</span>
+                <button
+                  type="button"
+                  onClick={() => setNicknameModal(true)}
+                  className="btn btn-ghost btn-xs"
+                  style={{ padding: '0.1rem 0.35rem', fontSize: '0.7rem', color: '#0284c7' }}
+                  title="Beri nama custom perangkat ini (cth: iPad Pro Mikhail)"
+                >
+                  <Edit3 size={11} style={{ marginRight: '0.2rem' }} />
+                  {currentDevice.deviceNickname ? 'Ubah Nama' : 'Beri Nama'}
+                </button>
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-ghost" onClick={loadData} disabled={loading}>
@@ -367,20 +433,21 @@ ON CONFLICT DO NOTHING;`
                   <th style={{ width: '160px' }}>Status</th>
                   <th>Perangkat &amp; Browser</th>
                   <th>Alamat IP</th>
+                  <th>Lokasi (~250m)</th>
                   <th style={{ width: '100px', textAlign: 'center' }}>Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '3rem' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '3rem' }}>
                       <div className="spinner" style={{ width: 26, height: 26, margin: '0 auto 0.5rem' }} />
                       <div className="text-muted text-xs">Memuat log autentikasi...</div>
                     </td>
                   </tr>
                 ) : logs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '3rem' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '3rem' }}>
                       <ShieldCheck size={36} style={{ margin: '0 auto 0.5rem', color: '#94a3b8' }} />
                       <div style={{ fontWeight: 600, color: '#475569' }}>Tidak ada log login yang cocok</div>
                       <div className="text-muted text-xs" style={{ marginTop: '0.25rem' }}>
@@ -420,6 +487,29 @@ ON CONFLICT DO NOTHING;`
                             </span>
                             {getRoleBadge(log.role, log.role_level)}
                           </div>
+
+                          {/* Action Narrative, eg: "mikhail login at iPad Pro" */}
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontSize: '0.71rem',
+                            color: isSuccess ? '#0369a1' : '#b91c1c',
+                            background: isSuccess ? '#f0f9ff' : '#fef2f2',
+                            border: `1px solid ${isSuccess ? '#bae6fd' : '#fecaca'}`,
+                            padding: '0.12rem 0.45rem',
+                            borderRadius: '4px',
+                            marginTop: '0.25rem',
+                            lineHeight: 1.25
+                          }}>
+                            <span>
+                              <strong>{log.identifier}</strong> {isSuccess ? 'login at' : 'gagal login di'}{' '}
+                              <strong style={{ color: isSuccess ? '#0c4a6e' : '#7f1d1d' }}>
+                                {log.metadata?.deviceModel || log.device_name || 'Perangkat'}
+                              </strong>
+                            </span>
+                          </div>
+
                           {log.is_suspicious && (
                             <div style={{
                               display: 'inline-flex',
@@ -495,15 +585,31 @@ ON CONFLICT DO NOTHING;`
 
                         {/* Device Info */}
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: '#1e293b' }}>
-                            {getDeviceIcon(log.metadata?.deviceType)}
-                            <span>{log.device_name || 'Web Browser'}</span>
-                          </div>
-                          {log.metadata?.screen && (
-                            <div className="text-muted text-xs" style={{ fontSize: '0.7rem' }}>
-                              Layar: {log.metadata.screen}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                            <div style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: '8px',
+                              background: log.metadata?.deviceType === 'Tablet' ? '#f5f3ff' : (log.metadata?.deviceType === 'Mobile' ? '#f0fdf4' : '#f8fafc'),
+                              border: `1px solid ${log.metadata?.deviceType === 'Tablet' ? '#ddd6fe' : (log.metadata?.deviceType === 'Mobile' ? '#bbf7d0' : '#e2e8f0')}`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}>
+                              {getDeviceIcon(log.metadata?.deviceType, 16)}
                             </div>
-                          )}
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a' }}>
+                                {log.metadata?.deviceModel || log.device_name || 'Web Browser'}
+                              </div>
+                              <div className="text-muted text-xs" style={{ fontSize: '0.71rem', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '1px' }}>
+                                <span>{log.metadata?.browser || 'Browser'}</span>
+                                <span>•</span>
+                                <span>{log.metadata?.os || 'OS'}</span>
+                              </div>
+                            </div>
+                          </div>
                         </td>
 
                         {/* IP Address */}
@@ -523,6 +629,44 @@ ON CONFLICT DO NOTHING;`
                               </button>
                             )}
                           </div>
+                        </td>
+
+                        {/* Device Location (~250m Precision) */}
+                        <td>
+                          {log.location ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <div style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: '6px',
+                                background: '#f0fdf4',
+                                border: '1px solid #bbf7d0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#16a34a',
+                                flexShrink: 0
+                              }}>
+                                <MapPin size={13} />
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 700, fontSize: '0.8rem', color: '#0f172a' }}>
+                                  {log.location}
+                                </div>
+                                <div style={{ fontSize: '0.67rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '1px' }}>
+                                  <span className="badge" style={{ padding: '0.05rem 0.3rem', fontSize: '0.64rem', background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }}>
+                                    {log.metadata?.location_precision || '±250m'}
+                                  </span>
+                                  <span>{log.metadata?.location_details?.method === 'geolocation_fuzzed' ? 'GPS/WiFi' : 'Network'}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+                              <Clock size={11} />
+                              <span>Verifikasi 1-5m...</span>
+                            </div>
+                          )}
                         </td>
 
                         {/* Action */}
@@ -548,7 +692,7 @@ ON CONFLICT DO NOTHING;`
       {/* Log Detail Modal */}
       {selectedLog && (
         <div className="modal-backdrop" onClick={() => setSelectedLog(null)}>
-          <div className="modal-card" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-card" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <ShieldAlert size={20} style={{ color: selectedLog.status === 'success' ? '#10b981' : '#ef4444' }} />
@@ -557,7 +701,42 @@ ON CONFLICT DO NOTHING;`
               <button className="btn btn-ghost btn-xs" onClick={() => setSelectedLog(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.85rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '0.5rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem' }}>
+              {/* Standout Narrative Banner: eg: "mikhail login at iPad Pro" */}
+              <div style={{
+                background: selectedLog.status === 'success' ? 'linear-gradient(135deg, #f0fdf4, #ecfdf5)' : 'linear-gradient(135deg, #fef2f2, #fff1f2)',
+                border: `1px solid ${selectedLog.status === 'success' ? '#a7f3d0' : '#fecaca'}`,
+                borderRadius: '10px',
+                padding: '0.85rem 1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem'
+              }}>
+                <div style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: '10px',
+                  background: selectedLog.status === 'success' ? '#10b981' : '#ef4444',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                }}>
+                  {getDeviceIcon(selectedLog.metadata?.deviceType, 22)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '0.98rem', fontWeight: 800, color: selectedLog.status === 'success' ? '#065f46' : '#991b1b' }}>
+                    {selectedLog.identifier} {selectedLog.status === 'success' ? 'login at' : 'gagal login di'}{' '}
+                    {selectedLog.metadata?.deviceModel || selectedLog.device_name || 'Perangkat'}
+                  </div>
+                  <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '0.2rem' }}>
+                    Waktu: {new Date(selectedLog.created_at).toLocaleString('id-ID')} • IP: {selectedLog.ip_address || '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '0.55rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem' }}>
                 <strong className="text-muted">Username / Akun:</strong>
                 <div>
                   <span style={{ fontWeight: 700, color: '#1b3361' }}>{selectedLog.identifier}</span>
@@ -580,14 +759,70 @@ ON CONFLICT DO NOTHING;`
                   )}
                 </div>
 
+                <strong className="text-muted">Nama / Model Perangkat:</strong>
+                <div>
+                  <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                    {selectedLog.metadata?.deviceModel || selectedLog.device_name || '—'}
+                  </span>
+                  {selectedLog.metadata?.deviceNickname && (
+                    <span className="badge" style={{ marginLeft: '0.4rem', background: '#e0f2fe', color: '#0369a1', fontSize: '0.7rem' }}>
+                      Custom Nickname
+                    </span>
+                  )}
+                </div>
+
+                <strong className="text-muted">Kategori Perangkat:</strong>
+                <div>
+                  {selectedLog.metadata?.deviceType || 'Desktop'}
+                  {selectedLog.metadata?.screen && <span className="text-muted text-xs" style={{ marginLeft: '0.4rem' }}>({selectedLog.metadata.screen})</span>}
+                </div>
+
+                <strong className="text-muted">Sistem Operasi &amp; Browser:</strong>
+                <div>
+                  {selectedLog.metadata?.browser || 'Browser'} on {selectedLog.metadata?.os || 'OS'}
+                </div>
+
                 <strong className="text-muted">Waktu Akses:</strong>
                 <div>{new Date(selectedLog.created_at).toLocaleString('id-ID')}</div>
 
                 <strong className="text-muted">Alamat IP:</strong>
                 <div style={{ fontFamily: 'monospace' }}>{selectedLog.ip_address || 'Tidak terdeteksi'}</div>
 
-                <strong className="text-muted">Perangkat:</strong>
-                <div>{selectedLog.device_name || '—'}</div>
+                <strong className="text-muted">Lokasi Perangkat:</strong>
+                <div>
+                  {selectedLog.location ? (
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <MapPin size={15} color="#0284c7" />
+                        <span>{selectedLog.location}</span>
+                        <span className="badge badge-active" style={{ fontSize: '0.68rem' }}>
+                          Presisi {selectedLog.metadata?.location_precision || '200-300m'}
+                        </span>
+                      </div>
+                      {selectedLog.metadata?.location_details?.coordinates && (
+                        <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.25rem', fontFamily: 'monospace' }}>
+                          Koordinat Fuzzed: {selectedLog.metadata.location_details.coordinates.lat}, {selectedLog.metadata.location_details.coordinates.lng} (Taksiran Radius ±{selectedLog.metadata.location_details.coordinates.accuracyMeters || 250}m)
+                        </div>
+                      )}
+                      {selectedLog.metadata?.location_details?.coordinates && (
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedLog.metadata.location_details.coordinates.lat},${selectedLog.metadata.location_details.coordinates.lng}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-ghost btn-xs"
+                          style={{ marginTop: '0.35rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#2563eb' }}
+                        >
+                          <ExternalLink size={12} /> Buka Taksiran Area di Google Maps
+                        </a>
+                      )}
+                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.25rem' }}>
+                        * Diverifikasi secara pasif &amp; perlahan 1-5 menit setelah ujian dimulai agar tidak mencurigakan
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-muted">Sedang diverifikasi secara bertahap saat ujian berlangsung (1-5 menit)...</span>
+                  )}
+                </div>
 
                 <strong className="text-muted">Potensi Breach:</strong>
                 <div>
@@ -635,6 +870,46 @@ ON CONFLICT DO NOTHING;`
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Device Nickname Modal */}
+      {nicknameModal && (
+        <div className="modal-backdrop" onClick={() => setNicknameModal(false)}>
+          <div className="modal-card" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Edit3 size={18} style={{ color: '#0284c7' }} />
+                <h3>Atur Nama Perangkat Anda</h3>
+              </div>
+              <button className="btn btn-ghost btn-xs" onClick={() => setNicknameModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleSaveNickname}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <p className="text-muted text-xs" style={{ margin: 0 }}>
+                  Beri nama atau label khusus untuk perangkat yang Anda gunakan saat ini. Nama ini akan otomatis dicatat setiap kali Anda login (misal: <em>iPad Pro Mikhail</em>, <em>Tab Siswa 1</em>, dll).
+                </p>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Nama / Label Perangkat:</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={nicknameInput}
+                    onChange={e => setNicknameInput(e.target.value)}
+                    placeholder="cth: iPad Pro Mikhail"
+                    autoFocus
+                  />
+                </div>
+                <div className="text-muted text-xs">
+                  Model terdeteksi: <strong>{currentDevice?.deviceModel || 'Komputer'}</strong>
+                </div>
+              </div>
+              <div className="modal-footer" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', padding: '0.75rem 1rem' }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setNicknameModal(false)}>Batal</button>
+                <button type="submit" className="btn btn-primary btn-sm">Simpan Nama</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

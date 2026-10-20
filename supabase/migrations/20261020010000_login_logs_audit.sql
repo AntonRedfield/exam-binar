@@ -71,8 +71,13 @@ SELECT
   '114.10.156.217',
   p.last_login_device,
   CASE 
-    WHEN p.last_login_device ILIKE '%mobile%' OR p.last_login_device ILIKE '%android%' THEN 'Android Mobile Browser'
+    WHEN p.last_login_device ILIKE '%ipad pro%' THEN 'iPad Pro'
+    WHEN p.last_login_device ILIKE '%ipad%' THEN 'Apple iPad'
+    WHEN p.last_login_device ILIKE '%iphone%' THEN 'Apple iPhone'
+    WHEN p.last_login_device ILIKE '%samsung%' OR p.last_login_device ILIKE '%sm-%' THEN 'Samsung Galaxy'
+    WHEN p.last_login_device ILIKE '%mobile%' OR p.last_login_device ILIKE '%android%' THEN 'Android Smartphone'
     WHEN p.last_login_device ILIKE '%windows%' THEN 'Windows PC Desktop'
+    WHEN p.last_login_device ILIKE '%macintosh%' OR p.last_login_device ILIKE '%mac os%' THEN 'Apple MacBook'
     ELSE 'Web Browser'
   END,
   'Kupang, NTT',
