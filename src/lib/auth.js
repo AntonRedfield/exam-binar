@@ -181,8 +181,12 @@ export async function login(username, password) {
   // (strictly Level 1 or 2) who needs dynamic default credential synchronization.
   // CRITICAL: We NEVER trigger this fallback for Teachers (Level 3) or Admin (Level 4),
   // ensuring their custom passwords are fully respected and old/default passwords are rejected.
+  // Fallback credential sync: ONLY for Students/Officers (Level 1 & 2) who have NOT set a custom password.
+  // We must NOT pass the actual password to prepare_student_login for users who already have a
+  // custom password — doing so could re-hash and re-sync their credentials incorrectly.
   const isStudentOrOfficer = prepResult?.found && (Number(prepResult?.role_level) === 1 || Number(prepResult?.role_level) === 2)
-  if (error && isStudentOrOfficer) {
+  const hasCustomPassword = prepResult?.has_custom_password === true
+  if (error && isStudentOrOfficer && !hasCustomPassword) {
     try {
       const { data: retryPrep } = await supabase.rpc('prepare_student_login', {
         p_identifier: cleanUsername,
@@ -572,7 +576,6 @@ export async function updateOwnPassword(newPassword) {
   }
 
   const cleanPassword = newPassword.trim()
-  const currentUser = getCurrentUser()
 
   // 1. Ensure supabase client has active session restored if available in storage
   try {
@@ -593,7 +596,12 @@ export async function updateOwnPassword(newPassword) {
     console.warn('[Auth] Error re-establishing Supabase auth session:', sessErr)
   }
 
-  // 2. Update via Supabase GoTrue Auth
+  // 2. Update via Supabase GoTrue Auth — this is the ONLY source of truth for the password.
+  // IMPORTANT: We do NOT call register_seed_user here anymore.
+  // register_seed_user reconstructs the entire auth.users row and wipes the
+  // has_custom_password flag from raw_user_meta_data, which causes the
+  // prepare_student_login RPC to think the password is still default and
+  // allows old/default passwords to be re-synced on the next login attempt.
   let goTrueUpdated = false
   let goTrueError = null
   try {
@@ -614,42 +622,11 @@ export async function updateOwnPassword(newPassword) {
     console.warn('[Auth] supabase.auth.updateUser warning:', gtErr)
   }
 
-  // 3. Directly update PostgreSQL auth.users encrypted_password via register_seed_user RPC
-  // to guarantee persistence in PostgreSQL regardless of client token state!
-  let rpcUpdated = false
-  if (currentUser?.username) {
-    try {
-      const roleLevel = currentUser.level || (currentUser.role === 'SUPERADMIN' ? 4 : (currentUser.role === 'MODERATOR' ? 3 : 1))
-      const dbRole = currentUser.dbRole || (roleLevel === 4 ? 'admin' : (roleLevel === 3 ? 'teacher' : 'student'))
-      const fullName = currentUser.full_name || currentUser.name || currentUser.username
-
-      const { error: rpcErr } = await supabase.rpc('register_seed_user', {
-        p_username: currentUser.username.toLowerCase().trim(),
-        p_password: cleanPassword,
-        p_full_name: fullName,
-        p_display_name: fullName,
-        p_email: currentUser.email || `${currentUser.username.toLowerCase().trim()}@${EMAIL_DOMAIN}`,
-        p_role: dbRole,
-        p_role_level: roleLevel,
-        p_class_section: currentUser.kelas || null,
-        p_phone: currentUser.phone || null
-      })
-
-      if (!rpcErr) {
-        rpcUpdated = true
-      } else {
-        console.warn('[Auth] register_seed_user fallback notice:', rpcErr)
-      }
-    } catch (rpcEx) {
-      console.warn('[Auth] register_seed_user exception:', rpcEx)
-    }
-  }
-
-  if (!goTrueUpdated && !rpcUpdated) {
+  if (!goTrueUpdated) {
     throw new Error(goTrueError?.message || 'Gagal mengubah password. Silakan coba login ulang.')
   }
 
-  // Keep local session storage in sync with updated user metadata
+  // 3. Keep local session storage in sync with updated user metadata
   try {
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(AUTH_STORAGE_KEY)
