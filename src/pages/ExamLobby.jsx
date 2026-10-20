@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions } from '../lib/db'
@@ -26,11 +26,7 @@ import {
   sanitizeReturneeToken,
   markSessionAsReturnee
 } from '../lib/returnee'
-import {
-  capturePassiveSelfie,
-  getStoredPassiveSelfie,
-  setStoredPassiveSelfie
-} from '../lib/passiveSelfie'
+// passiveSelfie capture is now handled inside ExamRoom (deferred, non-blocking)
 
 export default function ExamLobby() {
   const { examId } = useParams()
@@ -116,69 +112,10 @@ export default function ExamLobby() {
     return () => clearInterval(interval)
   }, [session?.returnee_token_required, user?.id, examId, navigate])
 
-  // ─── Passive Hidden Selfie Engine (Anti-Piloting / Anti-Joki) ────────────
-  const passiveCapturePromise = useRef(null)
-  const passiveSelfieRef = useRef(null)
+  // ─── Passive Selfie ─────────────────────────────────────────────────────
+  // Selfie capture is now done inside ExamRoom after the student has entered.
+  // The lobby never blocks start or waits for camera.
 
-  useEffect(() => {
-    if (!user?.id || !examId) return
-    const cached = getStoredPassiveSelfie(examId)
-    if (cached?.success) {
-      passiveSelfieRef.current = cached
-      return
-    }
-
-    // Silently capture passive selfie in background while reading description
-    let isMounted = true
-    const captureTask = (async () => {
-      try {
-        const res = await capturePassiveSelfie({ timeoutMs: 6500 })
-        if (isMounted) {
-          passiveSelfieRef.current = res
-          setStoredPassiveSelfie(examId, res)
-        }
-        return res
-      } catch (e) {
-        const fail = { success: false, reason: e?.message || 'Gagal kamera pasif' }
-        if (isMounted) {
-          passiveSelfieRef.current = fail
-          setStoredPassiveSelfie(examId, fail)
-        }
-        return fail
-      }
-    })()
-    passiveCapturePromise.current = captureTask
-
-    return () => { isMounted = false }
-  }, [examId, user?.id])
-
-  async function resolveSelfiePayload() {
-    let selfie = passiveSelfieRef.current || getStoredPassiveSelfie(examId)
-    if (!selfie && passiveCapturePromise.current) {
-      try {
-        selfie = await Promise.race([
-          passiveCapturePromise.current,
-          new Promise(r => setTimeout(r, 1200))
-        ])
-      } catch (e) {}
-    }
-
-    if (selfie && selfie.success && selfie.image) {
-      return {
-        selfie_image: selfie.image,
-        selfie_status: 'verified',
-        selfie_captured_at: selfie.capturedAt || new Date().toISOString(),
-        selfie_failure_reason: null
-      }
-    }
-
-    return {
-      selfie_image: null,
-      selfie_status: 'missing',
-      selfie_captured_at: null,
-      selfie_failure_reason: selfie?.reason || 'Kamera tidak aktif saat membaca deskripsi'
-    }
-  }
 
   const monitorLevel = exam?.monitoring_level || 1
   const levelConfig = MONITORING_LEVELS[monitorLevel] || MONITORING_LEVELS[1]
@@ -227,7 +164,6 @@ export default function ExamLobby() {
         ? exam.duration_minutes * 1000
         : exam.duration_minutes * 60 * 1000
       const endTimestamp = new Date(Date.now() + durationMs).toISOString()
-      const selfieData = await resolveSelfiePayload()
 
       if (!session || session.status === 'reset') {
         if (session) {
@@ -240,7 +176,6 @@ export default function ExamLobby() {
             returnee_token_required: false,
             returnee_token: null,
             returnee_reason: null,
-            ...selfieData
           })
           if (upErr) throw new Error(upErr.message)
         } else {
@@ -254,13 +189,9 @@ export default function ExamLobby() {
             current_question: 1,
             status: 'active',
             returnee_token_required: false,
-            ...selfieData
           })
           if (crErr) throw new Error(crErr.message)
         }
-      } else if (session && !session.selfie_image && selfieData.selfie_image) {
-        // If session was already active but had no selfie yet, attach it now
-        await sessions.update(session.id, selfieData)
       }
 
       sessionStorage.setItem('binar_exam_active_room', examId)
@@ -295,12 +226,6 @@ export default function ExamLobby() {
     })
 
     if (res.success) {
-      const selfieData = await resolveSelfiePayload()
-      if (selfieData.selfie_image) {
-        try {
-          await sessions.update(session.id, selfieData)
-        } catch (e) {}
-      }
       setReturneeSuccess('Token valid! Mengalihkan ke ruang ujian...')
       sessionStorage.setItem('binar_exam_active_room', examId)
       setSession(prev => prev ? { ...prev, returnee_token_required: false } : prev)

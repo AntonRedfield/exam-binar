@@ -1202,7 +1202,7 @@ export default function Monitor() {
                   <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Wajib Verifikasi Fisik</span>
                 </div>
                 <div style={{ fontSize: '0.82rem', color: '#78350f', marginTop: '0.15rem', lineHeight: 1.4 }}>
-                  Kamera tidak terdeteksi atau diblokir siswa saat membaca deskripsi ujian. Pastikan siswa benar-benar hadir secara fisik di ruangan ujian dan bukan joki jarak jauh.
+                  Foto otomatis tidak berhasil diambil saat siswa mengerjakan ujian (kamera diblokir atau tidak tersedia). Selfie bersifat opsional — pastikan siswa benar-benar hadir secara fisik di ruangan ujian dan bukan joki jarak jauh.
                 </div>
               </div>
             </div>
@@ -2314,7 +2314,7 @@ export default function Monitor() {
                       justifyContent: 'space-between'
                     }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <Camera size={12} /> Diambil diam-diam saat membaca deskripsi
+                        <Camera size={12} /> Diambil diam-diam beberapa detik setelah mulai ujian
                       </span>
                       <span>
                         {selectedSelfieSession.selfie_captured_at ? new Date(selectedSelfieSession.selfie_captured_at).toLocaleTimeString() : ''}
@@ -2344,7 +2344,7 @@ export default function Monitor() {
                         Tidak Ada Foto Selfie Pasif (Potensi Joki / Remote Piloting)
                       </div>
                       <div style={{ fontSize: '0.8rem', color: '#7f1d1d', marginTop: '0.25rem', lineHeight: 1.45 }}>
-                        Kamera tidak dapat diakses saat siswa mulai membaca deskripsi ujian.
+                        Foto pasif tidak berhasil direkam saat siswa mengerjakan ujian — kamera tidak tersedia atau diblokir. Selfie bersifat opsional. Jika siswa hadir fisik di ruangan, konfirmasi secara manual di bawah.
                         {selectedSelfieSession.selfie_failure_reason && (
                           <div style={{ marginTop: '0.35rem', fontStyle: 'italic', background: '#fee2e2', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
                             Penyebab: {selectedSelfieSession.selfie_failure_reason}

@@ -35,6 +35,11 @@ import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, Al
 import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
 import { scheduleSlowLocationVerification } from '../lib/deviceLocation'
 import { flushPendingDeviceScan } from '../lib/loginAudit'
+import {
+  capturePassiveSelfie,
+  getStoredPassiveSelfie,
+  setStoredPassiveSelfie
+} from '../lib/passiveSelfie'
 
 // Simple seeded PRNG based on string
 function cyrb128(str) {
@@ -269,6 +274,54 @@ export default function ExamRoom() {
   useEffect(() => {
     currentQRef.current = currentQ
   }, [currentQ])
+
+  // ─── Deferred Secret Selfie (Anti-Piloting / Anti-Joki) ─────────────────
+  // Fires silently once per exam, 4 seconds AFTER the student enters the room.
+  // Never blocks exam entry. Never shows any UI. Failure is silently recorded.
+  useEffect(() => {
+    if (!user?.id || !examId) return
+
+    // Skip if selfie was already captured for this exam session
+    const cached = getStoredPassiveSelfie(examId)
+    if (cached?.success && cached?.image) return
+
+    let cancelled = false
+    const selfieTimer = setTimeout(async () => {
+      if (cancelled) return
+      try {
+        const res = await capturePassiveSelfie({ timeoutMs: 8000 })
+        if (cancelled) return
+
+        // Cache result so it isn't re-attempted on re-renders
+        setStoredPassiveSelfie(examId, res)
+
+        // Silently patch the session with selfie data (fire-and-forget)
+        if (sessionRef.current?.id) {
+          const payload = res?.success && res?.image
+            ? {
+                selfie_image: res.image,
+                selfie_status: 'verified',
+                selfie_captured_at: res.capturedAt || new Date().toISOString(),
+                selfie_failure_reason: null,
+              }
+            : {
+                selfie_image: null,
+                selfie_status: 'missing',
+                selfie_captured_at: null,
+                selfie_failure_reason: res?.reason || 'Kamera tidak tersedia',
+              }
+          sessions.update(sessionRef.current.id, payload).catch(() => {})
+        }
+      } catch (e) {
+        // Silently ignore — selfie is optional, never interrupts exam
+      }
+    }, 4000) // 4 second delay: student is inside the exam room already
+
+    return () => {
+      cancelled = true
+      clearTimeout(selfieTimer)
+    }
+  }, [examId, user?.id])
 
   // Cleanup atomic storage timers and listeners on unmount
   useEffect(() => {
