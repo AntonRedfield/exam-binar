@@ -1261,79 +1261,47 @@ export default function Monitor() {
                         )}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <div className="action-btn-group" style={{ justifyContent: 'center' }}>
                           {isReturnee && (
                             <button
-                              className="btn btn-success btn-sm"
+                              className="action-btn action-btn-unlock"
                               onClick={() => handleDirectUnlock(sess)}
                               title="Buka kunci langsung tanpa perlu siswa input token (Paksa masuk)"
-                              style={{
-                                padding: '0.3rem 0.75rem',
-                                fontSize: '0.76rem',
-                                fontWeight: 700,
-                                background: '#16a34a',
-                                color: '#ffffff',
-                                border: 'none',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.3rem',
-                                boxShadow: '0 1px 2px rgba(22, 163, 74, 0.25)'
-                              }}
                             >
-                              <Unlock size={12} /> Buka Kunci
+                              <Unlock size={15} />
+                              <span>Buka Kunci</span>
                             </button>
                           )}
 
                           {sess.status === 'active' && !isReturnee && (
                             <button
-                              className="btn btn-ghost btn-sm"
+                              className="action-btn action-btn-status"
                               onClick={() => handleLockStudent(sess)}
                               title="Kunci sesi siswa sebagai Returnee"
-                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: '#64748b' }}
                             >
-                              <Lock size={12} /> Kunci
+                              <Lock size={15} />
+                              <span>Kunci</span>
                             </button>
                           )}
 
                           <button
-                            className="btn btn-sm"
+                            className="action-btn action-btn-time"
                             onClick={() => openExtraTimeModal(sess)}
                             title="Beri tambahan waktu ujian (dalam menit) tanpa mereset jawaban siswa"
-                            style={{
-                              padding: '0.28rem 0.6rem',
-                              fontSize: '0.76rem',
-                              fontWeight: 700,
-                              background: '#fef3c7',
-                              color: '#92400e',
-                              border: '1px solid #fde68a',
-                              borderRadius: '6px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              cursor: 'pointer'
-                            }}
                           >
-                            <Clock size={12} color="#b45309" /> + Waktu
+                            <Clock size={15} />
+                            <span>+ Waktu</span>
                           </button>
 
                           {/* Tombol Reset Sesi: Khusus Admin untuk mencegah Guru salah klik / tidak sengaja mereset ujian siswa */}
                           {isAdmin && (
                             <button
-                              className="btn btn-ghost btn-sm"
+                              className="action-btn action-btn-danger"
                               onClick={() => handleReset(sess)}
                               title="[Khusus Admin] Reset sesi siswa ini dari nol (seluruh jawaban akan terhapus)"
-                              style={{
-                                padding: '0.25rem 0.5rem',
-                                fontSize: '0.75rem',
-                                color: '#ef4444',
-                                border: '1px solid rgba(239, 68, 68, 0.3)',
-                                background: 'rgba(239, 68, 68, 0.05)',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.25rem'
-                              }}
                             >
-                              <RotateCcw size={12} color="#ef4444" /> Reset
+                              <RotateCcw size={15} />
+                              <span>Reset</span>
                             </button>
                           )}
                         </div>

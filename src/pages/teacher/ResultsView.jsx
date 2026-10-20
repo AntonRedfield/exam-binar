@@ -408,20 +408,28 @@ export default function ResultsView() {
                           : <span className="text-muted">—</span>}
                       </td>
                       <td className="no-print">
-                        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => setSelectedResult(r)} title="Lihat Esai">
-                            <Eye size={13} />
-                          </button>
-                          <button className="btn btn-primary btn-sm" onClick={() => saveEssay(r.id, essayVal)} disabled={saving === r.id} title="Simpan Skor Esai">
-                            {saving === r.id ? '...' : <><Save size={13} /> Simpan</>}
+                        <div className="action-btn-group" style={{ justifyContent: 'center' }}>
+                          <button
+                            className="action-btn action-btn-preview"
+                            onClick={() => setSelectedResult(r)}
+                            title="Lihat Esai"
+                          >
+                            <Eye size={15} /> Esai
                           </button>
                           <button
-                            className="btn btn-ghost btn-sm"
+                            className="action-btn action-btn-result"
+                            onClick={() => saveEssay(r.id, essayVal)}
+                            disabled={saving === r.id}
+                            title="Simpan Skor Esai"
+                          >
+                            {saving === r.id ? '...' : <><Save size={15} /> Simpan</>}
+                          </button>
+                          <button
+                            className="action-btn action-btn-danger"
                             onClick={() => handleDeleteResult(r.id, r.users?.full_name || r.student?.full_name)}
                             title="Hapus Hasil Ujian Siswa"
-                            style={{ color: 'var(--danger)' }}
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={15} /> Hapus
                           </button>
                         </div>
                       </td>

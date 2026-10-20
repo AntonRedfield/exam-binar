@@ -17,7 +17,8 @@ import {
   ExternalLink,
   ChevronRight,
   Edit3,
-  MapPin
+  MapPin,
+  Eye
 } from 'lucide-react'
 import {
   fetchLoginLogs,
@@ -672,11 +673,12 @@ ON CONFLICT DO NOTHING;`
                         {/* Action */}
                         <td style={{ textAlign: 'center' }}>
                           <button
-                            className="btn btn-ghost btn-xs"
+                            className="action-btn action-btn-result"
                             onClick={() => setSelectedLog(log)}
-                            title="Lihat Detail Lengkap"
+                            title="Lihat Detail Lengkap Autentikasi"
                           >
-                            Detail
+                            <Eye size={15} />
+                            <span>Detail</span>
                           </button>
                         </td>
                       </tr>

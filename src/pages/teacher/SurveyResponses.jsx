@@ -399,9 +399,11 @@ export default function SurveyResponses() {
                         {s.last_sync ? new Date(s.last_sync).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                       </td>
                       <td>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setSelectedUser(s)}>
-                          <Eye size={13} /> Lihat
-                        </button>
+                        <div className="action-btn-group">
+                          <button className="action-btn action-btn-preview" onClick={() => setSelectedUser(s)}>
+                            <Eye size={15} /> Lihat
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

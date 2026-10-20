@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams } from '../../lib/db'
-import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen, ClipboardList } from 'lucide-react'
+import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen, ClipboardList, Play } from 'lucide-react'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 
@@ -131,39 +131,72 @@ export default function ExamList() {
                       </td>
                       <td className="text-muted text-sm">{new Date(exam.created_at).toLocaleDateString('id-ID')}</td>
                       <td>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <div className="action-btn-group">
                           {(user.role === 'SUPERADMIN' || user.role === 'MODERATOR' || exam.created_by === user.id) && (
                             <>
                               <button
-                                className="btn btn-ghost btn-sm"
+                                className={`action-btn ${exam.status === 'published' ? 'action-btn-live' : 'action-btn-edit'}`}
                                 onClick={() => navigate(`/teacher/edit/${exam.id}`)}
-                                title={exam.status === 'published' ? 'Live Edit Soal (Ujian Berlangsung)' : 'Edit'}
-                                style={exam.status === 'published' ? { color: '#059669', borderColor: '#a7f3d0' } : {}}
+                                title={exam.status === 'published' ? 'Live Edit Soal (Ujian Berlangsung)' : 'Edit Ujian'}
                               >
-                                {exam.status === 'published' ? <Zap size={13} color="#059669" /> : <Edit2 size={13} />}
+                                {exam.status === 'published' ? <Zap size={15} /> : <Edit2 size={15} />}
+                                <span>{exam.status === 'published' ? 'Live Edit' : 'Edit'}</span>
                               </button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => togglePublish(exam)} title={exam.status === 'published' ? 'Unpublish' : 'Publish'}>
-                                {exam.status === 'published' ? <Lock size={13} /> : <Globe size={13} />}
+                              <button
+                                className="action-btn action-btn-status"
+                                onClick={() => togglePublish(exam)}
+                                title={exam.status === 'published' ? 'Tutup / Unpublish Ujian' : 'Publikasikan Ujian'}
+                              >
+                                {exam.status === 'published' ? <Lock size={15} /> : <Globe size={15} />}
+                                <span>{exam.status === 'published' ? 'Tutup' : 'Publish'}</span>
                               </button>
                             </>
                           )}
                           {exam.mode !== 'survey' && (
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/monitor/${exam.id}`)} title="Monitor">
-                              <Activity size={13} />
+                            <button
+                              className="action-btn action-btn-monitor"
+                              onClick={() => navigate(`/teacher/monitor/${exam.id}`)}
+                              title="Buka Ruang Monitor Ujian"
+                            >
+                              <Activity size={15} />
+                              <span>Monitor</span>
                             </button>
                           )}
                           {exam.mode === 'survey' ? (
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/survey-responses/${exam.id}`)} title="Respons Survei">
-                              <ClipboardList size={13} />
+                            <button
+                              className="action-btn action-btn-result"
+                              onClick={() => navigate(`/teacher/survey-responses/${exam.id}`)}
+                              title="Lihat Respons Survei"
+                            >
+                              <ClipboardList size={15} />
+                              <span>Respons</span>
                             </button>
                           ) : (
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/results/${exam.id}`)} title="Hasil">
-                              <BarChart2 size={13} />
+                            <button
+                              className="action-btn action-btn-result"
+                              onClick={() => navigate(`/teacher/results/${exam.id}`)}
+                              title="Lihat Hasil Nilai Siswa"
+                            >
+                              <BarChart2 size={15} />
+                              <span>Hasil</span>
                             </button>
                           )}
+                          <button
+                            className="action-btn action-btn-preview"
+                            onClick={() => navigate(`/exam/${exam.id}/lobby`)}
+                            title="Pratinjau / Uji Coba Ujian"
+                          >
+                            <Play size={15} />
+                            <span>Coba</span>
+                          </button>
                           {(user.role === 'SUPERADMIN' || exam.created_by === user.id) && (
-                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(exam.id)} title="Hapus">
-                              <Trash2 size={13} />
+                            <button
+                              className="action-btn action-btn-danger"
+                              onClick={() => handleDelete(exam.id)}
+                              title="Hapus Ujian"
+                            >
+                              <Trash2 size={15} />
+                              <span>Hapus</span>
                             </button>
                           )}
                         </div>

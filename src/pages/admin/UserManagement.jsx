@@ -444,28 +444,30 @@ export default function UserManagement() {
                     </td>
 
                     <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                      <div className="action-btn-group" style={{ justifyContent: 'center' }}>
                         <button 
-                          className="btn btn-ghost btn-sm" 
+                          className="action-btn action-btn-key" 
                           title="Reset Password Akun" 
                           onClick={() => openResetPassword(u)}
-                          style={{ color: '#b48218' }}
                         >
-                          <KeyRound size={14} />
+                          <KeyRound size={15} />
+                          <span>Password</span>
                         </button>
                         <button 
-                          className="btn btn-ghost btn-sm" 
+                          className="action-btn action-btn-edit" 
                           title="Edit Pengguna" 
                           onClick={() => openEdit(u)}
                         >
-                          <Edit2 size={14} />
+                          <Edit2 size={15} />
+                          <span>Edit</span>
                         </button>
                         <button 
-                          className="btn btn-danger btn-sm" 
+                          className="action-btn action-btn-danger" 
                           title="Hapus Pengguna" 
                           onClick={() => handleDelete(u.id)}
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={15} />
+                          <span>Hapus</span>
                         </button>
                       </div>
                     </td>

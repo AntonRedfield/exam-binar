@@ -325,20 +325,22 @@ export default function ClassManagement() {
                           )}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                          <div className="action-btn-group" style={{ justifyContent: 'center' }}>
                             <button 
-                              className="btn btn-ghost btn-sm" 
+                              className="action-btn action-btn-edit" 
                               title="Edit Kelas"
                               onClick={() => openEditClass(cls)}
                             >
-                              <Edit2 size={14} />
+                              <Edit2 size={15} />
+                              <span>Edit</span>
                             </button>
                             <button 
-                              className="btn btn-danger btn-sm" 
+                              className="action-btn action-btn-danger" 
                               title="Hapus Kelas"
                               onClick={() => handleDeleteClass(cls)}
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={15} />
+                              <span>Hapus</span>
                             </button>
                           </div>
                         </td>
@@ -403,20 +405,22 @@ export default function ClassManagement() {
                           </button>
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                          <div className="action-btn-group" style={{ justifyContent: 'center' }}>
                             <button 
-                              className="btn btn-ghost btn-sm" 
+                              className="action-btn action-btn-edit" 
                               title="Edit Periode"
                               onClick={() => openEditPeriod(p)}
                             >
-                              <Edit2 size={14} />
+                              <Edit2 size={15} />
+                              <span>Edit</span>
                             </button>
                             <button 
-                              className="btn btn-danger btn-sm" 
+                              className="action-btn action-btn-danger" 
                               title="Hapus Periode"
                               onClick={() => handleDeletePeriod(p)}
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={15} />
+                              <span>Hapus</span>
                             </button>
                           </div>
                         </td>
