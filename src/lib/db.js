@@ -1084,6 +1084,27 @@ export const results = {
 
   create: async (data) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
+
+    // Guard against duplicate results for the same student on the same exam
+    if (data.exam_id && data.student_id) {
+      const { data: existing } = await supabase
+        .from('results')
+        .select('*')
+        .eq('exam_id', data.exam_id)
+        .eq('student_id', data.student_id)
+        .maybeSingle()
+
+      if (existing) {
+        // If existing result already has equal or higher auto_score, preserve it
+        const existingScore = (existing.auto_score || 0) + (existing.essay_score || 0)
+        const incomingScore = (data.auto_score || 0) + (data.essay_score || 0)
+        if (existingScore >= incomingScore) {
+          return { data: existing, error: null }
+        }
+        return results.update(existing.id, data)
+      }
+    }
+
     const newResult = {
       id: data.id || generateId('res'),
       submitted_at: new Date().toISOString(),
@@ -1176,10 +1197,8 @@ export const results = {
 
     const validResults = []
     for (const r of data || []) {
-      const p = profMap[r.student_id]
-      if (p) {
-        validResults.push(results._attachRelations({ ...r, profiles: p }))
-      }
+      const p = profMap[r.student_id] || null
+      validResults.push(results._attachRelations({ ...r, profiles: p }))
     }
 
     return { data: validResults, error: null }

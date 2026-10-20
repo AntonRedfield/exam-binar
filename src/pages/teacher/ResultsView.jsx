@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { exams, results, sessions, questions } from '../../lib/db'
+import { exams, results, sessions, questions, fetchStudentProfilesMap } from '../../lib/db'
 import { gradeExam } from '../../lib/grader'
 import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2 } from 'lucide-react'
 
@@ -24,20 +24,50 @@ export default function ResultsView() {
         sessions.listByExam(examId),
         questions.listByExam(examId)
       ])
-      
+
+      const rawResults = res || []
+      const rawSessions = sess || []
+
+      // Collect all student IDs to fetch complete profile mapping directly
+      const allStudentIds = Array.from(new Set([
+        ...rawResults.map(r => r.student_id),
+        ...rawSessions.map(s => s.student_id)
+      ])).filter(Boolean)
+
+      const profMap = await fetchStudentProfilesMap(allStudentIds)
+
       const sessionMap = {}
-      ;(sess || []).forEach(s => {
+      rawSessions.forEach(s => {
         if (s.id) sessionMap[s.id] = s
         if (s.student_id) sessionMap[s.student_id] = s
       })
 
-      // Filter out results belonging to deleted students (missing profiles)
-      let newRes = (res || []).filter(r => r.profiles != null)
-      const activeSessions = (sess || []).filter(s => s.users && s.users.id)
-      const missingResults = activeSessions.filter(s => !newRes.find(r => r.student_id === s.student_id))
-      
-      if (missingResults.length > 0 && qs) {
-        for (const s of missingResults) {
+      // Deduplicate results by student_id (keep highest score or latest submitted)
+      const dedupedResultsMap = new Map()
+      for (const r of rawResults) {
+        const sid = r.student_id
+        if (!sid) {
+          dedupedResultsMap.set(r.id, r)
+          continue
+        }
+        if (!dedupedResultsMap.has(sid)) {
+          dedupedResultsMap.set(sid, r)
+        } else {
+          const existing = dedupedResultsMap.get(sid)
+          const existingTotal = (existing.auto_score || 0) + (existing.essay_score || 0)
+          const newTotal = (r.auto_score || 0) + (r.essay_score || 0)
+          if (newTotal > existingTotal || (newTotal === existingTotal && new Date(r.created_at) > new Date(existing.created_at))) {
+            dedupedResultsMap.set(sid, r)
+          }
+        }
+      }
+
+      let newRes = Array.from(dedupedResultsMap.values())
+
+      // Auto-score abandoned or completed sessions that do not have a result yet
+      const missingSessions = rawSessions.filter(s => s.student_id && !dedupedResultsMap.has(s.student_id))
+      if (missingSessions.length > 0 && qs) {
+        for (const s of missingSessions) {
           const isTimeUp = s.end_timestamp && new Date(s.end_timestamp).getTime() < Date.now()
           const isAbandoned = s.status === 'time_up' || s.status === 'submitted' || isTimeUp
           if (isAbandoned) {
@@ -54,10 +84,8 @@ export default function ResultsView() {
                 breakdown: JSON.stringify(breakdown),
               })
               if (createdRes) {
-                createdRes.users = s.users
-                createdRes.student = s.users
-                createdRes.profiles = s.users
                 newRes.push(createdRes)
+                dedupedResultsMap.set(s.student_id, createdRes)
                 if (s.status === 'active') {
                   await sessions.update(s.id, { status: 'time_up' })
                 }
@@ -68,39 +96,39 @@ export default function ResultsView() {
           }
         }
       }
-      
-      // Normalize and cross-reference session data to guarantee student name & class
-      newRes = newRes
-        .filter(r => r.profiles != null || (r.users && r.users.name !== 'Siswa' && !r.users.name?.startsWith('Siswa (')))
-        .map(r => {
-          const s = sessionMap[r.session_id] || sessionMap[r.student_id]
-          const existingUser = r.users || r.student
-          const fallbackName = r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa'
-          
-          const fullName = existingUser?.full_name || existingUser?.display_name || existingUser?.name || s?.users?.full_name || s?.users?.display_name || s?.users?.name || fallbackName
-          const displayName = existingUser?.display_name || existingUser?.name || existingUser?.full_name || s?.users?.display_name || s?.users?.name || s?.users?.full_name || fullName
-          const kelas = existingUser?.classes?.name || existingUser?.class_section || existingUser?.kelas || s?.users?.classes?.name || s?.users?.kelas || '—'
-          const username = existingUser?.username || s?.users?.username || ''
-          
-          const unifiedUser = {
-            id: r.student_id,
-            name: displayName,
-            full_name: fullName,
-            display_name: displayName,
-            username,
-            kelas,
-            class_section: kelas,
-            classes: { name: kelas }
-          }
-          return {
-            ...r,
-            users: unifiedUser,
-            student: unifiedUser
-          }
-        })
+
+      // Format and cross-reference profiles to guarantee proper student names and classes
+      const formattedResults = newRes.map(r => {
+        const s = sessionMap[r.session_id] || sessionMap[r.student_id]
+        const p = profMap[r.student_id] || r.profiles || null
+        const existingUser = r.users || r.student
+
+        const fullName = p?.fullname || p?.display_name || p?.full_name || p?.name || existingUser?.full_name || existingUser?.display_name || existingUser?.name || s?.users?.full_name || s?.users?.name || (r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa')
+        const displayName = p?.display_name || p?.fullname || fullName
+        const username = p?.username || existingUser?.username || s?.users?.username || ''
+        const kelas = p?.class_section || p?.kelas || existingUser?.class_section || existingUser?.kelas || existingUser?.classes?.name || s?.users?.classes?.name || s?.users?.kelas || '—'
+
+        const unifiedUser = {
+          id: r.student_id,
+          name: displayName,
+          full_name: fullName,
+          display_name: displayName,
+          username,
+          kelas,
+          class_section: kelas,
+          classes: { name: kelas }
+        }
+
+        return {
+          ...r,
+          users: unifiedUser,
+          student: unifiedUser,
+          profiles: p || r.profiles
+        }
+      })
 
       setExam(examData)
-      setResultList(newRes)
+      setResultList(formattedResults)
     } catch (err) {
       console.error('[ResultsView] load error:', err)
     } finally {
@@ -155,29 +183,18 @@ export default function ResultsView() {
         if (s.student_id) sessionMap[s.student_id] = s
       })
 
-      const updatedRes = []
       for (const r of currentRes) {
         const s = sessionMap[r.session_id] || sessionMap[r.student_id]
-        const mergedUser = r.users || r.student || s?.users
         if (s && s.answers) {
           const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers, qs)
-          const { data: updated } = await results.update(r.id, {
+          await results.update(r.id, {
             auto_score: autoScore,
             max_auto_score: maxAutoScore,
             breakdown: JSON.stringify(breakdown)
           })
-          if (updated) {
-            updated.users = mergedUser
-            updated.student = mergedUser
-            updatedRes.push(updated)
-          } else {
-            updatedRes.push({ ...r, auto_score: autoScore, max_auto_score: maxAutoScore, breakdown: JSON.stringify(breakdown), users: mergedUser, student: mergedUser })
-          }
-        } else {
-          updatedRes.push({ ...r, users: mergedUser, student: mergedUser })
         }
       }
-      setResultList(updatedRes)
+      await load()
       alert('Berhasil menghitung ulang seluruh nilai siswa!')
     } catch (err) {
       console.error(err)
