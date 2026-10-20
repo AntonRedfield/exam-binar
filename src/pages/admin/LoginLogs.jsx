@@ -80,28 +80,14 @@ DROP POLICY IF EXISTS "Allow read login_logs" ON public.login_logs;
 CREATE POLICY "Allow read login_logs"
   ON public.login_logs FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Allow update login_logs" ON public.login_logs;
+CREATE POLICY "Allow update login_logs"
+  ON public.login_logs FOR UPDATE USING (true) WITH CHECK (true);
+
 CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON public.login_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_login_logs_identifier ON public.login_logs(identifier);
 CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
-
--- Tarik Otomatis Riwayat Login dari Profiles dengan Model Perangkat:
-INSERT INTO public.login_logs (user_id, identifier, full_name, role, role_level, status, ip_address, user_agent, device_name, location, created_at)
-SELECT p.id, COALESCE(p.username, p.fullname), p.fullname,
-  CASE WHEN p.role_level = 4 THEN 'admin' WHEN p.role_level = 3 THEN 'teacher' ELSE 'student' END,
-  COALESCE(p.role_level, 1), 'success', '114.10.156.217', p.last_login_device,
-  CASE 
-    WHEN p.last_login_device ILIKE '%ipad pro%' THEN 'iPad Pro'
-    WHEN p.last_login_device ILIKE '%ipad%' THEN 'Apple iPad'
-    WHEN p.last_login_device ILIKE '%iphone%' THEN 'Apple iPhone'
-    WHEN p.last_login_device ILIKE '%samsung%' OR p.last_login_device ILIKE '%sm-%' THEN 'Samsung Galaxy'
-    WHEN p.last_login_device ILIKE '%mobile%' OR p.last_login_device ILIKE '%android%' THEN 'Android Smartphone'
-    WHEN p.last_login_device ILIKE '%windows%' THEN 'Windows PC Desktop'
-    WHEN p.last_login_device ILIKE '%macintosh%' OR p.last_login_device ILIKE '%mac os%' THEN 'Apple MacBook'
-    ELSE 'Web Browser'
-  END,
-  'Kupang, NTT', p.last_login_at
-FROM public.profiles p WHERE p.last_login_at IS NOT NULL AND p.last_login_at >= now() - interval '3 days'
-ON CONFLICT DO NOTHING;`
+`
 
   async function loadData() {
     setLoading(true)
@@ -545,20 +531,39 @@ ON CONFLICT DO NOTHING;`
                         {/* Status */}
                         <td>
                           {isSuccess ? (
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.35rem',
-                              background: '#ecfdf5',
-                              color: '#065f46',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              padding: '0.25rem 0.55rem',
-                              borderRadius: '6px'
-                            }}>
-                              <ShieldCheck size={14} style={{ color: '#10b981' }} />
-                              Login Sukses
-                            </span>
+                            <div>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                background: '#ecfdf5',
+                                color: '#065f46',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                padding: '0.25rem 0.55rem',
+                                borderRadius: '6px'
+                              }}>
+                                <ShieldCheck size={14} style={{ color: '#10b981' }} />
+                                Login Sukses
+                              </span>
+                              {log.sync_status === 'scanning' ? (
+                                <div style={{
+                                  fontSize: '0.68rem',
+                                  color: '#0284c7',
+                                  marginTop: '0.25rem',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  fontWeight: 600
+                                }}>
+                                  <span className="spin-animation">⏳</span> Memindai (~10 mnt)...
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '0.68rem', color: '#059669', marginTop: '0.2rem' }}>
+                                  ✓ Terverifikasi
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div>
                               <span style={{
@@ -824,6 +829,34 @@ ON CONFLICT DO NOTHING;`
                   ) : (
                     <span className="text-muted">Sedang diverifikasi secara bertahap saat ujian berlangsung (1-5 menit)...</span>
                   )}
+                </div>
+
+                <strong className="text-muted">Kartu Grafis (GPU):</strong>
+                <div style={{ fontWeight: 600, color: '#1e293b' }}>
+                  {selectedLog.metadata?.hardware?.gpuRenderer || selectedLog.metadata?.hardware?.cleanGpu || 'Standar / Terintegrasi'}
+                </div>
+
+                <strong className="text-muted">Prosesor &amp; RAM:</strong>
+                <div>
+                  {selectedLog.metadata?.hardware?.cpuCores ? `${selectedLog.metadata.hardware.cpuCores} Logical Cores` : '—'}
+                  {selectedLog.metadata?.hardware?.ramGb ? ` • ${selectedLog.metadata.hardware.ramGb} GB RAM` : ''}
+                </div>
+
+                <strong className="text-muted">Status Scan Telemetri:</strong>
+                <div>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    color: selectedLog.sync_status === 'scanning' ? '#0284c7' : '#059669',
+                    background: selectedLog.sync_status === 'scanning' ? '#e0f2fe' : '#ecfdf5',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '4px'
+                  }}>
+                    {selectedLog.metadata?.scan_stage || (selectedLog.sync_status === 'scanning' ? '⏳ Sedang Memindai (~10 mnt)' : '✓ Terverifikasi Lengkap')}
+                  </span>
                 </div>
 
                 <strong className="text-muted">Potensi Breach:</strong>

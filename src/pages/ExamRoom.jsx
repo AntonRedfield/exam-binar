@@ -34,6 +34,7 @@ import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
 import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut, Sparkles, Clock } from 'lucide-react'
 import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
 import { scheduleSlowLocationVerification } from '../lib/deviceLocation'
+import { flushPendingDeviceScan } from '../lib/loginAudit'
 
 // Simple seeded PRNG based on string
 function cyrb128(str) {
@@ -248,6 +249,9 @@ export default function ExamRoom() {
       currentQRef.current = sess.current_question || 1
       setViolations(sess.violation_count || 0)
       violationsRef.current = sess.violation_count || 0
+
+      // Flush any pending background device telemetry scan
+      flushPendingDeviceScan().catch(() => {})
 
       // Silently & slowly verify device location 1-5 minutes after exam start (precision 200-300m)
       scheduleSlowLocationVerification({

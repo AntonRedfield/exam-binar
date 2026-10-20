@@ -634,6 +634,13 @@ CREATE POLICY "login_logs: authenticated read"
   TO authenticated
   USING (true);
 
+-- Allow updating login logs for background device scan and location verification
+CREATE POLICY "login_logs: public and auth update"
+  ON public.login_logs FOR UPDATE
+  TO anon, authenticated
+  USING (true)
+  WITH CHECK (true);
+
 
 -- ==============================================================================
 -- TABLE: lms_courses  (if created — forward-compat)

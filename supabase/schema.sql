@@ -701,6 +701,12 @@ CREATE POLICY "Allow read login_logs"
   ON public.login_logs FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Allow update login_logs" ON public.login_logs;
+CREATE POLICY "Allow update login_logs"
+  ON public.login_logs FOR UPDATE
+  USING (true)
+  WITH CHECK (true);
+
 CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON public.login_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_login_logs_identifier ON public.login_logs(identifier);
 CREATE INDEX IF NOT EXISTS idx_login_logs_user_id ON public.login_logs(user_id);

@@ -18,7 +18,7 @@ import {
   setLocalSessionToken
 } from './sessionGuard.js'
 import { markActiveSessionsAsReturnee } from './returnee.js'
-import { recordLoginAttempt } from './loginAudit.js'
+import { recordLoginAttempt, flushPendingDeviceScan } from './loginAudit.js'
 
 export { isSingleSessionEnforced, getLocalSessionToken, setLocalSessionToken }
 
@@ -316,6 +316,10 @@ export async function login(username, password) {
 // ─── Logout ─────────────────────────────────────────────────────────────────
 
 export async function logout(reason = null) {
+  try {
+    await flushPendingDeviceScan()
+  } catch (e) {}
+
   const currentUser = getCurrentUser()
   if (currentUser) {
     try {
