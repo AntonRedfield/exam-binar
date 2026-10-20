@@ -18,6 +18,7 @@ import {
   setLocalSessionToken
 } from './sessionGuard.js'
 import { markActiveSessionsAsReturnee } from './returnee.js'
+import { recordLoginAttempt } from './loginAudit.js'
 
 export { isSingleSessionEnforced, getLocalSessionToken, setLocalSessionToken }
 
@@ -162,6 +163,17 @@ export async function login(username, password) {
     }))
   } catch (netErr) {
     console.error('[Auth] Network error during sign-in:', netErr)
+    // Audit failed login (network error)
+    recordLoginAttempt({
+      identifier: cleanUsername,
+      userId: prepResult?.user_id || null,
+      fullName: prepResult?.fullname || null,
+      role: prepResult?.role_level === 4 ? 'admin' : (prepResult?.role_level === 3 ? 'teacher' : (prepResult?.role_level === 2 ? 'officer' : 'student')),
+      roleLevel: prepResult?.role_level || null,
+      status: 'failed',
+      failureReason: `Jaringan error: ${netErr?.message || 'tidak dapat terhubung ke server'}`,
+      metadata: { email, stage: 'network' }
+    }).catch(() => {})
     throw new Error(`Tidak dapat terhubung ke server autentikasi (${netErr?.message || 'network error'}).`)
   }
 
@@ -194,6 +206,25 @@ export async function login(username, password) {
   if (error || !data?.user || !data?.session) {
     console.error('[Auth] Sign-in failed:', { email, status: error?.status, code: error?.code, message: error?.message })
     const msg = (error?.message || '').toLowerCase()
+    let failureReason = error?.message || 'Kredensial tidak valid'
+    if (error?.code === 'invalid_credentials' || msg.includes('invalid login credentials')) {
+      failureReason = 'Password atau username salah'
+    } else if (error?.status === 429 || msg.includes('rate limit')) {
+      failureReason = 'Rate limit: Terlalu banyak percobaan login'
+    }
+
+    // Audit failed login (potential account breach or wrong password)
+    recordLoginAttempt({
+      identifier: cleanUsername,
+      userId: prepResult?.user_id || null,
+      fullName: prepResult?.fullname || null,
+      role: prepResult?.role_level === 4 ? 'admin' : (prepResult?.role_level === 3 ? 'teacher' : (prepResult?.role_level === 2 ? 'officer' : 'student')),
+      roleLevel: prepResult?.role_level || null,
+      status: 'failed',
+      failureReason,
+      metadata: { email, errorCode: error?.code, errorStatus: error?.status }
+    }).catch(() => {})
+
     if (error?.code === 'invalid_credentials' || msg.includes('invalid login credentials')) {
       throw new Error('Username atau password salah. Silakan periksa kembali kredensial Anda.')
     }
@@ -256,6 +287,22 @@ export async function login(username, password) {
     level,
     role,
   }
+
+  // Audit successful login
+  recordLoginAttempt({
+    identifier: cleanUsername,
+    userId: data.user.id,
+    fullName: sessionUser.user_metadata?.full_name || cleanUsername,
+    role: dbRole,
+    roleLevel: level,
+    status: 'success',
+    failureReason: null,
+    metadata: {
+      email: sessionUser.email,
+      kelas: sessionUser.user_metadata?.kelas || '',
+      sessionToken: activeSessionToken
+    }
+  }).catch(() => {})
 
   _syncCurrentUser(sessionData)
   notifyAuthChange('SIGNED_IN', session)

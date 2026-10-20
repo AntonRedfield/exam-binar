@@ -26,6 +26,7 @@ import UserManagement from './pages/admin/UserManagement'
 import ExamOversight from './pages/admin/ExamOversight'
 import Analytics from './pages/admin/Analytics'
 import ClassManagement from './pages/admin/ClassManagement'
+import LoginLogs from './pages/admin/LoginLogs'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
@@ -201,6 +202,7 @@ export default function App() {
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<AdminDashboard />} />
               <Route path="users" element={<UserManagement />} />
+              <Route path="logs" element={<LoginLogs />} />
               <Route path="classes" element={<ClassManagement />} />
               <Route path="exams" element={<ExamOversight />} />
               <Route path="create" element={<CreateExam />} />

@@ -1,11 +1,13 @@
 import { useEffect, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { users } from '../../lib/db'
 import { getCurrentUser, mapAppRole } from '../../lib/auth'
-import { Plus, Edit2, Trash2, X, Save, Eye, EyeOff, Upload, FileText, KeyRound, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, Save, Eye, EyeOff, Upload, FileText, KeyRound, CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react'
 
 const EMPTY_FORM = { email: '', username: '', full_name: '', kelas: '', role: 'student', phone_number: '', password: '' }
 
 export default function UserManagement() {
+  const navigate = useNavigate()
   const currentUser = getCurrentUser()
   const isTeacher = currentUser?.role === 'MODERATOR'
 
@@ -306,6 +308,11 @@ export default function UserManagement() {
             {!isTeacher && selectedIds.size > 0 && (
               <button className="btn btn-danger" onClick={handleBulkDelete}>
                 <Trash2 size={16} /> Hapus Terpilih ({selectedIds.size})
+              </button>
+            )}
+            {!isTeacher && (
+              <button className="btn btn-ghost" onClick={() => navigate('/admin/logs')} title="Lihat riwayat autentikasi dan deteksi breach">
+                <ShieldAlert size={16} style={{ color: '#dc2626' }} /> Log Akses &amp; Keamanan
               </button>
             )}
             <button className="btn btn-ghost" onClick={() => { setImportResult(null); setImportText(''); setShowImport(true); }}>

@@ -644,3 +644,45 @@ CREATE TRIGGER trigger_cascade_delete_student_records
 AFTER DELETE ON public.profiles
 FOR EACH ROW EXECUTE FUNCTION public.cascade_delete_student_records();
 
+-- ─── 17. login_logs (Audit Trail & Breach Detection) ────────────────────────
+CREATE TABLE IF NOT EXISTS public.login_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  identifier TEXT NOT NULL,
+  full_name TEXT,
+  role TEXT,
+  role_level SMALLINT,
+  status TEXT NOT NULL, -- 'success' | 'failed'
+  failure_reason TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  device_name TEXT,
+  location TEXT,
+  is_suspicious BOOLEAN NOT NULL DEFAULT false,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.login_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public insert to login_logs" ON public.login_logs;
+CREATE POLICY "Allow public insert to login_logs"
+  ON public.login_logs FOR INSERT
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow authenticated read login_logs" ON public.login_logs;
+CREATE POLICY "Allow authenticated read login_logs"
+  ON public.login_logs FOR SELECT
+  TO authenticated
+  USING (
+    (SELECT role_level FROM public.profiles WHERE id = auth.uid()) >= 3
+    OR user_id = auth.uid()
+  );
+
+CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON public.login_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_logs_identifier ON public.login_logs(identifier);
+CREATE INDEX IF NOT EXISTS idx_login_logs_user_id ON public.login_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
+CREATE INDEX IF NOT EXISTS idx_login_logs_is_suspicious ON public.login_logs(is_suspicious);
+
+
