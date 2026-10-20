@@ -180,12 +180,14 @@ export const users = {
       updatePayload.role_level = data.role === 'admin' ? 4 : (data.role === 'teacher' ? 3 : (data.role === 'officer' ? 2 : 1))
     }
 
-    const { data: updated, error } = await supabase
-      .from('profiles')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single()
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id).trim())
+    let query = supabase.from('profiles').update(updatePayload)
+    if (isUuid) {
+      query = query.eq('id', id)
+    } else {
+      query = query.eq('username', String(id).trim().toLowerCase())
+    }
+    const { data: updated, error } = await query.select().single()
 
     if (error) return { data: null, error }
 
@@ -207,9 +209,16 @@ export const users = {
 
     let userObj = target
     if (typeof target === 'string') {
-      const { data, error } = await users.getById(target)
-      if (error || !data) return { data: null, error: error || { message: 'Pengguna tidak ditemukan' } }
-      userObj = data
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.trim())
+      if (isUuid) {
+        const { data, error } = await users.getById(target)
+        if (error || !data) return { data: null, error: error || { message: 'Pengguna tidak ditemukan' } }
+        userObj = data
+      } else {
+        const found = await users.getByUsername(target)
+        if (!found) return { data: null, error: { message: 'Pengguna tidak ditemukan' } }
+        userObj = found
+      }
     }
 
     const username = (userObj.username || userObj.email?.split('@')[0] || '').toLowerCase().trim()

@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from './supabase'
+import { supabase, isSupabaseConfigured } from './supabase.js'
 
 /**
  * Live Exam Sync Engine

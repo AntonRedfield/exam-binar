@@ -166,14 +166,11 @@ export async function login(username, password) {
   }
 
   // If initial sign-in fails, check if this is an uncustomized student/officer account
-  // (Level 1 or 2) who needs dynamic default credential synchronization.
+  // (strictly Level 1 or 2) who needs dynamic default credential synchronization.
   // CRITICAL: We NEVER trigger this fallback for Teachers (Level 3) or Admin (Level 4),
   // ensuring their custom passwords are fully respected and old/default passwords are rejected.
-  if (
-    error &&
-    prepResult?.found &&
-    (prepResult?.role_level === null || Number(prepResult?.role_level) <= 2)
-  ) {
+  const isStudentOrOfficer = prepResult?.found && (Number(prepResult?.role_level) === 1 || Number(prepResult?.role_level) === 2)
+  if (error && isStudentOrOfficer) {
     try {
       const { data: retryPrep } = await supabase.rpc('prepare_student_login', {
         p_identifier: cleanUsername,
@@ -350,6 +347,18 @@ export async function getSession() {
       return null
     }
 
+    // Ensure Supabase client session is restored in memory if access token exists
+    if (isSupabaseConfigured && supabase && session.access_token && session.refresh_token) {
+      supabase.auth.getSession().then(({ data: supaSess }) => {
+        if (!supaSess?.session) {
+          supabase.auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token
+          }).catch(e => console.warn('[Auth] Background setSession warning:', e?.message))
+        }
+      }).catch(() => {})
+    }
+
     const level = getUserLevel(session.user)
     const role = getUserRole(session.user)
 
@@ -516,31 +525,97 @@ export async function updateOwnPassword(newPassword) {
   }
 
   const cleanPassword = newPassword.trim()
-  const { data, error } = await supabase.auth.updateUser({
-    password: cleanPassword,
-    data: {
-      has_custom_password: true,
-      password_updated_at: new Date().toISOString()
-    }
-  })
+  const currentUser = getCurrentUser()
 
-  if (error) {
-    console.error('[Auth] updateOwnPassword error:', error)
-    throw new Error(error.message || 'Gagal mengubah password.')
+  // 1. Ensure supabase client has active session restored if available in storage
+  try {
+    const { data: currentSess } = await supabase.auth.getSession()
+    if (!currentSess?.session) {
+      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_STORAGE_KEY) : null
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed?.access_token && parsed?.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: parsed.access_token,
+            refresh_token: parsed.refresh_token
+          })
+        }
+      }
+    }
+  } catch (sessErr) {
+    console.warn('[Auth] Error re-establishing Supabase auth session:', sessErr)
+  }
+
+  // 2. Update via Supabase GoTrue Auth
+  let goTrueUpdated = false
+  let goTrueError = null
+  try {
+    const { data, error } = await supabase.auth.updateUser({
+      password: cleanPassword,
+      data: {
+        has_custom_password: true,
+        password_updated_at: new Date().toISOString()
+      }
+    })
+    if (!error && data?.user) {
+      goTrueUpdated = true
+    } else if (error) {
+      goTrueError = error
+    }
+  } catch (gtErr) {
+    goTrueError = gtErr
+    console.warn('[Auth] supabase.auth.updateUser warning:', gtErr)
+  }
+
+  // 3. Directly update PostgreSQL auth.users encrypted_password via register_seed_user RPC
+  // to guarantee persistence in PostgreSQL regardless of client token state!
+  let rpcUpdated = false
+  if (currentUser?.username) {
+    try {
+      const roleLevel = currentUser.level || (currentUser.role === 'SUPERADMIN' ? 4 : (currentUser.role === 'MODERATOR' ? 3 : 1))
+      const dbRole = currentUser.dbRole || (roleLevel === 4 ? 'admin' : (roleLevel === 3 ? 'teacher' : 'student'))
+      const fullName = currentUser.full_name || currentUser.name || currentUser.username
+
+      const { error: rpcErr } = await supabase.rpc('register_seed_user', {
+        p_username: currentUser.username.toLowerCase().trim(),
+        p_password: cleanPassword,
+        p_full_name: fullName,
+        p_display_name: fullName,
+        p_email: currentUser.email || `${currentUser.username.toLowerCase().trim()}@${EMAIL_DOMAIN}`,
+        p_role: dbRole,
+        p_role_level: roleLevel,
+        p_class_section: currentUser.kelas || null,
+        p_phone: currentUser.phone || null
+      })
+
+      if (!rpcErr) {
+        rpcUpdated = true
+      } else {
+        console.warn('[Auth] register_seed_user fallback notice:', rpcErr)
+      }
+    } catch (rpcEx) {
+      console.warn('[Auth] register_seed_user exception:', rpcEx)
+    }
+  }
+
+  if (!goTrueUpdated && !rpcUpdated) {
+    throw new Error(goTrueError?.message || 'Gagal mengubah password. Silakan coba login ulang.')
   }
 
   // Keep local session storage in sync with updated user metadata
   try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (raw) {
-      const session = JSON.parse(raw)
-      if (session?.user) {
-        session.user.user_metadata = {
-          ...session.user.user_metadata,
-          has_custom_password: true,
-          password_updated_at: new Date().toISOString()
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+      if (raw) {
+        const session = JSON.parse(raw)
+        if (session?.user) {
+          session.user.user_metadata = {
+            ...session.user.user_metadata,
+            has_custom_password: true,
+            password_updated_at: new Date().toISOString()
+          }
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
         }
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
       }
     }
   } catch (syncErr) {
