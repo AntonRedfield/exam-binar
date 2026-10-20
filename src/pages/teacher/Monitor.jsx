@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { exams, sessions } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import {
@@ -28,7 +28,8 @@ import {
   X,
   Camera,
   UserCheck,
-  MapPin
+  MapPin,
+  Users
 } from 'lucide-react'
 import { questions } from '../../lib/db'
 import { liveUpdateSingleQuestion } from '../../lib/liveExamSync'
@@ -98,10 +99,15 @@ const DURATION_PRESETS = [
 export default function Monitor() {
   const { examId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isUnderAdmin = location.pathname.startsWith('/admin')
+  const baseMonitorPath = isUnderAdmin ? '/admin/monitor' : '/teacher/monitor'
+
   const currentUser = getCurrentUser()
   const isAdmin = currentUser?.level === 4 || currentUser?.role === 'SUPERADMIN' || currentUser?.dbRole === 'admin' || currentUser?.role === 'admin'
   const [exam, setExam] = useState(null)
   const [sessionList, setSessionList] = useState([])
+  const [activeExamsList, setActiveExamsList] = useState([])
   const [loading, setLoading] = useState(true)
   const [, forceUpdate] = useState(0)
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
@@ -157,12 +163,14 @@ export default function Monitor() {
 
   const load = useCallback(async () => {
     try {
-      const [{ data: examData }, { data: sess }] = await Promise.all([
+      const [{ data: examData }, { data: sess }, { data: activeList }] = await Promise.all([
         exams.getById(examId),
         sessions.listByExam(examId),
+        exams.listPublished()
       ])
       setExam(examData)
       setSessionList(sess || [])
+      setActiveExamsList(activeList || [])
       if (examData?.returnee_token_duration) {
         setTokenDuration(Number(examData.returnee_token_duration))
       } else if (examData?.survey_notify_time && Number(examData.survey_notify_time) > 0) {
@@ -557,24 +565,53 @@ export default function Monitor() {
           <p className="text-muted text-sm" style={{ marginBottom: '1.5rem' }}>
             Ujian dengan ID &ldquo;{examId}&rdquo; tidak ditemukan atau telah dihapus.
           </p>
-          <button className="btn btn-primary" onClick={() => navigate('/teacher/exams')}>
-            <ChevronLeft size={16} /> Kembali ke Daftar Ujian
+          <button className="btn btn-primary" onClick={() => navigate(baseMonitorPath)}>
+            <ChevronLeft size={16} /> Ke Pusat Monitoring Ujian Aktif
           </button>
         </div>
       </div>
     )
   }
 
+  const isOwnExam = exam?.created_by === currentUser?.id || (!exam?.created_by && !isAdmin)
+  const isPeerMonitoring = !isOwnExam
+  const creatorName = exam?.profiles?.full_name || exam?.profiles?.username || exam?.created_by_name || 'Rekan Guru'
+
   return (
     <>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/teacher/exams')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => navigate(baseMonitorPath)}
+              title="Kembali ke Pusat Monitoring Aktif"
+            >
               <ChevronLeft size={15} />
             </button>
             <div>
-              <h2>Monitor: {exam?.title}</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0 }}>Monitor: {exam?.title}</h2>
+                {isPeerMonitoring && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      background: 'rgba(217, 119, 6, 0.12)',
+                      color: '#b45309',
+                      border: '1px solid rgba(217, 119, 6, 0.3)',
+                      borderRadius: '999px',
+                      padding: '0.2rem 0.65rem',
+                      fontSize: '0.74rem',
+                      fontWeight: 700
+                    }}
+                    title="Anda memonitor ujian rekan guru sebagai pengawas pendamping / backup proctor"
+                  >
+                    <Users size={12} /> Pengawas Pendamping (Guru: {creatorName})
+                  </span>
+                )}
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                 <p className="text-muted text-sm" style={{ margin: 0 }}>Auto-refresh tiap 10 detik</p>
                 {exam?.monitoring_level && (
@@ -592,6 +629,39 @@ export default function Monitor() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {activeExamsList.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.25rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  Ganti Ujian:
+                </label>
+                <select
+                  value={examId}
+                  onChange={(e) => {
+                    if (e.target.value && e.target.value !== examId) {
+                      navigate(`${baseMonitorPath}/${e.target.value}`)
+                    }
+                  }}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    background: 'var(--bg-card)',
+                    color: 'var(--text)',
+                    maxWidth: 220,
+                    cursor: 'pointer'
+                  }}
+                  title="Pindah pantauan ke ujian aktif lainnya di sekolah"
+                >
+                  {activeExamsList.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.title} {item.created_by === currentUser?.id ? '(Ujian Saya)' : `(${item.profiles?.full_name || 'Rekan Guru'})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               className="btn btn-gold btn-sm"
               onClick={openQuickEdit}
@@ -645,6 +715,56 @@ export default function Monitor() {
       </div>
 
       <div className="page-body">
+        {isPeerMonitoring && (
+          <div
+            style={{
+              marginBottom: '1.25rem',
+              padding: '0.85rem 1.15rem',
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.09), rgba(217, 119, 6, 0.05))',
+              border: '1px solid rgba(245, 158, 11, 0.28)',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '9px',
+                  background: 'rgba(245, 158, 11, 0.2)',
+                  color: '#b45309',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <Users size={18} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#92400e' }}>
+                  Mode Pengawasan Bersama (Peer-to-Peer Proctoring)
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#78350f', marginTop: '0.1rem' }}>
+                  Ujian ini dibuat oleh <strong>{creatorName}</strong>. Sebagai pengawas cadangan/pendamping, Anda memiliki hak penuh untuk merilis token kembalian, menambah waktu siswa yang bermasalah, memverifikasi foto joki, dan koreksi butir soal secara langsung.
+                </div>
+              </div>
+            </div>
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => navigate(baseMonitorPath)}
+              style={{ fontSize: '0.78rem', fontWeight: 600, color: '#b45309', whiteSpace: 'nowrap' }}
+            >
+              Lihat Hub Semua Ujian Aktif →
+            </button>
+          </div>
+        )}
+
         {/* Stat Cards */}
         <div className="stat-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
           <div className="stat-card">

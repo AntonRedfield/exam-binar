@@ -16,6 +16,7 @@ import TeacherDashboard from './pages/teacher/TeacherDashboard'
 import ExamList from './pages/teacher/ExamList'
 import CreateExam from './pages/teacher/CreateExam'
 import Monitor from './pages/teacher/Monitor'
+import ActiveMonitorHub from './pages/teacher/ActiveMonitorHub'
 import ResultsView from './pages/teacher/ResultsView'
 import QuestionAnalytics from './pages/teacher/QuestionAnalytics'
 import SurveyResponses from './pages/teacher/SurveyResponses'
@@ -183,7 +184,7 @@ export default function App() {
               <Route path="exams" element={<ExamList />} />
               <Route path="create" element={<CreateExam />} />
               <Route path="edit/:examId" element={<CreateExam />} />
-              <Route path="monitor" element={<Navigate to="/teacher/exams" replace />} />
+              <Route path="monitor" element={<ActiveMonitorHub />} />
               <Route path="monitor/:examId" element={<Monitor />} />
               <Route path="results" element={<Navigate to="/teacher/exams" replace />} />
               <Route path="results/:examId" element={<ResultsView />} />
@@ -208,7 +209,7 @@ export default function App() {
               <Route path="create" element={<CreateExam />} />
               <Route path="edit/:examId" element={<CreateExam />} />
               <Route path="analytics" element={<Analytics />} />
-              <Route path="monitor" element={<Navigate to="/admin/exams" replace />} />
+              <Route path="monitor" element={<ActiveMonitorHub />} />
               <Route path="monitor/:examId" element={<Monitor />} />
               <Route path="results" element={<Navigate to="/admin/exams" replace />} />
               <Route path="results/:examId" element={<ResultsView />} />

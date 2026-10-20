@@ -70,8 +70,8 @@ export default function TeacherLayout() {
           </NavLink>
 
           <div className="nav-label">Monitoring</div>
-          <NavLink to="/teacher/exams" className="nav-item" onClick={navClick}>
-            <Activity size={18} /> Monitor Siswa
+          <NavLink to="/teacher/monitor" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
+            <Activity size={18} /> Monitor Siswa (Live)
           </NavLink>
           <NavLink to="/teacher/exams" className="nav-item" onClick={navClick}>
             <BarChart2 size={18} /> Hasil Ujian

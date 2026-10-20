@@ -81,18 +81,40 @@ export default function TeacherDashboard() {
         {/* ── Summary Stats ─────────────────────────────── */}
         <div className="stat-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
           {[
-            { label: 'Total Ujian', value: stats.totalExams, color: '#1b3361', icon: <BookOpen size={22} /> },
-            { label: 'Ujian Aktif', value: stats.activeExams, color: 'var(--success)', icon: <Activity size={22} /> },
-            { label: 'Draft', value: stats.draftExams, color: 'var(--text-muted)', icon: <FileText size={22} /> },
+            { label: 'Total Ujian', value: stats.totalExams, color: '#1b3361', icon: <BookOpen size={22} />, to: '/teacher/exams' },
+            {
+              label: 'Ujian Aktif',
+              value: stats.activeExams,
+              color: 'var(--success)',
+              icon: <Activity size={22} />,
+              to: '/teacher/monitor',
+              extraText: stats.allActiveExamsSchool ? `Total ${stats.allActiveExamsSchool} di sekolah` : null
+            },
+            { label: 'Draft', value: stats.draftExams, color: 'var(--text-muted)', icon: <FileText size={22} />, to: '/teacher/exams' },
             { label: 'Total Sesi', value: stats.totalSessions, color: 'var(--accent)', icon: <Zap size={22} /> },
             { label: 'Hasil Dinilai', value: stats.totalResults, color: 'var(--gold-darker)', icon: <BarChart2 size={22} /> },
             { label: 'Rata-rata Nilai', value: `${stats.avgScore}%`, color: Number(stats.avgScore) >= 60 ? 'var(--success)' : 'var(--danger)', icon: <BarChart2 size={22} /> },
           ].map(s => (
-            <div key={s.label} className="stat-card">
+            <div
+              key={s.label}
+              className="stat-card"
+              onClick={() => s.to && navigate(s.to)}
+              style={s.to ? { cursor: 'pointer', transition: 'transform 0.15s ease, box-shadow 0.15s ease' } : {}}
+              title={s.to ? `Klik untuk membuka ${s.label}` : undefined}
+            >
               <div className="stat-icon" style={{ background: s.color + '18', color: s.color }}>{s.icon}</div>
               <div>
-                <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
-                <div className="stat-label">{s.label}</div>
+                <div className="stat-value" style={{ color: s.color }}>
+                  {s.value}
+                </div>
+                <div className="stat-label">
+                  {s.label}
+                  {s.extraText && (
+                    <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--accent)', fontWeight: 600, marginTop: '0.1rem' }}>
+                      {s.extraText}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -158,7 +180,7 @@ export default function TeacherDashboard() {
             { label: 'Buat Ujian Baru', desc: 'Buat ujian atau kuis dengan berbagai tipe soal', icon: <Plus size={24} />, color: 'var(--gold-darker)', to: '/teacher/create' },
             { label: 'Daftar Ujian', desc: 'Kelola semua ujian yang telah dibuat', icon: <BookOpen size={24} />, color: '#1b3361', to: '/teacher/exams' },
             { label: 'Kelola Siswa', desc: 'Lihat dan kelola data siswa terdaftar', icon: <Users size={24} />, color: 'var(--accent)', to: '/teacher/students' },
-            { label: 'Monitor & Hasil', desc: 'Pantau siswa dan lihat hasil ujian', icon: <Activity size={24} />, color: 'var(--success)', to: '/teacher/exams' },
+            { label: 'Monitor Siswa (Live)', desc: 'Pantau ruang ujian aktif, backup, & peer monitoring', icon: <Activity size={24} />, color: 'var(--success)', to: '/teacher/monitor' },
           ].map(link => (
             <div key={link.label} className="dashboard-quicklink-card" onClick={() => navigate(link.to)}>
               <div className="dashboard-quicklink-icon" style={{ background: link.color + '15', color: link.color }}>

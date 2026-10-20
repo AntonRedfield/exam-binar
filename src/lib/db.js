@@ -1346,13 +1346,17 @@ export const localDb = {
   getRawData: () => ({}),
 
   getTeacherStats: async (teacherId) => {
-    const { data: teacherExamsList } = await exams.listByTeacher(teacherId)
+    const [{ data: teacherExamsList }, { data: allPubList }] = await Promise.all([
+      exams.listByTeacher(teacherId),
+      exams.listPublished()
+    ])
     const teacherExams = teacherExamsList || []
     const teacherExamIds = teacherExams.map(e => e.id)
 
     const activeExams = teacherExams.filter(e => e.status === 'published').length
     const draftExams = teacherExams.filter(e => e.status === 'draft').length
     const closedExams = teacherExams.filter(e => e.status === 'closed').length
+    const allActiveExamsSchool = (allPubList || []).length
 
     let relevantSessions = []
     let relevantResults = []
@@ -1380,6 +1384,7 @@ export const localDb = {
       activeExams,
       draftExams,
       closedExams,
+      allActiveExamsSchool,
       totalSessions: relevantSessions.length,
       recentResults: relevantResults,
       profiles: (userList || []).map(u => ({ class_section: u.class_section || u.kelas, username: u.username }))

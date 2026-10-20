@@ -298,17 +298,17 @@ CREATE POLICY "exams: teacher insert"
   TO authenticated
   WITH CHECK (public.is_teacher_or_above());
 
--- Teachers can update/delete their own exams; admins can update/delete any
-CREATE POLICY "exams: teacher update own"
+-- Teachers can update their own exams OR active exams (for peer monitoring/token management); admins can update any
+CREATE POLICY "exams: teacher update own or active"
   ON public.exams FOR UPDATE
   TO authenticated
   USING (
     public.is_teacher_or_above()
-    AND created_by = auth.uid()::text
+    AND (created_by = auth.uid()::text OR status = 'published')
   )
   WITH CHECK (
     public.is_teacher_or_above()
-    AND created_by = auth.uid()::text
+    AND (created_by = auth.uid()::text OR status = 'published')
   );
 
 CREATE POLICY "exams: admin update any"
@@ -335,7 +335,7 @@ CREATE POLICY "exams: admin delete any"
 -- TABLE: questions
 -- Rules:
 --   SELECT: all authenticated (students load questions during exam)
---   INSERT/UPDATE/DELETE: teacher who owns the parent exam, or admin
+--   INSERT/UPDATE/DELETE: teacher who owns parent exam, active exam proctors, or admin
 -- ==============================================================================
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
 
@@ -355,7 +355,7 @@ CREATE POLICY "questions: authenticated read"
   TO authenticated
   USING (true);
 
--- Teachers can write questions for exams they own
+-- Teachers can write questions for exams they own or active exams (peer proctor live correction)
 CREATE POLICY "questions: teacher write"
   ON public.questions FOR ALL
   TO authenticated
@@ -364,7 +364,7 @@ CREATE POLICY "questions: teacher write"
     AND EXISTS (
       SELECT 1 FROM public.exams e
       WHERE e.id = exam_id
-        AND (e.created_by = auth.uid()::text OR public.is_admin())
+        AND (e.created_by = auth.uid()::text OR e.status = 'published' OR public.is_admin())
     )
   )
   WITH CHECK (
@@ -372,7 +372,7 @@ CREATE POLICY "questions: teacher write"
     AND EXISTS (
       SELECT 1 FROM public.exams e
       WHERE e.id = exam_id
-        AND (e.created_by = auth.uid()::text OR public.is_admin())
+        AND (e.created_by = auth.uid()::text OR e.status = 'published' OR public.is_admin())
     )
   );
 

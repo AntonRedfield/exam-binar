@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../../lib/auth'
-import { Shield, ShieldAlert, Users, BookOpen, BarChart2, LogOut, Menu, LayoutDashboard, Database, KeyRound } from 'lucide-react'
+import { Shield, ShieldAlert, Users, BookOpen, BarChart2, LogOut, Menu, LayoutDashboard, Database, KeyRound, Activity } from 'lucide-react'
 import BiometricPrompt from '../../components/BiometricPrompt'
 import ChangePasswordModal from '../../components/ChangePasswordModal'
 
@@ -61,6 +61,9 @@ export default function AdminLayout() {
           </NavLink>
           <NavLink to="/admin/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <BookOpen size={18} /> Semua Ujian
+          </NavLink>
+          <NavLink to="/admin/monitor" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
+            <Activity size={18} /> Monitor Siswa (Live)
           </NavLink>
           <NavLink to="/admin/analytics" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={navClick}>
             <BarChart2 size={18} /> Analitik

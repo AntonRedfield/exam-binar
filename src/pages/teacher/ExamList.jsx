@@ -65,9 +65,14 @@ export default function ExamList() {
             <h2>Daftar Ujian</h2>
             <p className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>{examList.length} ujian tersimpan</p>
           </div>
-          <Link to="/teacher/create" className="btn btn-gold">
-            <Plus size={16} /> Buat Ujian
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Link to="/teacher/monitor" className="btn btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: '#059669', color: '#ffffff', border: 'none', fontWeight: 600 }}>
+              <Activity size={15} /> Hub Monitor Siswa (Live)
+            </Link>
+            <Link to="/teacher/create" className="btn btn-gold btn-sm">
+              <Plus size={16} /> Buat Ujian
+            </Link>
+          </div>
         </div>
       </div>
       <div className="page-body">
