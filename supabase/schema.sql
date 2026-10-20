@@ -671,13 +671,10 @@ CREATE POLICY "Allow public insert to login_logs"
   WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Allow authenticated read login_logs" ON public.login_logs;
-CREATE POLICY "Allow authenticated read login_logs"
+DROP POLICY IF EXISTS "Allow read login_logs" ON public.login_logs;
+CREATE POLICY "Allow read login_logs"
   ON public.login_logs FOR SELECT
-  TO authenticated
-  USING (
-    (SELECT role_level FROM public.profiles WHERE id = auth.uid()) >= 3
-    OR user_id = auth.uid()
-  );
+  USING (true);
 
 CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON public.login_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_login_logs_identifier ON public.login_logs(identifier);

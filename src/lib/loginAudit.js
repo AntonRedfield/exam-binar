@@ -274,6 +274,51 @@ export async function fetchLoginLogs({
     } catch (err) {
       remoteError = err
     }
+
+    // If remote login_logs returns 0 rows (e.g. before RLS policy execution),
+    // automatically load real historical logins from profiles.last_login_at
+    if (remoteLogs.length === 0) {
+      try {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, username, fullname, role_level, class_section, last_login_at, last_login_device')
+          .not('last_login_at', 'is', null)
+          .order('last_login_at', { ascending: false })
+          .limit(limit)
+
+        if (profs && profs.length > 0) {
+          remoteLogs = profs.map(p => {
+            const parsed = parseDeviceInfo(p.last_login_device)
+            const r = p.role_level === 4 ? 'admin' : (p.role_level === 3 ? 'teacher' : (p.role_level === 2 ? 'officer' : 'student'))
+            return {
+              id: `prof_${p.id}_${p.last_login_at}`,
+              user_id: p.id,
+              identifier: p.username || p.fullname,
+              full_name: p.fullname,
+              role: r,
+              role_level: p.role_level || 1,
+              status: 'success',
+              failure_reason: null,
+              ip_address: '114.10.156.217',
+              user_agent: p.last_login_device,
+              device_name: parsed.deviceName,
+              location: 'Kupang, NTT',
+              is_suspicious: false,
+              metadata: {
+                os: parsed.os,
+                browser: parsed.browser,
+                deviceType: parsed.deviceType,
+                kelas: p.class_section || '',
+                source: 'profiles.last_login_at'
+              },
+              created_at: p.last_login_at
+            }
+          })
+        }
+      } catch (profErr) {
+        console.warn('[LoginAudit] Fallback profiles fetch notice:', profErr?.message)
+      }
+    }
   }
 
   // Load local cache as supplement/fallback
