@@ -159,8 +159,8 @@ export default function Results() {
                     <tr key={b.number}>
                       <td>{b.number}</td>
                       <td><span className="question-type-badge">{typeLabel(b.type)}</span></td>
-                      <td style={{ fontFamily: 'monospace' }}>{formatAnswer(b.given)}</td>
-                      <td style={{ fontFamily: 'monospace' }}>{b.status === 'pending' ? '—' : formatAnswer(b.correct)}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{formatAnswer(b.given, b.type)}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{b.status === 'pending' ? '—' : formatAnswer(b.correct, b.type)}</td>
                       <td>
                         {b.status === 'correct' && <span className="badge badge-active">✓ Benar</span>}
                         {b.status === 'wrong' && <span className="badge badge-closed">✗ Salah</span>}

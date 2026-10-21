@@ -144,9 +144,15 @@ export default function QuestionAnalytics() {
     AGREE_DISAGREE: 'S/TS',
     ESSAY: 'Esai'
   }[t] || t)
-  const formatAnswer = (val, type) => {
+  const formatAnswer = (val, type, question = null) => {
     if (val === undefined || val === null) return '—'
-    if (type === 'SEQUENCING' && Array.isArray(val)) return val.map((v, i) => `${i + 1}:${v}`).join(', ')
+    const resolvedType = type || question?.type
+    if (resolvedType === 'SEQUENCING' && Array.isArray(val)) {
+      const items = question?.options?.items || []
+      const itemMap = {}
+      items.forEach(it => { if (it && it.id) itemMap[it.id] = it.text || it.id })
+      return val.map((v, i) => `${i + 1}:${itemMap[v] || v}`).join(', ')
+    }
     if (Array.isArray(val)) return val.join(', ')
     if (typeof val === 'object') return Object.entries(val).map(([k, v]) => `${k}→${v}`).join(', ')
     return String(val)
@@ -248,7 +254,7 @@ export default function QuestionAnalytics() {
                           <span>{q.topWrongAnswer[1]} dari {q.total} siswa memilih </span>
                           <strong style={{ color: 'var(--danger)' }}>{q.topWrongAnswer[0]}</strong>
                           <span> (jawaban benar: </span>
-                          <strong style={{ color: 'var(--success)' }}>{formatAnswer(q.correct_answer)}</strong>
+                          <strong style={{ color: 'var(--success)' }}>{formatAnswer(q.correct_answer, q.type, q)}</strong>
                           <span>)</span>
                         </div>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem', fontStyle: 'italic' }}>
@@ -300,7 +306,7 @@ export default function QuestionAnalytics() {
                       <tr key={q.number}>
                         <td style={{ fontWeight: 700 }}>{q.number}</td>
                         <td><span className="question-type-badge">{typeLabel(q.type)}</span></td>
-                        <td style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{formatAnswer(q.correct_answer)}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{formatAnswer(q.correct_answer, q.type, q)}</td>
                         <td>
                           <span style={{ color: 'var(--success)', fontWeight: 600 }}>{q.correct}</span>
                           <span className="text-muted text-xs"> /{q.total}</span>

@@ -384,6 +384,16 @@ export default function CreateExam() {
           let opts = q.options
           let ans = q.correct_answer
 
+          if (typeof opts === 'string') {
+            try { opts = JSON.parse(opts) } catch {}
+          }
+          if (typeof ans === 'string' && (q.type === 'SEQUENCING' || q.type === 'MATCHING' || q.type === 'COMPLEX_MCQ' || q.type === 'AGREE_DISAGREE')) {
+            try {
+              const parsedAns = JSON.parse(ans)
+              if (parsedAns !== null && typeof parsedAns === 'object') ans = parsedAns
+            } catch {}
+          }
+
           if (q.type === 'TRUE_FALSE') {
             const optKeys = Object.keys(opts || {})
             const isLegacyFormat = optKeys.length === 2 && optKeys.includes('A') && optKeys.includes('B') && (opts.A === 'Benar' || opts.A === 'benar')
@@ -416,10 +426,30 @@ export default function CreateExam() {
           }
 
           if (q.type === 'SEQUENCING') {
+            // Normalize if opts is an array directly
+            if (Array.isArray(opts)) {
+              opts = {
+                items: opts.map((it, i) => (
+                  typeof it === 'object' && it !== null
+                    ? { id: it.id || `seq_${Date.now()}_${i + 1}`, text: it.text || it.label || '' }
+                    : { id: `seq_${Date.now()}_${i + 1}`, text: String(it) }
+                ))
+              }
+            }
             if (!opts || !Array.isArray(opts.items) || opts.items.length === 0) {
               const initialS = makeSequencing(4)
               opts = initialS.options
               ans = initialS.correct_answer
+            } else {
+              // Ensure every item has a valid id and text
+              const sanitizedItems = opts.items.map((it, i) => ({
+                id: String(it.id || `seq_${Date.now()}_${i + 1}`),
+                text: String(it.text || '')
+              }))
+              opts = { ...opts, items: sanitizedItems }
+              if (!Array.isArray(ans) || ans.length !== sanitizedItems.length) {
+                ans = sanitizedItems.map(it => it.id)
+              }
             }
           }
 

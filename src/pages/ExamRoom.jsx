@@ -83,13 +83,27 @@ function shuffleArray(array, seedStr) {
   return newArr;
 }
 
-function formatCorrectAnswer(correct, qType) {
+function formatCorrectAnswer(correct, qType, question = null) {
   if (!correct) return '-';
   if (qType === 'COMPLEX_MCQ' && Array.isArray(correct)) {
     return correct.join(', ');
   }
   if (qType === 'SEQUENCING' && Array.isArray(correct)) {
-    return correct.map((c, i) => `${i + 1}. ${c}`).join(' → ');
+    let rawItems = question?.options?.items || question?.options || []
+    if (typeof rawItems === 'string') {
+      try { rawItems = JSON.parse(rawItems) } catch { rawItems = [] }
+      if (rawItems && !Array.isArray(rawItems) && Array.isArray(rawItems.items)) {
+        rawItems = rawItems.items
+      }
+    }
+    const items = Array.isArray(rawItems) ? rawItems : []
+    const itemMap = {}
+    items.forEach(it => {
+      if (typeof it === 'object' && it !== null && it.id) {
+        itemMap[it.id] = it.text || it.label || it.id
+      }
+    })
+    return correct.map((c, i) => `${i + 1}. ${itemMap[c] || c}`).join(' → ');
   }
   if ((qType === 'TRUE_FALSE' || qType === 'AGREE_DISAGREE' || qType === 'MATCHING') && typeof correct === 'object') {
     return Object.entries(correct)
@@ -684,6 +698,7 @@ export default function ExamRoom() {
       message,
       correct: res?.correct,
       qType: currQ.type,
+      question: currQ,
       isSubmit
     })
   }
@@ -703,6 +718,7 @@ export default function ExamRoom() {
         message: 'Waktu habis untuk soal ini!',
         correct: res?.correct,
         qType: currQ.type,
+        question: currQ,
         isSubmit: currentQ >= totalQ,
         isTimeUp: true
       })
@@ -1219,13 +1235,13 @@ export default function ExamRoom() {
                   </div>
                 ) : (
                   <>
-                    {q.type === 'MCQ' && <QuestionMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
-                    {q.type === 'COMPLEX_MCQ' && <QuestionComplexMCQ question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
-                    {q.type === 'TRUE_FALSE' && <QuestionTrueFalse question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
-                    {q.type === 'MATCHING' && <QuestionMatching question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
-                    {q.type === 'SEQUENCING' && <QuestionSequencing question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
-                    {q.type === 'AGREE_DISAGREE' && <QuestionAgreeDisagree question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
-                    {q.type === 'ESSAY' && <QuestionEssay value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, true)} />}
+                    {q.type === 'MCQ' && <QuestionMCQ key={q.id || `q_${q.number}`} question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'COMPLEX_MCQ' && <QuestionComplexMCQ key={q.id || `q_${q.number}`} question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'TRUE_FALSE' && <QuestionTrueFalse key={q.id || `q_${q.number}`} question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'MATCHING' && <QuestionMatching key={q.id || `q_${q.number}`} question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'SEQUENCING' && <QuestionSequencing key={q.id || `q_${q.number}`} question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'AGREE_DISAGREE' && <QuestionAgreeDisagree key={q.id || `q_${q.number}`} question={q} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, false)} />}
+                    {q.type === 'ESSAY' && <QuestionEssay key={q.id || `q_${q.number}`} value={answers[String(q.number)]} onChange={val => handleAnswer(q.number, val, true)} />}
                   </>
                 )}
               </div>
@@ -1296,7 +1312,7 @@ export default function ExamRoom() {
               <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: 8, marginBottom: '1.5rem', textAlign: 'left', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span className="text-muted text-sm d-block" style={{ marginBottom: '0.25rem' }}>Jawaban yang benar:</span>
                 <strong style={{ color: 'var(--success)', fontSize: '1rem' }}>
-                  {formatCorrectAnswer(quizFeedback.correct, quizFeedback.qType)}
+                  {formatCorrectAnswer(quizFeedback.correct, quizFeedback.qType, quizFeedback.question)}
                 </strong>
               </div>
             )}
