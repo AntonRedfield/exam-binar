@@ -453,26 +453,60 @@ export default function ResultsView() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {(() => {
                 const breakdown = (() => { try { return JSON.parse(selectedResult.breakdown || '[]') } catch { return [] } })()
-                const essays = breakdown.filter(b => b.type === 'ESSAY')
+                const essays = breakdown.filter(b => b.type === 'ESSAY' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
                 
                 if (essays.length === 0) return <p className="text-muted text-center" style={{ padding: '2rem 0' }}>Tidak ada soal esai untuk ujian ini.</p>
                 
-                return essays.map(essay => (
-                  <div key={essay.number} style={{ background: 'var(--navy-light)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.75rem' }}>
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Soal No. {essay.number}</span>
-                      <span className={`badge badge-${essay.status === 'pending' ? 'draft' : 'active'}`}>
-                        {essay.status === 'pending' ? 'Menunggu Penilaian' : 'Telah Dinilai'}
-                      </span>
-                    </div>
-                    <div>
-                      <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>Jawaban Siswa:</div>
-                      <div style={{ background: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.05)', fontSize: '0.95rem', color: 'black', whiteSpace: 'pre-wrap' }}>
-                        {essay.given || <span className="text-muted" style={{ fontStyle: 'italic' }}>Tidak dijawab</span>}
+                return essays.map(essay => {
+                  const isAgreeDisagree = essay.type === 'AGREE_DISAGREE'
+                  const studentStance = essay.given?.stance || (typeof essay.given === 'string' ? essay.given : null)
+                  const studentEssayText = essay.given?.essay || essay.given?.reason_text || (typeof essay.given === 'string' ? essay.given : null)
+                  const expectedStance = essay.correct?.stance
+
+                  return (
+                    <div key={essay.number} style={{ background: 'var(--navy-light)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.75rem' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Soal No. {essay.number} {isAgreeDisagree ? '(Setuju / Tidak Setuju)' : '(Esai)'}
+                        </span>
+                        <span className={`badge badge-${essay.status === 'pending' ? 'draft' : 'active'}`}>
+                          {essay.status === 'pending' ? 'Menunggu Penilaian' : 'Telah Dinilai'}
+                        </span>
                       </div>
+
+                      {isAgreeDisagree && (
+                        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 6, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                            <span className="text-muted">Sikap Siswa:</span>
+                            <span style={{ fontWeight: 700, color: studentStance === 'agree' ? 'var(--success)' : (studentStance === 'disagree' ? 'var(--danger)' : 'inherit') }}>
+                              {studentStance === 'agree' ? '👍 Setuju' : (studentStance === 'disagree' ? '👎 Tidak Setuju' : 'Belum memilih')}
+                            </span>
+                          </div>
+                          {expectedStance && (
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                              Kunci Diharapkan: <strong>{expectedStance === 'agree' ? 'Setuju' : 'Tidak Setuju'}</strong>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>
+                          {isAgreeDisagree ? 'Alasan / Uraian Siswa:' : 'Jawaban Siswa:'}
+                        </div>
+                        <div style={{ background: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.05)', fontSize: '0.95rem', color: 'black', whiteSpace: 'pre-wrap' }}>
+                          {(isAgreeDisagree ? studentEssayText : essay.given) || <span className="text-muted" style={{ fontStyle: 'italic' }}>Tidak dijawab</span>}
+                        </div>
+                      </div>
+
+                      {isAgreeDisagree && essay.correct?.rubric && (
+                        <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.75rem', background: 'rgba(59, 130, 246, 0.08)', borderRadius: 6, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                          <strong>Pedoman / Rubrik Guru:</strong> {essay.correct.rubric}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  )
+                })
               })()}
             </div>
           </div>

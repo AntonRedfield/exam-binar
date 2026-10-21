@@ -150,7 +150,7 @@ Konfigurasi paket ujian, kuis cepat, dan survei kepuasan/akademik.
 | `default_statements_count` | `SMALLINT` | Default `3` | `4` | Jumlah baris pernyataan default soal Benar / Salah |
 | `default_matching_count` | `SMALLINT` | Default `3` | `3` | Jumlah pasang default soal Menjodohkan (Matching) |
 | `default_sequencing_count` | `SMALLINT` | Default `4` | `4` | Jumlah langkah default soal Mengurutkan (Sequencing) |
-| `default_agree_disagree_count` | `SMALLINT` | Default `3` | `3` | Jumlah pernyataan default soal Setuju / Tidak Setuju |
+| `default_agree_disagree_count` | `SMALLINT` | Default `3` | `3` | Jumlah opsi alasan default soal Setuju / Tidak Setuju |
 | `default_survey_options_count` | `SMALLINT` | Default `4` | `4` | Jumlah opsi default pertanyaan pilihan survei |
 | `default_grid_rows_count` | `SMALLINT` | Default `3` | `3` | Jumlah baris default kisi survei |
 | `default_grid_cols_count` | `SMALLINT` | Default `3` | `3` | Jumlah kolom default kisi survei |
@@ -171,9 +171,9 @@ Bank butir soal dan kuesioner survei.
 | `type` | `VARCHAR(30)` | **NOT NULL** | `'MCQ'` | `'MCQ'`, `'COMPLEX_MCQ'`, `'TRUE_FALSE'`, `'MATCHING'`, `'SEQUENCING'`, `'AGREE_DISAGREE'`, `'ESSAY'`, `'SHORT_ANSWER'`, `'PARAGRAPH'`, `'LINEAR_SCALE'`, `'MCQ_GRID'`, `'CHECKBOX_GRID'`, `'CHECKBOXES'`, `'DROPDOWN'` |
 | `question_text` | `TEXT` | **NOT NULL**, Default `''` | `'Tentukan nilai dari f(x) = 2x + 5 jika x = 3'` | Teks narasi pertanyaan |
 | `image_url` | `TEXT` | Nullable | `'https://drive.google.com/file/d/1X9Y.../view'` | **Link Gambar Soal/Diagram** |
-| `options` | `JSONB` | Nullable | `'{"left": {"1": "Indonesia"}, "right": {"A": "Jakarta"}}'` atau `'{"items": [{"id": "s1", "text": "Telur"}]}'` | Objek opsi/premis/pernyataan dalam format JSON |
+| `options` | `JSONB` | Nullable | `'{"left": {"1": "Indonesia"}, "right": {"A": "Jakarta"}}'` atau `'{"items": [{"id": "s1", "text": "Telur"}]}'` atau `'{"reason_type": "options", "A": "Alasan A", "B": "Alasan B"}'` | Objek opsi/premis/alasan dalam format JSON |
 | `option_images` | `JSONB` | Nullable, Default `'{}'::jsonb` | `'{"A": "https://drive.google.com/...", "B": "https://..."}'` | **Link Gambar per Opsi Jawaban** (rescale otomatis adaptif) |
-| `correct_answer` | `JSONB` | Nullable | `'A'` atau `'{"1": "A"}'` atau `'["s1", "s2"]'` atau `'{"stmt_1": "agree"}'` | Kunci jawaban benar (otomatis grading proporsional/penuh) |
+| `correct_answer` | `JSONB` | Nullable | `'A'` atau `'{"1": "A"}'` atau `'["s1", "s2"]'` atau `'{"stance": "agree", "reasons": ["A"]}'` | Kunci jawaban benar (otomatis grading proporsional/penuh) |
 | `points` | `DECIMAL(5,2)` | **NOT NULL**, Default `1.00` | `2.50` | Bobot skor jika jawaban benar |
 | `variant` | `VARCHAR(5)` | **NOT NULL**, Default `'A'` | `'A'` | Kode paket soal ('A', 'B', dsb.) |
 | `time_limit` | `SMALLINT` | Nullable | `45` | Batas waktu per soal dalam detik (Kuis) |

@@ -13,7 +13,11 @@ export default function QuestionNavigator({ questions, answers, currentQ, onSele
           let hasAnswer = false
 
           if (ans && typeof ans === 'object' && !Array.isArray(ans)) {
-            hasAnswer = Object.keys(ans).length > 0
+            if ('stance' in ans) {
+              hasAnswer = Boolean(ans.stance)
+            } else {
+              hasAnswer = Object.keys(ans).length > 0
+            }
           } else if (Array.isArray(ans)) {
             hasAnswer = ans.length > 0
           } else {

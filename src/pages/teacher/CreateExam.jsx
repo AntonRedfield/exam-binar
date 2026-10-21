@@ -90,14 +90,20 @@ function makeSequencing(count = 4) {
   return { options: { items }, correct_answer: correct }
 }
 
-function makeAgreeDisagree(count = 3) {
-  const clamped = Math.max(1, Math.min(10, count))
-  const options = {}
-  const correct = {}
+function makeAgreeDisagree(count = 3, reasonType = 'options') {
+  const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+  const clamped = Math.max(2, Math.min(10, count))
+  const options = {
+    reason_type: reasonType,
+  }
   for (let i = 0; i < clamped; i++) {
-    const key = `stmt_${Date.now()}_${i + 1}`
-    options[key] = ''
-    correct[key] = 'agree'
+    options[letters[i]] = ''
+  }
+  const correct = {
+    stance: 'agree',
+    reason_type: reasonType,
+    reasons: ['A'],
+    rubric: '',
   }
   return { options, correct_answer: correct }
 }
@@ -455,15 +461,42 @@ export default function CreateExam() {
 
           if (q.type === 'AGREE_DISAGREE') {
             if (!opts || Object.keys(opts).length === 0) {
-              const initialAd = makeAgreeDisagree(3)
+              const initialAd = makeAgreeDisagree(defaultAgreeDisagreeCount || 3)
               opts = initialAd.options
               ans = initialAd.correct_answer
-            } else if (typeof ans === 'string' || !ans) {
-              const newAns = {}
-              Object.keys(opts).forEach(k => {
-                newAns[k] = 'agree'
-              })
-              ans = newAns
+            } else {
+              const isNew = opts.reason_type !== undefined || (ans && typeof ans === 'object' && 'stance' in ans)
+              if (!isNew) {
+                const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+                const oldKeys = Object.keys(opts).filter(k => k !== 'reason_type' && k !== 'option_images')
+                const newOpts = { reason_type: 'options' }
+                oldKeys.forEach((oldK, i) => {
+                  newOpts[letters[i] || `opt_${i + 1}`] = opts[oldK] || ''
+                })
+                opts = newOpts
+                ans = {
+                  stance: 'agree',
+                  reason_type: 'options',
+                  reasons: ['A'],
+                  rubric: '',
+                }
+              } else {
+                if (!opts.reason_type) opts.reason_type = ans?.reason_type || 'options'
+                if (!ans || typeof ans !== 'object') {
+                  ans = {
+                    stance: 'agree',
+                    reason_type: opts.reason_type,
+                    reasons: ['A'],
+                    rubric: '',
+                  }
+                } else {
+                  if (!ans.stance) ans.stance = 'agree'
+                  if (!ans.reason_type) ans.reason_type = opts.reason_type
+                  if (ans.reason_type === 'options' && (!Array.isArray(ans.reasons) || ans.reasons.length === 0)) {
+                    ans.reasons = ['A']
+                  }
+                }
+              }
             }
           }
 
@@ -1141,43 +1174,109 @@ export default function CreateExam() {
 
   // --- AGREE_DISAGREE Helper functions ---
   function changeAgreeDisagreeCount(idx, targetCount) {
-    const count = Math.max(1, Math.min(10, targetCount))
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    const count = Math.max(2, Math.min(10, targetCount))
     setQuestionItems(prev => prev.map((q, i) => {
       if (i !== idx) return q
-      const currentKeys = Object.keys(q.options || {})
-      const newOptions = {}
-      const newAnswers = {}
+      const reasonType = q.options?.reason_type || q.correct_answer?.reason_type || 'options'
+      const newOptions = { reason_type: reasonType }
       for (let c = 0; c < count; c++) {
-        const key = currentKeys[c] || `stmt_${Date.now()}_${c + 1}`
+        const key = letters[c]
         newOptions[key] = q.options?.[key] || ''
-        newAnswers[key] = q.correct_answer?.[key] || 'agree'
+      }
+      const currentReasons = Array.isArray(q.correct_answer?.reasons) ? q.correct_answer.reasons : ['A']
+      const validReasons = currentReasons.filter(r => letters.slice(0, count).includes(r))
+      const newAnswers = {
+        stance: q.correct_answer?.stance || 'agree',
+        reason_type: reasonType,
+        reasons: validReasons.length > 0 ? validReasons : ['A'],
+        rubric: q.correct_answer?.rubric || '',
       }
       return { ...q, options: newOptions, correct_answer: newAnswers }
     }))
   }
 
-  function addAgreeDisagreeStatement(idx) {
+  function addAgreeDisagreeOption(idx) {
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     setQuestionItems(prev => prev.map((q, i) => {
       if (i !== idx) return q
-      const newKey = `stmt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
+      const currentKeys = Object.keys(q.options || {}).filter(k => k !== 'reason_type' && k !== 'option_images')
+      if (currentKeys.length >= 10) return q
+      const nextKey = letters[currentKeys.length] || `opt_${currentKeys.length + 1}`
+      const reasonType = q.options?.reason_type || q.correct_answer?.reason_type || 'options'
       return {
         ...q,
-        options: { ...(q.options || {}), [newKey]: '' },
-        correct_answer: { ...(q.correct_answer || {}), [newKey]: 'agree' }
+        options: { ...(q.options || {}), reason_type: reasonType, [nextKey]: '' },
+        correct_answer: {
+          stance: q.correct_answer?.stance || 'agree',
+          reason_type: reasonType,
+          reasons: Array.isArray(q.correct_answer?.reasons) ? q.correct_answer.reasons : ['A'],
+          rubric: q.correct_answer?.rubric || '',
+        }
       }
     }))
   }
 
-  function removeAgreeDisagreeStatement(idx, keyToRemove) {
+  function removeAgreeDisagreeOption(idx, keyToRemove) {
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     setQuestionItems(prev => prev.map((q, i) => {
       if (i !== idx) return q
-      const newOptions = { ...q.options }
-      delete newOptions[keyToRemove]
-      const newAnswers = { ...(q.correct_answer || {}) }
-      delete newAnswers[keyToRemove]
-      return { ...q, options: newOptions, correct_answer: newAnswers }
+      const currentKeys = Object.keys(q.options || {}).filter(k => k !== 'reason_type' && k !== 'option_images' && k !== keyToRemove)
+      if (currentKeys.length < 2) return q
+      const reasonType = q.options?.reason_type || q.correct_answer?.reason_type || 'options'
+      const newOptions = { reason_type: reasonType }
+      currentKeys.forEach((oldK, newIdx) => {
+        newOptions[letters[newIdx]] = q.options?.[oldK] || ''
+      })
+      const currentReasons = Array.isArray(q.correct_answer?.reasons) ? q.correct_answer.reasons : ['A']
+      const validReasons = currentReasons.filter(r => r !== keyToRemove && letters.slice(0, currentKeys.length).includes(r))
+      return {
+        ...q,
+        options: newOptions,
+        correct_answer: {
+          stance: q.correct_answer?.stance || 'agree',
+          reason_type: reasonType,
+          reasons: validReasons.length > 0 ? validReasons : ['A'],
+          rubric: q.correct_answer?.rubric || '',
+        }
+      }
     }))
   }
+
+  function setAgreeDisagreeReasonType(idx, reasonType) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const options = { ...(q.options || {}), reason_type: reasonType }
+      const correct_answer = {
+        stance: q.correct_answer?.stance || 'agree',
+        reason_type: reasonType,
+        reasons: Array.isArray(q.correct_answer?.reasons) && q.correct_answer.reasons.length > 0 ? q.correct_answer.reasons : ['A'],
+        rubric: q.correct_answer?.rubric || '',
+      }
+      return { ...q, options, correct_answer }
+    }))
+  }
+
+  function toggleAgreeDisagreeReasonCorrect(idx, reasonKey) {
+    setQuestionItems(prev => prev.map((q, i) => {
+      if (i !== idx) return q
+      const currentReasons = Array.isArray(q.correct_answer?.reasons) ? q.correct_answer.reasons : []
+      const nextReasons = currentReasons.includes(reasonKey)
+        ? currentReasons.filter(r => r !== reasonKey)
+        : [...currentReasons, reasonKey]
+      return {
+        ...q,
+        correct_answer: {
+          ...(q.correct_answer || {}),
+          reasons: nextReasons
+        }
+      }
+    }))
+  }
+
+  // Alias for backward compatibility if invoked anywhere
+  const addAgreeDisagreeStatement = addAgreeDisagreeOption
+  const removeAgreeDisagreeStatement = removeAgreeDisagreeOption
 
   // --- Survey Option Helper functions ---
   function changeSurveyOptionsCount(idx, targetCount) {
@@ -1387,24 +1486,31 @@ export default function CreateExam() {
   }
 
   function applyAgreeDisagreeCountToAll(targetCount) {
-    const count = Math.max(1, Math.min(10, targetCount))
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    const count = Math.max(2, Math.min(10, targetCount))
     let affected = 0
     setQuestionItems(prev => prev.map(q => {
       if (q.type === 'AGREE_DISAGREE') {
         affected++
-        const currentKeys = Object.keys(q.options || {})
-        const newOptions = {}
-        const newAnswers = {}
+        const reasonType = q.options?.reason_type || q.correct_answer?.reason_type || 'options'
+        const newOptions = { reason_type: reasonType }
         for (let c = 0; c < count; c++) {
-          const key = currentKeys[c] || `stmt_${Date.now()}_${c + 1}`
+          const key = letters[c]
           newOptions[key] = q.options?.[key] || ''
-          newAnswers[key] = q.correct_answer?.[key] || 'agree'
+        }
+        const currentReasons = Array.isArray(q.correct_answer?.reasons) ? q.correct_answer.reasons : ['A']
+        const validReasons = currentReasons.filter(r => letters.slice(0, count).includes(r))
+        const newAnswers = {
+          stance: q.correct_answer?.stance || 'agree',
+          reason_type: reasonType,
+          reasons: validReasons.length > 0 ? validReasons : ['A'],
+          rubric: q.correct_answer?.rubric || '',
         }
         return { ...q, options: newOptions, correct_answer: newAnswers }
       }
       return q
     }))
-    showNotice(`Standar ${count} Pernyataan berhasil diterapkan ke ${affected} butir soal Setuju / Tidak Setuju!`)
+    showNotice(`Standar ${count} Opsi Alasan berhasil diterapkan ke ${affected} butir soal Setuju / Tidak Setuju!`)
   }
 
   function applySurveyOptionsCountToAll(targetCount) {
@@ -1546,9 +1652,19 @@ export default function CreateExam() {
             return false
           }
         }
-        if (q.type === 'AGREE_DISAGREE' && (!q.correct_answer || Object.keys(q.correct_answer).length === 0)) {
-          setError(`Kunci jawaban soal no ${q.number} (Setuju/Tidak Setuju) belum lengkap.`)
-          return false
+        if (q.type === 'AGREE_DISAGREE') {
+          const reasonType = q.options?.reason_type || q.correct_answer?.reason_type || 'options'
+          if (!q.correct_answer?.stance) {
+            setError(`Kunci sikap soal no ${q.number} (Setuju/Tidak Setuju) belum dipilih.`)
+            return false
+          }
+          if (reasonType === 'options') {
+            const reasons = q.correct_answer?.reasons || []
+            if (!Array.isArray(reasons) || reasons.length === 0) {
+              setError(`Kunci alasan soal no ${q.number} (Setuju/Tidak Setuju) belum dipilih minimal 1 alasan.`)
+              return false
+            }
+          }
         }
       }
 
@@ -3041,18 +3157,18 @@ export default function CreateExam() {
                 </button>
               </div>
 
-              {/* Agree / Disagree default statements setting */}
+              {/* Agree / Disagree default reason options setting */}
               <div style={{ padding: '0.875rem', background: 'var(--surface)', borderRadius: 10, border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <label className="form-label" style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700 }}>
                     Setuju / Tidak Setuju
                   </label>
                   <span className="badge badge-active" style={{ fontSize: '0.75rem' }}>
-                    {defaultAgreeDisagreeCount} Pernyataan
+                    {defaultAgreeDisagreeCount} Opsi Alasan
                   </span>
                 </div>
                 <div className="text-muted text-xs" style={{ marginBottom: '0.625rem' }}>
-                  Jumlah butir pernyataan opini/evaluasi Setuju atau Tidak Setuju.
+                  Jumlah opsi alasan default untuk soal Setuju atau Tidak Setuju (mode PG Kompleks).
                 </div>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
@@ -3064,7 +3180,7 @@ export default function CreateExam() {
                       style={{ padding: '0.25rem 0.55rem', fontSize: '0.78rem' }}
                       onClick={() => setDefaultAgreeDisagreeCount(cnt)}
                     >
-                      {cnt} Baris
+                      {cnt} Opsi
                     </button>
                   ))}
                   <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, marginLeft: 'auto' }}>
@@ -3072,8 +3188,8 @@ export default function CreateExam() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       style={{ padding: '0.2rem 0.5rem', height: 26, fontSize: '0.85rem' }}
-                      onClick={() => setDefaultAgreeDisagreeCount(prev => Math.max(1, prev - 1))}
-                      disabled={defaultAgreeDisagreeCount <= 1}
+                      onClick={() => setDefaultAgreeDisagreeCount(prev => Math.max(2, prev - 1))}
+                      disabled={defaultAgreeDisagreeCount <= 2}
                     >-</button>
                     <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: 24, textAlign: 'center' }}>{defaultAgreeDisagreeCount}</span>
                     <button
@@ -3361,12 +3477,28 @@ export default function CreateExam() {
                       updates.options = s.options
                       updates.correct_answer = s.correct_answer
                     } else if (newType === 'AGREE_DISAGREE') {
-                      const count = (q.options && Object.keys(q.options).length >= 1 && !q.options.left && !q.options.items)
-                        ? Object.keys(q.options).length
+                      const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+                      const existingKeys = Object.keys(q.options || {}).filter(k => k !== 'reason_type' && k !== 'option_images' && !k.startsWith('stmt_'))
+                      const count = (existingKeys.length >= 2 && existingKeys.length <= 10)
+                        ? existingKeys.length
                         : defaultAgreeDisagreeCount
-                      const ad = makeAgreeDisagree(count)
-                      updates.options = ad.options
-                      updates.correct_answer = ad.correct_answer
+                      const reasonType = q.options?.reason_type || 'options'
+                      const newOptions = { reason_type: reasonType }
+                      for (let c = 0; c < count; c++) {
+                        const key = letters[c]
+                        newOptions[key] = q.options?.[key] || q.options?.[existingKeys[c]] || ''
+                      }
+                      const initialReasons = Array.isArray(q.correct_answer)
+                        ? q.correct_answer.filter(k => letters.slice(0, count).includes(k))
+                        : (typeof q.correct_answer === 'string' && letters.slice(0, count).includes(q.correct_answer) ? [q.correct_answer] : ['A'])
+
+                      updates.options = newOptions
+                      updates.correct_answer = {
+                        stance: 'agree',
+                        reason_type: reasonType,
+                        reasons: initialReasons.length > 0 ? initialReasons : ['A'],
+                        rubric: '',
+                      }
                     } else if (['MCQ', 'CHECKBOXES', 'DROPDOWN'].includes(newType) && isSurvey) {
                       const currentCount = Object.keys(q.options || {}).length
                       const count = (currentCount >= 2 && currentCount <= 10) ? currentCount : defaultSurveyOptionsCount
@@ -5022,123 +5154,254 @@ export default function CreateExam() {
                 )
               })()}
 
-              {/* Agree / Disagree (exam/quiz mode) */}
+              {/* Agree / Disagree (exam/quiz mode - AKM / HOTS) */}
               {!isSurvey && q.type === 'AGREE_DISAGREE' && (() => {
-                const stmtKeys = Object.keys(q.options || {})
-                const stmtCount = stmtKeys.length
+                const reasonType = q.options?.reason_type || q.correct_answer?.reason_type || 'options'
+                const reasonKeys = Object.keys(q.options || {}).filter(k => k !== 'reason_type' && k !== 'option_images')
+                const expectedStance = q.correct_answer?.stance || 'agree'
+                const correctReasons = Array.isArray(q.correct_answer?.reasons) ? q.correct_answer.reasons : []
+
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {/* Agree Disagree Toolbar */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {/* Concept and Instruction Banner */}
+                    <div className="alert alert-info text-xs" style={{ margin: 0, padding: '0.65rem 0.85rem', display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>💡</span>
+                      <div style={{ flex: 1, lineHeight: 1.5 }}>
+                        <strong>Mekanisme Soal Setuju / Tidak Setuju (AKM / HOTS):</strong>
+                        <br />
+                        1. Siswa membaca stimulus/kasus yang ditulis pada kotak <em>Teks Pertanyaan</em> di atas.
+                        <br />
+                        2. Siswa memilih sikap: <strong>Setuju</strong> atau <strong>Tidak Setuju</strong>.
+                        <br />
+                        3. Siswa memberikan alasan: melalui <strong>pilihan alasan terstruktur (seperti Pilihan Ganda Kompleks)</strong> atau <strong>penulisan manual (seperti Esai)</strong>.
+                      </div>
+                    </div>
+
+                    {/* Step 1: Kunci Sikap (Stance Key) */}
                     <div style={{
-                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '0.5rem 0.75rem', background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--border)',
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: '0.85rem 1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
                       gap: '0.5rem'
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Pernyataan Soal #{q.number}:</span>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeAgreeDisagreeCount(idx, stmtCount - 1)}
-                            disabled={stmtCount <= 1}
-                            title="Kurangi pernyataan"
-                          >-</button>
-                          <span style={{ fontWeight: 700, fontSize: '0.85rem', minWidth: 24, textAlign: 'center' }}>{stmtCount}</span>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.15rem 0.45rem', height: 24, fontSize: '0.85rem' }}
-                            onClick={() => changeAgreeDisagreeCount(idx, stmtCount + 1)}
-                            disabled={stmtCount >= 10}
-                            title="Tambah pernyataan"
-                          >+</button>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <div>
+                          <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                            1. Kunci Sikap yang Diharapkan:
+                          </span>
+                          <span className="text-muted text-xs" style={{ display: 'block', marginTop: '2px' }}>
+                            Pilih sikap/pendirian yang dianggap BENAR berdasarkan kasus/cerita soal
+                          </span>
                         </div>
-                        <span className="text-muted text-xs">Pernyataan</span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
-                        {[2, 3, 4, 5].map(cnt => (
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button
-                            key={cnt}
                             type="button"
-                            className={`btn btn-sm ${stmtCount === cnt ? 'btn-primary' : 'btn-ghost'}`}
-                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem', height: 24 }}
-                            onClick={() => changeAgreeDisagreeCount(idx, cnt)}
+                            className={`ad-btn ${expectedStance === 'agree' ? 'selected-agree' : ''}`}
+                            style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem' }}
+                            onClick={() => {
+                              const currentAns = (q.correct_answer && typeof q.correct_answer === 'object') ? q.correct_answer : {}
+                              updateQuestion(idx, 'correct_answer', { ...currentAns, stance: 'agree' })
+                            }}
                           >
-                            {cnt} Baris
+                            👍 Setuju
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            className={`ad-btn ${expectedStance === 'disagree' ? 'selected-disagree' : ''}`}
+                            style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem' }}
+                            onClick={() => {
+                              const currentAns = (q.correct_answer && typeof q.correct_answer === 'object') ? q.correct_answer : {}
+                              updateQuestion(idx, 'correct_answer', { ...currentAns, stance: 'disagree' })
+                            }}
+                          >
+                            👎 Tidak Setuju
+                          </button>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="alert alert-info text-xs" style={{ margin: 0, padding: '0.5rem 0.75rem' }}>
-                      👍👎 <strong>Petunjuk Setuju / Tidak Setuju:</strong> Tulis pernyataan pada kolom teks, lalu pilih kunci jawaban yang diharapkan (Setuju atau Tidak Setuju).
-                    </div>
-
-                    {stmtKeys.map((key, i) => (
-                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
-                        <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
-                          {i + 1}
-                        </span>
-                        <input
-                          className="form-input"
-                          style={{ flex: 1 }}
-                          placeholder={`Pernyataan ${i + 1}`}
-                          value={q.options?.[key] || ''}
-                          onChange={e => updateOption(idx, key, e.target.value)}
-                        />
-                        
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--surface)', padding: '0.25rem 0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem', color: q.correct_answer?.[key] === 'agree' ? 'var(--success)' : 'inherit', fontWeight: q.correct_answer?.[key] === 'agree' ? 700 : 400 }}>
-                            <input
-                              type="radio"
-                              name={`ad_${idx}_${key}`}
-                              checked={q.correct_answer?.[key] === 'agree'}
-                              onChange={() => {
-                                const newAnswer = { ...(q.correct_answer || {}), [key]: 'agree' }
-                                updateQuestion(idx, 'correct_answer', newAnswer)
-                              }}
-                            /> 👍 Setuju
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.8rem', color: q.correct_answer?.[key] === 'disagree' ? 'var(--danger)' : 'inherit', fontWeight: q.correct_answer?.[key] === 'disagree' ? 700 : 400 }}>
-                            <input
-                              type="radio"
-                              name={`ad_${idx}_${key}`}
-                              checked={q.correct_answer?.[key] === 'disagree'}
-                              onChange={() => {
-                                const newAnswer = { ...(q.correct_answer || {}), [key]: 'disagree' }
-                                updateQuestion(idx, 'correct_answer', newAnswer)
-                              }}
-                            /> 👎 Tidak Setuju
-                          </label>
+                    {/* Step 2: Format & Kunci Alasan */}
+                    <div style={{
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: '0.85rem 1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.75rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.65rem' }}>
+                        <div>
+                          <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                            2. Format & Mekanisme Alasan:
+                          </span>
+                          <span className="text-muted text-xs" style={{ display: 'block', marginTop: '2px' }}>
+                            Tentukan bagaimana siswa memberikan alasan atas sikap yang dipilih
+                          </span>
                         </div>
 
-                        {stmtCount > 1 && (
+                        <div style={{ display: 'inline-flex', background: 'var(--navy-mid)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px', gap: '2px' }}>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${reasonType === 'options' ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem', height: 28 }}
+                            onClick={() => setAgreeDisagreeReasonType(idx, 'options')}
+                          >
+                            ☑️ Pilihan Alasan (PG Kompleks)
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${reasonType === 'essay' ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem', height: 28 }}
+                            onClick={() => setAgreeDisagreeReasonType(idx, 'essay')}
+                          >
+                            ✍️ Esai / Uraian Bebas
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Reason Mode: Options */}
+                      {reasonType === 'options' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                          <div style={{
+                            display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '0.4rem 0.65rem', background: 'var(--navy-mid)', borderRadius: 6, gap: '0.5rem'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Jumlah Opsi Alasan:</span>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 22, fontSize: '0.85rem' }}
+                                  onClick={() => changeAgreeDisagreeCount(idx, reasonKeys.length - 1)}
+                                  disabled={reasonKeys.length <= 2}
+                                  title="Kurangi opsi alasan"
+                                >-</button>
+                                <span style={{ fontWeight: 700, fontSize: '0.82rem', minWidth: 22, textAlign: 'center' }}>{reasonKeys.length}</span>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '0.1rem 0.4rem', height: 22, fontSize: '0.85rem' }}
+                                  onClick={() => changeAgreeDisagreeCount(idx, reasonKeys.length + 1)}
+                                  disabled={reasonKeys.length >= 10}
+                                  title="Tambah opsi alasan"
+                                >+</button>
+                              </div>
+                              <span className="text-muted text-xs">Opsi</span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              <span className="text-muted text-xs" style={{ marginRight: '0.25rem' }}>Cepat:</span>
+                              {[2, 3, 4, 5].map(cnt => (
+                                <button
+                                  key={cnt}
+                                  type="button"
+                                  className={`btn btn-sm ${reasonKeys.length === cnt ? 'btn-primary' : 'btn-ghost'}`}
+                                  style={{ padding: '0.1rem 0.45rem', fontSize: '0.72rem', height: 22 }}
+                                  onClick={() => changeAgreeDisagreeCount(idx, cnt)}
+                                >
+                                  {cnt}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <p className="text-muted text-xs" style={{ margin: '0.25rem 0' }}>
+                            💡 Klik tombol huruf opsi (A, B, C...) untuk menandai alasan mana saja yang <strong>BENAR</strong>. Siswa dapat memilih lebih dari satu alasan.
+                          </p>
+
+                          {reasonKeys.map((key) => {
+                            const isCorrectReason = correctReasons.includes(key)
+                            return (
+                              <div key={key} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  className={`btn btn-sm ${isCorrectReason ? 'btn-success' : 'btn-ghost'}`}
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    padding: 0,
+                                    fontWeight: 700,
+                                    borderRadius: 6,
+                                    border: isCorrectReason ? '2px solid var(--success)' : '1px solid var(--border)',
+                                    flexShrink: 0
+                                  }}
+                                  onClick={() => toggleAgreeDisagreeReasonCorrect(idx, key)}
+                                  title={isCorrectReason ? 'Kunci alasan benar (Klik untuk batal)' : 'Klik untuk jadikan kunci alasan benar'}
+                                >
+                                  {key}
+                                </button>
+
+                                <input
+                                  className="form-input"
+                                  style={{ flex: 1 }}
+                                  placeholder={`Tuliskan opsi alasan ${key}...`}
+                                  value={q.options?.[key] || ''}
+                                  onChange={e => updateOption(idx, key, e.target.value)}
+                                />
+
+                                {isCorrectReason && (
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--success)', fontWeight: 700, flexShrink: 0 }}>
+                                    ✓ KUNCI
+                                  </span>
+                                )}
+
+                                {reasonKeys.length > 2 && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ color: 'var(--danger)', padding: '0.25rem' }}
+                                    onClick={() => removeAgreeDisagreeOption(idx, key)}
+                                    title="Hapus opsi alasan ini"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })}
+
                           <button
                             type="button"
                             className="btn btn-ghost btn-sm"
-                            style={{ color: 'var(--danger)', padding: '0.25rem' }}
-                            onClick={() => removeAgreeDisagreeStatement(idx, key)}
-                            title="Hapus pernyataan ini"
+                            style={{ alignSelf: 'flex-start', marginTop: '0.25rem', fontSize: '0.8rem' }}
+                            onClick={() => addAgreeDisagreeOption(idx)}
+                            disabled={reasonKeys.length >= 10}
                           >
-                            <Trash2 size={14} />
+                            <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Opsi Alasan ({reasonKeys.length + 1})
                           </button>
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      )}
 
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ alignSelf: 'flex-start', marginTop: '0.25rem', fontSize: '0.8rem' }}
-                      onClick={() => addAgreeDisagreeStatement(idx)}
-                      disabled={stmtCount >= 10}
-                    >
-                      <Plus size={14} style={{ marginRight: '0.25rem' }} /> Tambah Pernyataan ({stmtCount + 1})
-                    </button>
+                      {/* Reason Mode: Essay */}
+                      {reasonType === 'essay' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <div className="alert alert-warning text-xs" style={{ margin: 0 }}>
+                            ✍️ Siswa akan mengisi alasan dalam bentuk teks esai secara mandiri. Penilaian alasan ini dapat ditinjau dan dinilai oleh guru di menu Hasil Ujian setelah ujian selesai.
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                              Pedoman / Rubrik Penilaian Alasan Guru (Opsional):
+                            </label>
+                            <textarea
+                              className="form-input"
+                              rows={3}
+                              placeholder="Tuliskan poin-poin alasan atau kata kunci yang diharapkan dari siswa sebagai acuan saat koreksi..."
+                              value={q.correct_answer?.rubric || ''}
+                              onChange={e => {
+                                const currentAns = (q.correct_answer && typeof q.correct_answer === 'object') ? q.correct_answer : {}
+                                updateQuestion(idx, 'correct_answer', { ...currentAns, rubric: e.target.value })
+                              }}
+                              style={{ fontSize: '0.85rem', width: '100%', resize: 'vertical' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })()}

@@ -203,6 +203,15 @@ function formatAnswer(val, type) {
   }
   if (Array.isArray(val)) return val.join(', ')
   if (typeof val === 'object') {
+    if (type === 'AGREE_DISAGREE') {
+      if ('stance' in val) {
+        const s = val.stance === 'agree' ? 'Setuju' : (val.stance === 'disagree' ? 'Tidak Setuju' : '—')
+        const r = Array.isArray(val.reasons) && val.reasons.length > 0
+          ? ` (Alasan: ${val.reasons.join(', ')})`
+          : (val.essay ? ` (Alasan: "${val.essay.length > 30 ? val.essay.slice(0, 30) + '...' : val.essay}")` : '')
+        return `${s}${r}`
+      }
+    }
     return Object.entries(val).map(([k, v]) => `${k}→${v}`).join(', ')
   }
   return String(val)

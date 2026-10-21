@@ -1435,6 +1435,38 @@ tbody tr:hover {
 .ad-btn.selected-agree { border-color: var(--success); background: var(--success-bg); color: var(--success); }
 .ad-btn.selected-disagree { border-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
 
+.ad-stance-card {
+  flex: 1;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  text-align: left;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.ad-stance-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.ad-stance-card.selected-agree {
+  border-color: var(--success) !important;
+  background: var(--success-bg, rgba(16, 185, 129, 0.08)) !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+}
+.ad-stance-card.selected-disagree {
+  border-color: var(--danger) !important;
+  background: var(--danger-bg, rgba(239, 68, 68, 0.08)) !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+}
+
 /* ─── STAT CARD ──────────────────────────────────────────────────────────── */
 .stat-card {
   background: var(--glass);

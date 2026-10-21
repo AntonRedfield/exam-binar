@@ -105,7 +105,19 @@ function formatCorrectAnswer(correct, qType, question = null) {
     })
     return correct.map((c, i) => `${i + 1}. ${itemMap[c] || c}`).join(' → ');
   }
-  if ((qType === 'TRUE_FALSE' || qType === 'AGREE_DISAGREE' || qType === 'MATCHING') && typeof correct === 'object') {
+  if (qType === 'AGREE_DISAGREE' && typeof correct === 'object' && correct !== null) {
+    if ('stance' in correct) {
+      const stanceStr = correct.stance === 'agree' ? 'Setuju' : (correct.stance === 'disagree' ? 'Tidak Setuju' : '—')
+      const reasonsStr = Array.isArray(correct.reasons) && correct.reasons.length > 0
+        ? ` [Alasan: ${correct.reasons.join(', ')}]`
+        : ''
+      return `${stanceStr}${reasonsStr}`
+    }
+    return Object.entries(correct)
+      .map(([k, v]) => `${k} → ${v === 'agree' ? 'Setuju' : (v === 'disagree' ? 'Tidak Setuju' : v)}`)
+      .join(' | ')
+  }
+  if ((qType === 'TRUE_FALSE' || qType === 'MATCHING') && typeof correct === 'object') {
     return Object.entries(correct)
       .map(([k, v]) => `${k} → ${v}`)
       .join(' | ');

@@ -154,7 +154,14 @@ export default function QuestionAnalytics() {
       return val.map((v, i) => `${i + 1}:${itemMap[v] || v}`).join(', ')
     }
     if (Array.isArray(val)) return val.join(', ')
-    if (typeof val === 'object') return Object.entries(val).map(([k, v]) => `${k}→${v}`).join(', ')
+    if (typeof val === 'object') {
+      if (resolvedType === 'AGREE_DISAGREE' && 'stance' in val) {
+        const s = val.stance === 'agree' ? 'Setuju' : (val.stance === 'disagree' ? 'Tidak Setuju' : '—')
+        const r = Array.isArray(val.reasons) && val.reasons.length > 0 ? ` [${val.reasons.join(',')}]` : ''
+        return `${s}${r}`
+      }
+      return Object.entries(val).map(([k, v]) => `${k}→${v}`).join(', ')
+    }
     return String(val)
   }
 

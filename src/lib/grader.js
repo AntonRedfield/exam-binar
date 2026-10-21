@@ -241,33 +241,109 @@ export function gradeExam(answers, questions) {
       const correctObj = parseObjectMap(q.correct_answer)
       const givenObj = parseObjectMap(studentAnswer)
 
-      const optKeys = Object.keys(optionsObj)
-      const ansKeys = Object.keys(correctObj)
-      const allKeys = Array.from(new Set([...optKeys, ...ansKeys]))
-      const validKeys = allKeys.filter(k => correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
+      const isLegacy = typeof correctObj === 'object' && !('stance' in correctObj) && Object.keys(optionsObj).some(k => k.startsWith('stmt_'))
 
-      let correctCount = 0
-      for (const k of validKeys) {
-        const correctVal = String(correctObj[k]).trim().toLowerCase()
-        const givenVal = String(givenObj[k] || '').trim().toLowerCase()
-        if (correctVal === givenVal) {
-          correctCount++
+      if (isLegacy) {
+        const optKeys = Object.keys(optionsObj)
+        const ansKeys = Object.keys(correctObj)
+        const allKeys = Array.from(new Set([...optKeys, ...ansKeys]))
+        const validKeys = allKeys.filter(k => correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
+
+        let correctCount = 0
+        for (const k of validKeys) {
+          const correctVal = String(correctObj[k]).trim().toLowerCase()
+          const givenVal = String(givenObj[k] || '').trim().toLowerCase()
+          if (correctVal === givenVal) {
+            correctCount++
+          }
+        }
+
+        const totalStatements = validKeys.length
+        const ratio = totalStatements > 0 ? (correctCount / totalStatements) : 0
+        const earned = Math.round(ratio * pts * 100) / 100
+        autoScore += earned
+
+        let status = 'wrong'
+        if (totalStatements > 0 && correctCount === totalStatements) {
+          status = 'correct'
+        } else if (earned > 0) {
+          status = 'partial'
+        }
+
+        breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
+      } else {
+        // --- New Mechanism: Stance (Setuju / Tidak Setuju) + Reasons (Options or Essay) ---
+        const correctStance = String(correctObj.stance || 'agree').trim().toLowerCase()
+        const givenStance = String(givenObj.stance || (typeof studentAnswer === 'string' ? studentAnswer : '')).trim().toLowerCase()
+        const stanceMatch = givenStance !== '' && givenStance === correctStance
+
+        const reasonType = optionsObj.reason_type || correctObj.reason_type || (Array.isArray(correctObj.reasons) ? 'options' : 'essay')
+
+        if (reasonType === 'essay') {
+          // Reason is manually typed essay
+          essayPending = true
+          // Stance is worth 50% autoScore if matched
+          const earned = stanceMatch ? Math.round(0.5 * pts * 100) / 100 : 0
+          autoScore += earned
+
+          breakdown.push({
+            number: q.number,
+            type: q.type,
+            reason_type: 'essay',
+            status: 'pending',
+            earned,
+            max: pts,
+            correct: q.correct_answer,
+            given: studentAnswer,
+            stanceMatch
+          })
+        } else {
+          // Reason is prefilled options (complex MCQ)
+          const correctReasons = parseOptionList(correctObj.reasons || [])
+          const givenReasons = Array.isArray(givenObj.reasons) ? givenObj.reasons.map(r => String(r).trim()) : parseOptionList(givenObj.reasons || [])
+
+          const totalCorrectReasons = correctReasons.length
+          const correctSelected = givenReasons.filter(r => correctReasons.includes(r)).length
+          const wrongSelected = givenReasons.filter(r => !correctReasons.includes(r)).length
+
+          // Stance is 50% points, Reasons are 50% points
+          const stancePoints = 0.5 * pts
+          const reasonPoints = 0.5 * pts
+
+          const stanceEarned = stanceMatch ? stancePoints : 0
+
+          let reasonRatio = 0
+          if (totalCorrectReasons > 0) {
+            const netCorrect = Math.max(0, correctSelected - (wrongSelected * 0.5))
+            reasonRatio = netCorrect / totalCorrectReasons
+          } else {
+            reasonRatio = 1
+          }
+
+          const reasonEarned = reasonPoints * reasonRatio
+          const earned = Math.round((stanceEarned + reasonEarned) * 100) / 100
+          autoScore += earned
+
+          let status = 'wrong'
+          if (stanceMatch && totalCorrectReasons > 0 && correctSelected === totalCorrectReasons && wrongSelected === 0) {
+            status = 'correct'
+          } else if (earned > 0) {
+            status = 'partial'
+          }
+
+          breakdown.push({
+            number: q.number,
+            type: q.type,
+            reason_type: 'options',
+            status,
+            earned,
+            max: pts,
+            correct: q.correct_answer,
+            given: studentAnswer,
+            stanceMatch
+          })
         }
       }
-
-      const totalStatements = validKeys.length
-      const ratio = totalStatements > 0 ? (correctCount / totalStatements) : 0
-      const earned = Math.round(ratio * pts * 100) / 100
-      autoScore += earned
-
-      let status = 'wrong'
-      if (totalStatements > 0 && correctCount === totalStatements) {
-        status = 'correct'
-      } else if (earned > 0) {
-        status = 'partial'
-      }
-
-      breakdown.push({ number: q.number, type: q.type, status, earned, max: pts, correct: q.correct_answer, given: studentAnswer })
     }
 
     if (q.type === 'SHORT_ANSWER') {
