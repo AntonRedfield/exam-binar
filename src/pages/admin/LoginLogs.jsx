@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   ShieldAlert,
   ShieldCheck,
@@ -16,9 +16,11 @@ import {
   Info,
   ExternalLink,
   ChevronRight,
+  ChevronLeft,
   Edit3,
   MapPin,
-  Eye
+  Eye,
+  Calendar
 } from 'lucide-react'
 import {
   fetchLoginLogs,
@@ -29,8 +31,11 @@ import {
   formatLoginNarrative
 } from '../../lib/loginAudit'
 
+const PAGE_SIZE = 100
+
 export default function LoginLogs() {
-  const [logs, setLogs] = useState([])
+  const [logs, setLogs] = useState([])        // full filtered result set
+  const [totalCount, setTotalCount] = useState(0)
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isTableMissing, setIsTableMissing] = useState(false)
@@ -44,7 +49,12 @@ export default function LoginLogs() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all') // all | failed | success | suspicious
   const [roleFilter, setRoleFilter] = useState('')
-  
+  const [dateFrom, setDateFrom] = useState('')   // YYYY-MM-DD
+  const [dateTo, setDateTo] = useState('')       // YYYY-MM-DD
+
+  // Pagination
+  const [page, setPage] = useState(1)
+
   // Detail Modal
   const [selectedLog, setSelectedLog] = useState(null)
   const [copiedSql, setCopiedSql] = useState(false)
@@ -91,18 +101,26 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
 
   async function loadData() {
     setLoading(true)
+    setPage(1) // reset to first page on every new load
     try {
+      // Build dateFrom/dateTo as full ISO timestamps for the query
+      const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : null
+      const toIso   = dateTo   ? `${dateTo}T23:59:59.999Z`   : null
+
       const [logResult, statsResult] = await Promise.all([
         fetchLoginLogs({
-          limit: 150,
+          limit: 5000,          // fetch all, paginate in UI
           status: statusFilter,
           search,
-          role: roleFilter
+          role: roleFilter,
+          dateFrom: fromIso,
+          dateTo: toIso
         }),
         fetchLoginAuditStats()
       ])
 
       setLogs(logResult.data || [])
+      setTotalCount(logResult.total || logResult.data?.length || 0)
       setIsTableMissing(logResult.isTableMissing)
       setStats(statsResult)
     } catch (e) {
@@ -119,7 +137,61 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
       setCurrentDevice(dev)
       setNicknameInput(dev.deviceNickname || dev.deviceModel || '')
     })
-  }, [statusFilter, roleFilter])
+  }, [statusFilter, roleFilter, dateFrom, dateTo]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Current page slice — computed from the full logs array
+  const pagedLogs = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return logs.slice(start, start + PAGE_SIZE)
+  }, [logs, page])
+
+  const totalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE))
+
+  function handlePresetToday() {
+    const today = new Date().toISOString().split('T')[0]
+    setDateFrom(today)
+    setDateTo(today)
+  }
+
+  function handlePreset7Days() {
+    const end = new Date().toISOString().split('T')[0]
+    const start = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
+    setDateFrom(start)
+    setDateTo(end)
+  }
+
+  function handlePreset30Days() {
+    const end = new Date().toISOString().split('T')[0]
+    const start = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+    setDateFrom(start)
+    setDateTo(end)
+  }
+
+  function handleClearDates() {
+    setDateFrom('')
+    setDateTo('')
+  }
+
+  function getPageNumbers(current, total) {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1)
+    }
+    const pages = []
+    pages.push(1)
+    if (current > 3) {
+      pages.push('...')
+    }
+    const start = Math.max(2, current - 1)
+    const end = Math.min(total - 1, current + 1)
+    for (let i = start; i <= end; i++) {
+      pages.push(i)
+    }
+    if (current < total - 2) {
+      pages.push('...')
+    }
+    pages.push(total)
+    return pages
+  }
 
   function handleSaveNickname(e) {
     e.preventDefault()
@@ -378,7 +450,7 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
             {/* Role Filter */}
             <select
               className="form-input"
-              style={{ width: 140, fontSize: '0.8rem', padding: '0.35rem 0.5rem' }}
+              style={{ width: 130, fontSize: '0.8rem', padding: '0.35rem 0.5rem' }}
               value={roleFilter}
               onChange={e => setRoleFilter(e.target.value)}
             >
@@ -389,14 +461,80 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
               <option value="officer">Officer</option>
             </select>
 
+            {/* Date Range Filter with Day Shortcuts */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <Calendar size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                <input
+                  type="date"
+                  className="form-input"
+                  style={{ width: 135, fontSize: '0.78rem', padding: '0.3rem 0.45rem' }}
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  title="Dari tanggal"
+                />
+                <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>—</span>
+                <input
+                  type="date"
+                  className="form-input"
+                  style={{ width: 135, fontSize: '0.78rem', padding: '0.3rem 0.45rem' }}
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  title="Sampai tanggal"
+                />
+                {(dateFrom || dateTo) && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={handleClearDates}
+                    title="Hapus filter tanggal"
+                    style={{ padding: '0.2rem 0.4rem', color: '#94a3b8' }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Day Shortcuts */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                <button
+                  type="button"
+                  className={`btn btn-xs ${dateFrom === new Date().toISOString().split('T')[0] && dateTo === new Date().toISOString().split('T')[0] ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}
+                  onClick={handlePresetToday}
+                  title="Filter log login hari ini saja"
+                >
+                  Hari Ini
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}
+                  onClick={handlePreset7Days}
+                  title="Filter log login 7 hari terakhir"
+                >
+                  7 Hari
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}
+                  onClick={handlePreset30Days}
+                  title="Filter log login 30 hari terakhir"
+                >
+                  30 Hari
+                </button>
+              </div>
+            </div>
+
             {/* Search Box */}
-            <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
               <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
               <input
                 type="text"
                 className="form-input"
                 style={{ paddingLeft: '2rem', width: '100%', fontSize: '0.82rem' }}
-                placeholder="Cari username, nama siswa, IP, perangkat, atau alasan..."
+                placeholder="Cari username, nama, IP, perangkat..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -410,6 +548,21 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
 
         {/* Logs Table */}
         <div className="card" style={{ padding: 0 }}>
+          {/* Table header with count */}
+          {!loading && logs.length > 0 && (
+            <div style={{ padding: '0.65rem 1rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
+                Menampilkan{' '}
+                <strong style={{ color: '#1e293b' }}>{Math.min((page - 1) * PAGE_SIZE + 1, logs.length)}–{Math.min(page * PAGE_SIZE, logs.length)}</strong>
+                {' '}dari{' '}
+                <strong style={{ color: '#1e293b' }}>{totalCount.toLocaleString()}</strong> rekaman
+                {(dateFrom || dateTo) && <span style={{ marginLeft: '0.5rem', color: '#0284c7', fontSize: '0.76rem' }}>📅 Filter tanggal aktif</span>}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                Halaman {page} / {totalPages} • {PAGE_SIZE} baris/halaman
+              </div>
+            </div>
+          )}
           <div className="table-wrap">
             <table>
               <thead>
@@ -443,7 +596,7 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
                     </td>
                   </tr>
                 ) : (
-                  logs.map(log => {
+                  pagedLogs.map(log => {
                     const time = formatTime(log.created_at)
                     const isSuccess = log.status === 'success'
                     const isBreachRisk = !isSuccess || log.is_suspicious
@@ -693,6 +846,90 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_status ON public.login_logs(status);
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls (100 rows per page) */}
+          {!loading && totalPages > 1 && (
+            <div style={{
+              padding: '0.85rem 1.25rem',
+              borderTop: '1px solid #f1f5f9',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              background: '#f8fafc'
+            }}>
+              <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                Menampilkan baris{' '}
+                <strong style={{ color: '#0f172a' }}>{(page - 1) * PAGE_SIZE + 1}</strong>
+                {' '}–{' '}
+                <strong style={{ color: '#0f172a' }}>{Math.min(page * PAGE_SIZE, logs.length)}</strong>
+                {' '}dari{' '}
+                <strong style={{ color: '#0f172a' }}>{logs.length.toLocaleString()}</strong> rekaman
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '0.35rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem' }}
+                  disabled={page <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  title="Halaman sebelumnya"
+                >
+                  <ChevronLeft size={15} />
+                  <span>Sebelumnya</span>
+                </button>
+
+                {/* Page number buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  {getPageNumbers(page, totalPages).map((p, idx) => {
+                    if (p === '...') {
+                      return <span key={`ellipsis-${idx}`} style={{ padding: '0.2rem 0.4rem', color: '#94a3b8', fontSize: '0.8rem' }}>…</span>
+                    }
+                    const isCurrent = p === page
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPage(p)}
+                        style={{
+                          minWidth: 32,
+                          height: 32,
+                          padding: '0 0.5rem',
+                          borderRadius: '6px',
+                          border: isCurrent ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                          background: isCurrent ? '#2563eb' : '#fff',
+                          color: isCurrent ? '#fff' : '#334155',
+                          fontWeight: isCurrent ? 700 : 500,
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {p}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '0.35rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem' }}
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  title="Halaman berikutnya"
+                >
+                  <span>Berikutnya</span>
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

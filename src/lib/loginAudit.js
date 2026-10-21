@@ -761,6 +761,23 @@ export async function recordLoginAttempt({
   // 1. Immediately buffer in local storage for instant UI availability
   appendToLocalCache(logRecord)
 
+  // Immediately push baseline record to Supabase so EVERY login is recorded without fail!
+  pushLogToSupabase(logRecord).catch(() => {})
+
+  // Also immediately update profiles table if user_id is present
+  if (userId && isSupabaseConfigured && supabase) {
+    const cleanDev = resolvedModel || 'Web Browser'
+    supabase
+      .from('profiles')
+      .update({
+        last_login_at: logRecord.created_at,
+        last_login_device: cleanDev
+      })
+      .eq('id', userId)
+      .then(() => {})
+      .catch(() => {})
+  }
+
   // 2. Failed logins are pushed promptly so admin can immediately detect breaches
   if (status === 'failed') {
     getClientIp().then(ip => {
@@ -872,64 +889,108 @@ export async function updateLoginLogLocation({
  * Fetch login audit logs for Admin / Teachers.
  * Queries Supabase `login_logs`, merging with local cache.
  * Completely excludes mock / fake demo seed data to ensure 100% data fidelity.
+ *
+ * @param {object} opts
+ * @param {number}  opts.limit      - Safety ceiling on total rows returned (default 5000)
+ * @param {string}  opts.status     - 'all' | 'success' | 'failed' | 'suspicious'
+ * @param {string}  opts.search     - Free-text search term
+ * @param {string}  opts.role       - Role filter
+ * @param {string}  opts.dateFrom   - ISO date string start of range (inclusive)
+ * @param {string}  opts.dateTo     - ISO date string end of range (inclusive, day-end)
  */
 export async function fetchLoginLogs({
-  limit = 100,
-  status = 'all', // 'all' | 'success' | 'failed' | 'suspicious'
+  limit = 10000,
+  status = 'all',
   search = '',
-  role = ''
+  role = '',
+  dateFrom = null,
+  dateTo = null
 } = {}) {
   let remoteLogs = []
   let remoteError = null
 
   if (isSupabaseConfigured && supabase) {
     try {
-      let query = supabase
-        .from('login_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit)
+      // Chunked fetch to bypass any server-side PostgREST row ceiling (e.g. 1000 rows limit)
+      const batchSize = 1000
+      let fromIdx = 0
+      let keepFetching = true
 
-      if (status === 'success') {
-        query = query.eq('status', 'success')
-      } else if (status === 'failed') {
-        query = query.eq('status', 'failed')
-      } else if (status === 'suspicious') {
-        query = query.eq('is_suspicious', true)
-      }
+      while (keepFetching) {
+        let query = supabase
+          .from('login_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(fromIdx, fromIdx + batchSize - 1)
 
-      if (role) {
-        query = query.eq('role', role)
-      }
+        if (status === 'success') {
+          query = query.eq('status', 'success')
+        } else if (status === 'failed') {
+          query = query.eq('status', 'failed')
+        } else if (status === 'suspicious') {
+          query = query.eq('is_suspicious', true)
+        }
 
-      const { data, error } = await query
-      if (error) {
-        remoteError = error
-      } else if (data) {
-        remoteLogs = data
+        if (role) {
+          query = query.eq('role', role)
+        }
+
+        // Server-side date range filtering
+        if (dateFrom) {
+          query = query.gte('created_at', dateFrom)
+        }
+        if (dateTo) {
+          query = query.lte('created_at', dateTo)
+        }
+
+        const { data, error } = await query
+        if (error) {
+          remoteError = error
+          keepFetching = false
+          break
+        }
+        if (data && data.length > 0) {
+          remoteLogs = remoteLogs.concat(data)
+          if (data.length < batchSize || remoteLogs.length >= limit) {
+            keepFetching = false
+          } else {
+            fromIdx += batchSize
+          }
+        } else {
+          keepFetching = false
+        }
       }
     } catch (err) {
       remoteError = err
     }
 
-    // Fallback: If remote login_logs has 0 rows, populate from real profiles.last_login_at
-    // NEVER hardcode fake IPs or fake locations!
-    if (remoteLogs.length === 0) {
-      try {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, username, fullname, role_level, class_section, last_login_at, last_login_device')
-          .not('last_login_at', 'is', null)
-          .order('last_login_at', { ascending: false })
-          .limit(limit)
+    // Historical reconciliation: check profiles with last_login_at
+    // to catch any accounts that logged in before login_logs table was populated
+    try {
+      let profQuery = supabase
+        .from('profiles')
+        .select('id, username, fullname, role_level, class_section, last_login_at, last_login_device')
+        .not('last_login_at', 'is', null)
+        .order('last_login_at', { ascending: false })
 
-        if (profs && profs.length > 0) {
-          remoteLogs = profs.map(p => {
+      if (dateFrom) {
+        profQuery = profQuery.gte('last_login_at', dateFrom)
+      }
+      if (dateTo) {
+        profQuery = profQuery.lte('last_login_at', dateTo)
+      }
+
+      const { data: profs } = await profQuery.limit(2000)
+      if (profs && profs.length > 0) {
+        const existingTimestamps = new Set(remoteLogs.map(l => `${l.user_id}_${l.created_at}`))
+        for (const p of profs) {
+          const key = `${p.id}_${p.last_login_at}`
+          if (!existingTimestamps.has(key)) {
             const parsed = parseDeviceInfo(p.last_login_device)
             const r = p.role_level === 4 ? 'admin' : (p.role_level === 3 ? 'teacher' : (p.role_level === 2 ? 'officer' : 'student'))
             const userIdentifier = p.username || p.fullname || 'User'
             const model = parsed.deviceModel || parsed.deviceName || 'Web Browser'
-            return {
+            remoteLogs.push({
               id: `prof_${p.id}_${p.last_login_at}`,
               user_id: p.id,
               identifier: userIdentifier,
@@ -954,12 +1015,12 @@ export async function fetchLoginLogs({
                 source: 'profiles.last_login_at'
               },
               created_at: p.last_login_at
-            }
-          })
+            })
+          }
         }
-      } catch (profErr) {
-        console.warn('[LoginAudit] Fallback profiles fetch notice:', profErr?.message)
       }
+    } catch (profErr) {
+      console.warn('[LoginAudit] Historical profiles reconciliation notice:', profErr?.message)
     }
   }
 
@@ -970,25 +1031,24 @@ export async function fetchLoginLogs({
     localLogs = raw.filter(x => !String(x.id).startsWith('demo_log_'))
   } catch (e) {}
 
-  // Merge unique logs by ID
+  // Merge unique logs by ID — remote wins, local overlays with latest scan state
   const map = new Map()
 
-  // 1. Remote logs (database records)
   for (const item of remoteLogs) {
     if (!item?.id || String(item.id).startsWith('demo_log_')) continue
     map.set(item.id, normalizeLogEntry(item))
   }
 
-  // 2. Local logs (overlay with latest local scan state)
   for (const item of localLogs) {
     if (!item?.id || String(item.id).startsWith('demo_log_')) continue
+    // Local scan state overlays remote for in-progress entries
     map.set(item.id, normalizeLogEntry(item))
   }
 
   let merged = Array.from(map.values())
   merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-  // Apply filters
+  // Apply client-side filters (for local-only entries not caught server-side)
   if (status !== 'all') {
     if (status === 'suspicious') {
       merged = merged.filter(x => x.is_suspicious)
@@ -999,6 +1059,15 @@ export async function fetchLoginLogs({
 
   if (role) {
     merged = merged.filter(x => x.role === role)
+  }
+
+  if (dateFrom) {
+    const from = new Date(dateFrom).getTime()
+    merged = merged.filter(x => new Date(x.created_at).getTime() >= from)
+  }
+  if (dateTo) {
+    const to = new Date(dateTo).getTime()
+    merged = merged.filter(x => new Date(x.created_at).getTime() <= to)
   }
 
   if (search && search.trim()) {
@@ -1016,7 +1085,8 @@ export async function fetchLoginLogs({
   }
 
   return {
-    data: merged.slice(0, limit),
+    data: merged,           // full filtered set — pagination done in UI
+    total: merged.length,   // total count for pagination display
     isTableMissing: Boolean(remoteError && (remoteError.code === 'PGRST205' || remoteError.message?.includes('does not exist'))),
     remoteError: remoteError?.message || null
   }
@@ -1039,9 +1109,10 @@ function normalizeLogEntry(item) {
 
 /**
  * Fetch summary statistics for the audit dashboard cards.
+ * Uses a high fetch ceiling so totalHistory reflects the real record count.
  */
 export async function fetchLoginAuditStats() {
-  const { data: logs } = await fetchLoginLogs({ limit: 500 })
+  const { data: logs } = await fetchLoginLogs({ limit: 5000 })
 
   const now = new Date()
   const todayStr = now.toISOString().split('T')[0]
@@ -1079,3 +1150,4 @@ export async function fetchLoginAuditStats() {
 export function getSeedAuditLogs() {
   return []
 }
+
