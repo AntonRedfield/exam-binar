@@ -47,6 +47,7 @@ import {
   lockStudentReturnee
 } from '../../lib/returnee'
 import { confirmStudentPhysicalAttendance } from '../../lib/passiveSelfie'
+import QuestionTextEditor from '../../components/admin/QuestionTextEditor'
 
 function statusBadge(status, returneeRequired, returneeReason) {
   if (returneeRequired) {
@@ -1562,18 +1563,17 @@ export default function Monitor() {
                       </div>
                     </div>
 
-                    {/* Question text */}
+                    {/* Question text with formatting & auto-expand */}
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
                         Teks / Narasi Pertanyaan:
                       </label>
-                      <textarea
-                        className="form-control"
-                        rows={3}
+                      <QuestionTextEditor
                         value={editingQ.question_text || ''}
-                        onChange={e => setEditingQ(prev => ({ ...prev, question_text: e.target.value }))}
-                        placeholder="Ketik teks pertanyaan..."
-                        style={{ fontSize: '0.9rem', lineHeight: 1.5, fontFamily: 'inherit' }}
+                        onChange={val => setEditingQ(prev => ({ ...prev, question_text: val }))}
+                        placeholder="Ketik teks pertanyaan atau cerita di sini..."
+                        questionNumber={editingQ.number}
+                        minHeight={110}
                       />
                     </div>
 

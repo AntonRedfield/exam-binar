@@ -22,6 +22,7 @@ import FaceDetectionStatus from '../components/exam/FaceDetectionStatus'
 import ListeningPlayer from '../components/exam/ListeningPlayer'
 import QuestionVideoPlayer from '../components/exam/QuestionVideoPlayer'
 import AdaptiveExamImage from '../components/exam/AdaptiveExamImage'
+import FormattedText from '../components/common/FormattedText'
 import { 
   MONITORING_LEVELS,
   shouldTriggerFreeze,
@@ -1225,13 +1226,12 @@ export default function ExamRoom() {
 
                 {q.question_text && (
                   <div style={{
-                    padding: '1rem', marginBottom: '1rem',
+                    padding: '1.15rem 1.25rem', marginBottom: '1.25rem',
                     background: 'var(--surface)', borderRadius: 10,
                     border: '1px solid var(--border)',
-                    fontSize: '0.95rem', lineHeight: 1.6,
-                    whiteSpace: 'pre-wrap'
+                    fontSize: '0.96rem', lineHeight: 1.65,
                   }}>
-                    {q.question_text}
+                    <FormattedText text={q.question_text} />
                   </div>
                 )}
 

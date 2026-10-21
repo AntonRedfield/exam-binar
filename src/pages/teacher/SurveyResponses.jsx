@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, questions, sessions, surveys } from '../../lib/db'
 import { ChevronLeft, Printer, Users, UserX, ClipboardList, BarChart2, Eye, X, Download, Clock, CheckCircle } from 'lucide-react'
+import FormattedText from '../../components/common/FormattedText'
 
 const SURVEY_TYPE_LABELS = {
   SHORT_ANSWER: 'Jawaban Singkat',
@@ -354,7 +355,9 @@ export default function SurveyResponses() {
                   <div style={{ marginBottom: '0.875rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
                       <span className="text-muted text-sm">{q.number}.</span>
-                      <h3 style={{ fontSize: '0.95rem', fontWeight: 700, flex: 1 }}>{q.question_text}</h3>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, flex: 1 }}>
+                        <FormattedText text={q.question_text} style={{ display: 'inline' }} />
+                      </div>
                     </div>
                     <span className="badge badge-draft" style={{ fontSize: '0.7rem' }}>{SURVEY_TYPE_LABELS[q.type] || q.type}</span>
                   </div>
@@ -475,7 +478,10 @@ export default function SurveyResponses() {
                 return (
                   <div key={q.id || idx} style={{ background: 'var(--navy-light)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.75rem' }}>
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{q.number}. {q.question_text}</span>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <span style={{ marginRight: '0.35rem' }}>{q.number}.</span>
+                        <FormattedText text={q.question_text} style={{ display: 'inline' }} />
+                      </div>
                       <span className="badge badge-draft" style={{ fontSize: '0.7rem', flexShrink: 0 }}>{SURVEY_TYPE_LABELS[q.type] || q.type}</span>
                     </div>
                     <div style={{ background: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.05)', fontSize: '0.9rem', color: 'black', whiteSpace: 'pre-wrap' }}>

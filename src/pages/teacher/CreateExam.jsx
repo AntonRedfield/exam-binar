@@ -8,6 +8,8 @@ import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitorin
 import { MonitoringIcon } from '../../lib/monitoringUI'
 import QuestionAudioInput from '../../components/admin/QuestionAudioInput'
 import QuestionVideoPlayer from '../../components/exam/QuestionVideoPlayer'
+import QuestionTextEditor from '../../components/admin/QuestionTextEditor'
+import { stripFormatting } from '../../components/common/FormattedText'
 import {
   saveExamDraftToSupabase,
   saveLocalDraftBackup,
@@ -3413,9 +3415,12 @@ export default function CreateExam() {
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
-                        maxWidth: 380
+                        maxWidth: 420
                       }}>
-                        {q.question_text ? (q.question_text.length > 55 ? q.question_text.substring(0, 55) + '...' : q.question_text) : '— (Belum ada teks)'}
+                        {(() => {
+                          const plain = stripFormatting(q.question_text)
+                          return plain ? (plain.length > 60 ? plain.substring(0, 60) + '...' : plain) : '— (Belum ada teks)'
+                        })()}
                       </span>
                     </div>
                   ) : (
@@ -3583,15 +3588,18 @@ export default function CreateExam() {
               {!isQuestionCollapsed && (
                 <div className="card-collapsible-body">
 
-              {/* Question text */}
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label className="form-label" style={{ fontSize: '0.8rem' }}>Teks {isSurvey ? 'Pertanyaan' : 'Soal'}</label>
-                <textarea
-                  className="form-input"
-                  style={{ minHeight: 60, resize: 'vertical', fontSize: '0.85rem' }}
+              {/* Question text with rich formatting & auto-expanding height */}
+              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Teks {isSurvey ? 'Pertanyaan' : 'Soal / Stimulus Cerita'}</span>
+                </label>
+                <QuestionTextEditor
                   value={q.question_text || ''}
-                  onChange={e => updateQuestion(idx, 'question_text', e.target.value)}
-                  placeholder={isSurvey ? 'Tulis pertanyaan survei di sini...' : 'Tulis soal di sini (opsional jika menggunakan PDF)...'}
+                  onChange={val => updateQuestion(idx, 'question_text', val)}
+                  placeholder={isSurvey ? 'Tulis pertanyaan survei di sini...' : 'Tulis narasi cerita, artikel, dialog bahasa Inggris, stimulus, atau teks soal di sini...'}
+                  questionNumber={q.number}
+                  isSurvey={isSurvey}
+                  minHeight={130}
                 />
               </div>
 

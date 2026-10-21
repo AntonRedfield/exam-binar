@@ -13,6 +13,7 @@ import QuestionMultipleChoice from '../components/survey/QuestionMultipleChoice'
 import QuestionCheckboxes from '../components/survey/QuestionCheckboxes'
 import QuestionDropdown from '../components/survey/QuestionDropdown'
 import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
+import FormattedText from '../components/common/FormattedText'
 
 export default function SurveyRoom() {
   const { examId } = useParams()
@@ -359,8 +360,8 @@ export default function SurveyRoom() {
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                   <span className="text-muted text-sm" style={{ flexShrink: 0, marginTop: '0.1rem' }}>{q.number}.</span>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 600, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                      {q.question_text}
+                    <div style={{ fontSize: '0.95rem', fontWeight: 600, lineHeight: 1.5 }}>
+                      <FormattedText text={q.question_text} style={{ display: 'inline' }} />
                       {q.required !== false && <span style={{ color: 'var(--danger)', marginLeft: '0.25rem' }}>*</span>}
                     </div>
                   </div>

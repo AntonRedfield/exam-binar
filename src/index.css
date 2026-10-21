@@ -1467,6 +1467,61 @@ tbody tr:hover {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
 }
 
+/* ─── QUESTION TEXT EDITOR & FORMATTING ──────────────────────────────────── */
+.qte-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  user-select: none;
+}
+.qte-btn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--accent);
+}
+.qte-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.qte-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  outline: none;
+}
+@media (max-width: 640px) {
+  .qte-expand-label {
+    display: none;
+  }
+}
+
+.formatted-question-text {
+  color: var(--text-primary);
+  font-family: inherit;
+}
+.formatted-question-text b,
+.formatted-question-text strong {
+  font-weight: 750;
+  color: var(--text-primary);
+}
+.formatted-question-text i,
+.formatted-question-text em {
+  font-style: italic;
+}
+.formatted-question-text u {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+}
+
 /* ─── STAT CARD ──────────────────────────────────────────────────────────── */
 .stat-card {
   background: var(--glass);
