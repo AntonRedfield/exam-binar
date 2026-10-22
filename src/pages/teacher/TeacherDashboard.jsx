@@ -4,10 +4,21 @@ import { getCurrentUser } from '../../lib/auth'
 import { localDb } from '../../lib/db'
 import { BookOpen, Plus, Activity, BarChart2, Users, ArrowRight, FileText, Zap, School } from 'lucide-react'
 
+const DEFAULT_STATS = {
+  totalExams: 0,
+  activeExams: 0,
+  draftExams: 0,
+  closedExams: 0,
+  allActiveExamsSchool: 0,
+  totalSessions: 0,
+  avgScore: 0,
+  totalResults: 0
+}
+
 export default function TeacherDashboard() {
   const user = getCurrentUser()
   const navigate = useNavigate()
-  const [stats, setStats] = useState(null)
+  const [stats, setStats] = useState(DEFAULT_STATS)
   const [recentExams, setRecentExams] = useState([])
   const [classBreakdown, setClassBreakdown] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,13 +34,14 @@ export default function TeacherDashboard() {
           activeExams,
           draftExams,
           closedExams,
+          allActiveExamsSchool,
           totalSessions,
           recentResults,
           profiles
-        } = teacherData
+        } = teacherData || {}
 
         let avgScore = 0
-        if (recentResults.length) {
+        if (recentResults && recentResults.length) {
           const pcts = recentResults.map(r => {
             const tot = (r.auto_score || 0) + (r.essay_score || 0)
             return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
@@ -55,21 +67,33 @@ export default function TeacherDashboard() {
           if (pA !== pB) return pA - pB
           return new Date(b.created_at || b.updated_at || 0).getTime() - new Date(a.created_at || a.updated_at || 0).getTime()
         })
+        setStats({
+          totalExams: totalExams ?? 0,
+          activeExams: activeExams ?? 0,
+          draftExams: draftExams ?? 0,
+          closedExams: closedExams ?? 0,
+          allActiveExamsSchool: allActiveExamsSchool ?? 0,
+          totalSessions: totalSessions ?? 0,
+          avgScore,
+          totalResults: recentResults?.length || 0
+        })
         setRecentExams(sortedRecent)
         setClassBreakdown(classSorted)
       } catch (err) {
         console.error("Teacher dashboard load error:", err)
-        setStats({ totalExams: 0, activeExams: 0, draftExams: 0, closedExams: 0, totalSessions: 0, avgScore: 0, totalResults: 0 })
+        setStats(DEFAULT_STATS)
       } finally {
         setLoading(false)
       }
     }
     if (user?.id) {
       load()
+    } else {
+      setLoading(false)
     }
   }, [user?.id])
 
-  if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
+  if (loading || !stats) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
 
   const greeting = (() => {
     const h = new Date().getHours()

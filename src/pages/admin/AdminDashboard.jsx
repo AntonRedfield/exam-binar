@@ -4,10 +4,21 @@ import { localDb } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { Users, BookOpen, BarChart2, Activity, Plus, ArrowRight, AlertTriangle, GraduationCap, TrendingUp, School } from 'lucide-react'
 
+const DEFAULT_ADMIN_STATS = {
+  totalUsers: 0,
+  totalTeachers: 0,
+  totalExams: 0,
+  totalSessions: 0,
+  activeExams: 0,
+  avgScore: 0,
+  totalViolations: 0,
+  distrib: [0, 0, 0, 0, 0]
+}
+
 export default function AdminDashboard() {
   const user = getCurrentUser()
   const navigate = useNavigate()
-  const [stats, setStats] = useState(null)
+  const [stats, setStats] = useState(DEFAULT_ADMIN_STATS)
   const [recentExams, setRecentExams] = useState([])
   const [classBreakdown, setClassBreakdown] = useState([])
   const [loading, setLoading] = useState(true)
@@ -17,13 +28,13 @@ export default function AdminDashboard() {
       try {
         const adminData = await localDb.getAdminStats()
         const {
-          profiles: allProfiles,
-          totalExams,
-          activeExams,
-          totalSessions,
-          recentResults,
-          latestExams
-        } = adminData
+          profiles: allProfiles = [],
+          totalExams = 0,
+          activeExams = 0,
+          totalSessions = 0,
+          recentResults = [],
+          latestExams = []
+        } = adminData || {}
 
         const totalUsers = allProfiles.filter(p => p.username?.startsWith('partner.') || p.role === 'student').length
         const totalTeachers = allProfiles.filter(p => p.role === 'teacher' || (p.username && !p.username.startsWith('partner.') && p.username !== 'super_admin' && p.username !== 'admin')).length
@@ -70,7 +81,7 @@ export default function AdminDashboard() {
         setRecentExams(latestExams || [])
       } catch (err) {
         console.error("Dashboard load error:", err)
-        setStats({ totalUsers: 0, totalTeachers: 0, totalExams: 0, totalSessions: 0, activeExams: 0, avgScore: 0, totalViolations: 0, distrib: [0, 0, 0, 0, 0] })
+        setStats(DEFAULT_ADMIN_STATS)
       } finally {
         setLoading(false)
       }
@@ -78,9 +89,9 @@ export default function AdminDashboard() {
     load()
   }, [])
 
-  if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
+  if (loading || !stats) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
 
-  const maxBar = Math.max(...stats.distrib, 1)
+  const maxBar = Math.max(...(stats?.distrib || [0, 0, 0, 0, 0]), 1)
   const distribLabels = ['0–20', '20–40', '40–60', '60–80', '80–100']
   const distribColors = ['#EF4444', '#F59E0B', '#F59E0B', '#10B981', '#4F8EF7']
 

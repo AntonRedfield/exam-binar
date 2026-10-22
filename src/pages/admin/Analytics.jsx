@@ -1,41 +1,58 @@
 import { useEffect, useState } from 'react'
 import { localDb } from '../../lib/db'
 
+const DEFAULT_ANALYTICS_STATS = {
+  totalUsers: 0,
+  totalTeachers: 0,
+  totalExams: 0,
+  totalSessions: 0,
+  avgScore: 0,
+  totalViolations: 0,
+  recentResults: []
+}
+
 export default function Analytics() {
-  const [stats, setStats] = useState(null)
+  const [stats, setStats] = useState(DEFAULT_ANALYTICS_STATS)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const {
-        totalUsers,
-        totalTeachers,
-        totalExams,
-        totalSessions,
-        recentResults
-      } = await localDb.getAnalyticsStats()
+      try {
+        const data = await localDb.getAnalyticsStats()
+        const {
+          totalUsers = 0,
+          totalTeachers = 0,
+          totalExams = 0,
+          totalSessions = 0,
+          recentResults = []
+        } = data || {}
 
-      let avgScore = 0
-      let totalViolations = 0
-      if (recentResults?.length) {
-        const pcts = recentResults.map(r => {
-          const tot = (r.auto_score || 0) + (r.essay_score || 0)
-          return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
-        })
-        avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
-        totalViolations = recentResults.reduce((sum, r) => sum + (r.violation_count || 0), 0)
+        let avgScore = 0
+        let totalViolations = 0
+        if (recentResults?.length) {
+          const pcts = recentResults.map(r => {
+            const tot = (r.auto_score || 0) + (r.essay_score || 0)
+            return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
+          })
+          avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
+          totalViolations = recentResults.reduce((sum, r) => sum + (r.violation_count || 0), 0)
+        }
+
+        setStats({ totalUsers, totalTeachers, totalExams, totalSessions, avgScore, totalViolations, recentResults: recentResults || [] })
+      } catch (err) {
+        console.error("Analytics load error:", err)
+        setStats(DEFAULT_ANALYTICS_STATS)
+      } finally {
+        setLoading(false)
       }
-
-      setStats({ totalUsers, totalTeachers, totalExams, totalSessions, avgScore, totalViolations, recentResults: recentResults || [] })
-      setLoading(false)
     }
     load()
   }, [])
 
-  if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
+  if (loading || !stats) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
 
   const distrib = [0, 0, 0, 0, 0] // 0-20, 20-40, 40-60, 60-80, 80-100
-  stats.recentResults.forEach(r => {
+  ;(stats?.recentResults || []).forEach(r => {
     const tot = (r.auto_score || 0) + (r.essay_score || 0)
     const pct = r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
     const idx = Math.min(4, Math.floor(pct / 20))

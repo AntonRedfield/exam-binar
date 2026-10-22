@@ -1346,131 +1346,169 @@ export const localDb = {
   getRawData: () => ({}),
 
   getTeacherStats: async (teacherId) => {
-    const [{ data: teacherExamsList }, { data: allPubList }] = await Promise.all([
-      exams.listByTeacher(teacherId),
-      exams.listPublished()
-    ])
-    const teacherExams = teacherExamsList || []
-    const teacherExamIds = teacherExams.map(e => e.id)
-
-    const activeExams = teacherExams.filter(e => e.status === 'published').length
-    const draftExams = teacherExams.filter(e => e.status === 'draft').length
-    const closedExams = teacherExams.filter(e => e.status === 'closed').length
-    const allActiveExamsSchool = (allPubList || []).length
-
-    let relevantSessions = []
-    let relevantResults = []
-
-    if (isSupabaseConfigured && supabase && teacherExamIds.length > 0) {
-      const [sessRes, resultsRes] = await Promise.all([
-        supabase.from('exam_sessions').select('*').in('exam_id', teacherExamIds),
-        supabase.from('results').select('*').in('exam_id', teacherExamIds)
+    try {
+      const [{ data: teacherExamsList }, { data: allPubList }] = await Promise.all([
+        teacherId ? exams.listByTeacher(teacherId) : exams.list(),
+        exams.listPublished()
       ])
-      if (sessRes.data) relevantSessions = sessRes.data
-      if (resultsRes.data) {
-        const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
-        const profMap = await fetchStudentProfilesMap(studentIds)
-        relevantResults = resultsRes.data
-          .filter(r => profMap[r.student_id])
-          .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+      const teacherExams = teacherExamsList || []
+      const teacherExamIds = teacherExams.map(e => e.id)
+
+      const activeExams = teacherExams.filter(e => e.status === 'published').length
+      const draftExams = teacherExams.filter(e => e.status === 'draft').length
+      const closedExams = teacherExams.filter(e => e.status === 'closed').length
+      const allActiveExamsSchool = (allPubList || []).length
+
+      let relevantSessions = []
+      let relevantResults = []
+
+      if (isSupabaseConfigured && supabase && teacherExamIds.length > 0) {
+        const [sessRes, resultsRes] = await Promise.all([
+          supabase.from('exam_sessions').select('*').in('exam_id', teacherExamIds),
+          supabase.from('results').select('*').in('exam_id', teacherExamIds)
+        ])
+        if (sessRes?.data) relevantSessions = sessRes.data
+        if (resultsRes?.data) {
+          const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
+          const profMap = await fetchStudentProfilesMap(studentIds)
+          relevantResults = resultsRes.data
+            .filter(r => profMap[r.student_id])
+            .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+        }
       }
-    }
 
-    const { data: userList } = await users.list()
+      const { data: userList } = await users.list()
 
-    return {
-      examList: teacherExams,
-      totalExams: teacherExams.length,
-      activeExams,
-      draftExams,
-      closedExams,
-      allActiveExamsSchool,
-      totalSessions: relevantSessions.length,
-      recentResults: relevantResults,
-      profiles: (userList || []).map(u => ({ class_section: u.class_section || u.kelas, username: u.username }))
+      return {
+        examList: teacherExams,
+        totalExams: teacherExams.length,
+        activeExams,
+        draftExams,
+        closedExams,
+        allActiveExamsSchool,
+        totalSessions: relevantSessions.length,
+        recentResults: relevantResults,
+        profiles: (userList || []).map(u => ({ class_section: u.class_section || u.kelas, username: u.username }))
+      }
+    } catch (err) {
+      console.error('[DB] getTeacherStats error:', err)
+      return {
+        examList: [],
+        totalExams: 0,
+        activeExams: 0,
+        draftExams: 0,
+        closedExams: 0,
+        allActiveExamsSchool: 0,
+        totalSessions: 0,
+        recentResults: [],
+        profiles: []
+      }
     }
   },
 
   getAdminStats: async () => {
-    const { data: userList } = await users.list()
-    const { data: allExams } = await exams.list()
+    try {
+      const { data: userList } = await users.list()
+      const { data: allExams } = await exams.list()
 
-    const allProfiles = (userList || []).map(u => ({
-      class_section: u.class_section || u.kelas,
-      username: u.username,
-      display_name: u.display_name,
-      role: u.role
-    }))
+      const allProfiles = (userList || []).map(u => ({
+        class_section: u.class_section || u.kelas,
+        username: u.username,
+        display_name: u.display_name,
+        role: u.role
+      }))
 
-    const examItems = allExams || []
-    const totalExams = examItems.length
-    const activeExams = examItems.filter(e => e.status === 'published').length
-    
-    let totalSessions = 0
-    let recentResults = []
+      const examItems = allExams || []
+      const totalExams = examItems.length
+      const activeExams = examItems.filter(e => e.status === 'published').length
+      
+      let totalSessions = 0
+      let recentResults = []
 
-    if (isSupabaseConfigured && supabase) {
-      const [sessRes, resultsRes] = await Promise.all([
-        supabase.from('exam_sessions').select('id', { count: 'exact', head: true }),
-        supabase.from('results').select('*').order('created_at', { ascending: false }).limit(10)
-      ])
-      totalSessions = sessRes.count ?? 0
-      if (resultsRes.data) {
-        const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
-        const profMap = await fetchStudentProfilesMap(studentIds)
-        recentResults = resultsRes.data
-          .filter(r => profMap[r.student_id])
-          .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+      if (isSupabaseConfigured && supabase) {
+        const [sessRes, resultsRes] = await Promise.all([
+          supabase.from('exam_sessions').select('id', { count: 'exact', head: true }),
+          supabase.from('results').select('*').order('created_at', { ascending: false }).limit(10)
+        ])
+        totalSessions = sessRes?.count ?? 0
+        if (resultsRes?.data) {
+          const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
+          const profMap = await fetchStudentProfilesMap(studentIds)
+          recentResults = resultsRes.data
+            .filter(r => profMap[r.student_id])
+            .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+        }
       }
-    }
 
-    const sortedExams = [...examItems]
-      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-      .slice(0, 5)
+      const sortedExams = [...examItems]
+        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+        .slice(0, 5)
 
-    return {
-      profiles: allProfiles,
-      totalExams,
-      activeExams,
-      totalSessions,
-      recentResults,
-      latestExams: sortedExams
+      return {
+        profiles: allProfiles,
+        totalExams,
+        activeExams,
+        totalSessions,
+        recentResults,
+        latestExams: sortedExams
+      }
+    } catch (err) {
+      console.error('[DB] getAdminStats error:', err)
+      return {
+        profiles: [],
+        totalExams: 0,
+        activeExams: 0,
+        totalSessions: 0,
+        recentResults: [],
+        latestExams: []
+      }
     }
   },
 
   getAnalyticsStats: async () => {
-    const { data: userList } = await users.list()
-    const { data: allExams } = await exams.list()
+    try {
+      const { data: userList } = await users.list()
+      const { data: allExams } = await exams.list()
 
-    const usersArr = userList || []
-    const totalUsers = usersArr.filter(u => u.role === 'student' || u.role === 'officer' || u.role === 'parent').length
-    const totalTeachers = usersArr.filter(u => u.role === 'teacher').length
-    const totalExams = (allExams || []).length
+      const usersArr = userList || []
+      const totalUsers = usersArr.filter(u => u.role === 'student' || u.role === 'officer' || u.role === 'parent').length
+      const totalTeachers = usersArr.filter(u => u.role === 'teacher').length
+      const totalExams = (allExams || []).length
 
-    let totalSessions = 0
-    let recentResults = []
+      let totalSessions = 0
+      let recentResults = []
 
-    if (isSupabaseConfigured && supabase) {
-      const [sessRes, resultsRes] = await Promise.all([
-        supabase.from('exam_sessions').select('id', { count: 'exact', head: true }),
-        supabase.from('results').select('*').order('created_at', { ascending: false }).limit(20)
-      ])
-      totalSessions = sessRes.count ?? 0
-      if (resultsRes.data) {
-        const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
-        const profMap = await fetchStudentProfilesMap(studentIds)
-        recentResults = resultsRes.data
-          .filter(r => profMap[r.student_id])
-          .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+      if (isSupabaseConfigured && supabase) {
+        const [sessRes, resultsRes] = await Promise.all([
+          supabase.from('exam_sessions').select('id', { count: 'exact', head: true }),
+          supabase.from('results').select('*').order('created_at', { ascending: false }).limit(20)
+        ])
+        totalSessions = sessRes?.count ?? 0
+        if (resultsRes?.data) {
+          const studentIds = resultsRes.data.map(r => r.student_id).filter(Boolean)
+          const profMap = await fetchStudentProfilesMap(studentIds)
+          recentResults = resultsRes.data
+            .filter(r => profMap[r.student_id])
+            .map(r => results._attachRelations({ ...r, profiles: profMap[r.student_id] }))
+        }
       }
-    }
 
-    return {
-      totalUsers,
-      totalTeachers,
-      totalExams,
-      totalSessions,
-      recentResults
+      return {
+        totalUsers,
+        totalTeachers,
+        totalExams,
+        totalSessions,
+        recentResults
+      }
+    } catch (err) {
+      console.error('[DB] getAnalyticsStats error:', err)
+      return {
+        totalUsers: 0,
+        totalTeachers: 0,
+        totalExams: 0,
+        totalSessions: 0,
+        recentResults: []
+      }
     }
   }
 }
