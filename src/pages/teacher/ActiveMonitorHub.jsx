@@ -124,6 +124,16 @@ export default function ActiveMonitorHub() {
       )
     }
 
+    // Auto-sort: Active exams always appear at top, then sorted by most recent date descending
+    list.sort((a, b) => {
+      const pA = a.status === 'published' ? 1 : 2
+      const pB = b.status === 'published' ? 1 : 2
+      if (pA !== pB) return pA - pB
+      const dateA = new Date(a.created_at || a.updated_at || 0).getTime()
+      const dateB = new Date(b.created_at || b.updated_at || 0).getTime()
+      return dateB - dateA
+    })
+
     return list
   }, [examList, filterTab, search, currentUser?.id])
 

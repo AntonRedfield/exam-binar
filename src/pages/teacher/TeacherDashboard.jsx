@@ -48,8 +48,14 @@ export default function TeacherDashboard() {
           .sort(([a], [b]) => a.localeCompare(b, 'id', { numeric: true }))
           .map(([name, count]) => ({ name, count }))
 
-        setStats({ totalExams, activeExams, draftExams, closedExams, totalSessions, avgScore, totalResults: recentResults.length })
-        setRecentExams(examList || [])
+        // Auto-sort: Active exams first, then by most recent date descending
+        const sortedRecent = (examList || []).slice().sort((a, b) => {
+          const pA = a.status === 'published' ? 1 : 2
+          const pB = b.status === 'published' ? 1 : 2
+          if (pA !== pB) return pA - pB
+          return new Date(b.created_at || b.updated_at || 0).getTime() - new Date(a.created_at || a.updated_at || 0).getTime()
+        })
+        setRecentExams(sortedRecent)
         setClassBreakdown(classSorted)
       } catch (err) {
         console.error("Teacher dashboard load error:", err)

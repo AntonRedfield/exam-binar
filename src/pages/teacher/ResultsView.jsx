@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results, sessions, questions, fetchStudentProfilesMap } from '../../lib/db'
+import { getCurrentUser } from '../../lib/auth'
 import { gradeExam } from '../../lib/grader'
-import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2 } from 'lucide-react'
+import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
+import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText } from 'lucide-react'
 
 export default function ResultsView() {
   const { examId } = useParams()
@@ -17,6 +19,8 @@ export default function ResultsView() {
   const [modalScores, setModalScores] = useState({})
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
   const [regrading, setRegrading] = useState(false)
+  const [selectedDetailResult, setSelectedDetailResult] = useState(null)
+  const [unauthorized, setUnauthorized] = useState(false)
 
   // Map of questions by question number for quick metadata lookup
   const questionMap = new Map((questionList || []).map(q => [Number(q.number), q]))
@@ -48,6 +52,15 @@ export default function ResultsView() {
         sessions.listByExam(examId),
         questions.listByExam(examId)
       ])
+
+      // Teacher ownership verification: teachers can only see results of exams they made by themselves
+      const currentUser = getCurrentUser()
+      const isTeacher = currentUser?.role === 'MODERATOR' || currentUser?.level === 2 || currentUser?.level === 3
+      if (isTeacher && examData?.created_by && examData.created_by !== currentUser?.id) {
+        setUnauthorized(true)
+        setLoading(false)
+        return
+      }
 
       const rawQuestions = qs || []
       setQuestionList(rawQuestions)
@@ -425,6 +438,23 @@ export default function ResultsView() {
 
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
 
+  if (unauthorized) {
+    return (
+      <div className="page-body" style={{ maxWidth: 600, margin: '4rem auto', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '2.5rem 1.5rem', borderTop: '4px solid var(--danger)' }}>
+          <ShieldAlert size={48} color="var(--danger)" style={{ margin: '0 auto 1rem' }} />
+          <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Akses Dibatasi</h3>
+          <p className="text-muted" style={{ marginBottom: '1.5rem', fontSize: '0.92rem' }}>
+            Anda hanya berwenang melihat hasil ujian yang Anda buat sendiri.
+          </p>
+          <button className="btn btn-primary btn-sm" onClick={() => navigate('/teacher/exams')}>
+            <ChevronLeft size={15} /> Kembali ke Daftar Ujian
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (!exam) {
     return (
       <div className="page-body">
@@ -624,6 +654,19 @@ export default function ResultsView() {
                       </td>
                       <td className="no-print">
                         <div className="action-btn-group" style={{ justifyContent: 'center' }}>
+                          <button
+                            className="action-btn action-btn-info"
+                            onClick={() => setSelectedDetailResult(r)}
+                            title="Lihat rincian lembar jawaban lengkap siswa"
+                            style={{
+                              background: 'rgba(37, 99, 235, 0.08)',
+                              color: '#2563eb',
+                              borderColor: 'rgba(37, 99, 235, 0.3)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            <FileText size={15} /> Detail Jawaban
+                          </button>
                           {hasEssays && (
                             <button
                               className={`action-btn ${isPendingGrading ? 'action-btn-warning' : 'action-btn-preview'}`}
@@ -631,7 +674,7 @@ export default function ResultsView() {
                               title={isPendingGrading ? 'Ada esai yang belum dinilai - Klik untuk memberi nilai per soal' : 'Tinjau / ubah nilai esai per soal'}
                               style={isPendingGrading ? { borderColor: 'var(--warning)', color: 'var(--warning)', fontWeight: 600 } : {}}
                             >
-                              <Eye size={15} /> {isPendingGrading ? 'Beri Nilai' : 'Nilai Esai'}
+                              <Edit3 size={15} /> {isPendingGrading ? 'Beri Nilai' : 'Nilai Esai'}
                               {isPendingGrading && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--warning)', marginLeft: 3, display: 'inline-block' }} />}
                             </button>
                           )}
@@ -961,6 +1004,17 @@ export default function ResultsView() {
           </div>
         )
       })()}
+
+      {/* Student Detailed Answers Review Modal */}
+      {selectedDetailResult && (
+        <StudentAnswerDetailModal
+          result={selectedDetailResult}
+          exam={exam}
+          questions={questionList}
+          onClose={() => setSelectedDetailResult(null)}
+          onOpenEssayGrading={(res) => openEssayModal(res)}
+        />
+      )}
     </>
   )
 }

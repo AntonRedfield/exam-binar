@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results, questions } from '../../lib/db'
-import { ChevronLeft, AlertTriangle, CheckCircle, XCircle, TrendingUp, TrendingDown, HelpCircle } from 'lucide-react'
+import { getCurrentUser } from '../../lib/auth'
+import { ChevronLeft, AlertTriangle, CheckCircle, XCircle, TrendingUp, TrendingDown, HelpCircle, ShieldAlert } from 'lucide-react'
 
 export default function QuestionAnalytics() {
   const { examId } = useParams()
@@ -9,6 +10,7 @@ export default function QuestionAnalytics() {
   const [exam, setExam] = useState(null)
   const [analytics, setAnalytics] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [unauthorized, setUnauthorized] = useState(false)
   const [sortKey, setSortKey] = useState('difficulty') // 'difficulty' | 'number'
 
   useEffect(() => {
@@ -18,6 +20,15 @@ export default function QuestionAnalytics() {
         results.listByExam(examId),
         questions.listByExam(examId),
       ])
+
+      const currentUser = getCurrentUser()
+      const isTeacher = currentUser?.role === 'MODERATOR' || currentUser?.level === 2 || currentUser?.level === 3
+      if (isTeacher && examData?.created_by && examData.created_by !== currentUser?.id) {
+        setUnauthorized(true)
+        setLoading(false)
+        return
+      }
+
       setExam(examData)
 
       if (!resultList?.length || !questionList?.length) {
@@ -112,6 +123,23 @@ export default function QuestionAnalytics() {
   }, [examId])
 
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
+
+  if (unauthorized) {
+    return (
+      <div className="page-body" style={{ maxWidth: 600, margin: '4rem auto', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '2.5rem 1.5rem', borderTop: '4px solid var(--danger)' }}>
+          <ShieldAlert size={48} color="var(--danger)" style={{ margin: '0 auto 1rem' }} />
+          <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Akses Dibatasi</h3>
+          <p className="text-muted" style={{ marginBottom: '1.5rem', fontSize: '0.92rem' }}>
+            Anda hanya berwenang melihat analisis soal ujian yang Anda buat sendiri.
+          </p>
+          <button className="btn btn-primary btn-sm" onClick={() => navigate('/teacher/exams')}>
+            <ChevronLeft size={15} /> Kembali ke Daftar Ujian
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const { questions: qAnalysis, totalStudents } = analytics
 

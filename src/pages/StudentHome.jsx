@@ -64,6 +64,27 @@ export default function StudentHome() {
             if (result) rMap[exam.id] = result
           }
         }
+        // Auto-sort: Ongoing / unfinished active exams first, then published, then completed; newest date first
+        visibleExams.sort((a, b) => {
+          const sessA = sMap[a.id]
+          const sessB = sMap[b.id]
+          const isDoneA = sessA?.status === 'submitted' || sessA?.status === 'time_up'
+          const isDoneB = sessB?.status === 'submitted' || sessB?.status === 'time_up'
+          if (isDoneA !== isDoneB) return isDoneA ? 1 : -1
+
+          const isOngoingA = sessA?.status === 'active' || sessA?.status === 'reset'
+          const isOngoingB = sessB?.status === 'active' || sessB?.status === 'reset'
+          if (isOngoingA !== isOngoingB) return isOngoingA ? -1 : 1
+
+          const pubA = a.status === 'published' ? 1 : 0
+          const pubB = b.status === 'published' ? 1 : 0
+          if (pubA !== pubB) return pubB - pubA
+
+          const dateA = new Date(a.created_at || a.updated_at || 0).getTime()
+          const dateB = new Date(b.created_at || b.updated_at || 0).getTime()
+          return dateB - dateA
+        })
+
         setExamList(visibleExams)
         setSessionMap(sMap)
         setResultMap(rMap)

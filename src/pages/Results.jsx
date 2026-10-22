@@ -49,6 +49,28 @@ export default function Results() {
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 40, height: 40 }} /></div>
   if (!result) return <div className="loading-screen"><p className="text-muted">Hasil tidak ditemukan.</p></div>
 
+  const isTeacher = user?.role === 'MODERATOR' || user?.level === 2 || user?.level === 3
+  const isAdmin = user?.role === 'SUPERADMIN' || user?.level === 4
+  const isAuthorizedTeacher = isTeacher && result.exams?.created_by === user?.id
+
+  // Teacher ownership check: teacher can only see results for exams they made by themselves
+  if (isTeacher && !isAuthorizedTeacher) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--navy)', padding: '4rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div className="card text-center" style={{ maxWidth: 500, padding: '2.5rem 1.5rem', borderTop: '4px solid var(--danger)', background: '#ffffff' }}>
+          <ShieldAlert size={48} color="var(--danger)" style={{ margin: '0 auto 1rem' }} />
+          <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Akses Dibatasi</h3>
+          <p className="text-muted text-sm" style={{ marginBottom: '1.5rem' }}>
+            Anda hanya berwenang melihat hasil ujian yang Anda buat sendiri.
+          </p>
+          <button className="btn btn-primary btn-sm" onClick={() => navigate('/teacher/exams')}>
+            <ArrowLeft size={15} /> Kembali ke Daftar Ujian
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const breakdown = (() => { try { return JSON.parse(result.breakdown || '[]') } catch { return [] } })()
   const totalScore = (result.auto_score || 0) + (result.essay_score || 0)
   const breakdownMaxSum = breakdown.reduce((sum, b) => sum + (Number(b.max) || 0), 0)
@@ -58,6 +80,7 @@ export default function Results() {
   const essayPending = breakdown.some(b => b.status === 'pending')
   const passingGrade = result.exams?.passing_grade ?? 60
   const backPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : (user?.role === 'MODERATOR' ? '/teacher/exams' : '/home')
+  const canViewBreakdown = isAdmin || isAuthorizedTeacher || result.exams?.status !== 'published'
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--navy)', padding: '2rem 1rem' }}>
@@ -67,7 +90,7 @@ export default function Results() {
           <button className="btn btn-ghost btn-sm" onClick={() => navigate(backPath)}>
             <ArrowLeft size={15} /> Kembali
           </button>
-          {result.exams?.status !== 'published' && (
+          {canViewBreakdown && (
             <button className="btn btn-ghost btn-sm" onClick={() => window.print()}>
               <Printer size={15} /> Cetak Hasil
             </button>
@@ -138,7 +161,7 @@ export default function Results() {
         </div>
 
         {/* Breakdown table */}
-        {result.exams?.status !== 'published' && (
+        {canViewBreakdown && (
           <div id="quiz-area" lang="en" translate="no" className="card notranslate">
             <div className="card-header">
               <h3>Rincian Jawaban per Soal</h3>
