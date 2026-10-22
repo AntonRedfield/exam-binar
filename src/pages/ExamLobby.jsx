@@ -418,6 +418,9 @@ export default function ExamLobby() {
             {exam.mode === 'quiz' && (
               <li style={{ color: 'var(--warning)', fontWeight: 600 }}>Mode Kuis: Anda hanya dapat maju ke soal berikutnya, tidak bisa kembali.</li>
             )}
+            <li style={{ color: '#b91c1c', fontWeight: 600 }}>
+              🌐 Larangan Terjemahan: Dilarang menggunakan fitur terjemahan otomatis browser (Google/Edge Translate). Halaman soal akan otomatis diblokir dan dicatat sebagai pelanggaran jika terjemahan aktif.
+            </li>
             <li style={{ color: '#dc2626', fontWeight: 600 }}>
               Ketentuan Returnee: Jika Anda keluar atau terdeteksi logout, Anda membutuhkan Token Masuk Kembali dari Pengawas (Guru/Admin) untuk dapat melanjutkan.
             </li>

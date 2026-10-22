@@ -46,7 +46,8 @@ export default function QuestionMatching({ question, value, onChange }) {
                 fontSize: '0.82rem'
               }}
             >
-              <strong style={{ color: 'var(--accent)' }}>{rKey}.</strong> {rightItems[rKey]}
+              <strong style={{ color: 'var(--accent)' }}>{rKey}.</strong>
+              <span className="matching-choice-text">{rightItems[rKey]}</span>
             </span>
           ))}
         </div>

@@ -23,6 +23,8 @@ import ListeningPlayer from '../components/exam/ListeningPlayer'
 import QuestionVideoPlayer from '../components/exam/QuestionVideoPlayer'
 import AdaptiveExamImage from '../components/exam/AdaptiveExamImage'
 import FormattedText from '../components/common/FormattedText'
+import { useTranslationGuard } from '../lib/translationGuard'
+import TranslationBlockedModal from '../components/exam/TranslationBlockedModal'
 import { 
   MONITORING_LEVELS,
   shouldTriggerFreeze,
@@ -642,6 +644,12 @@ export default function ExamRoom() {
     onSecurityLockout: handleSecurityLockout,
   })
 
+  // ─── Browser Auto-Translation Guard ───────────────────────────────
+  const { isTranslated, recheckTranslation } = useTranslationGuard({
+    enabled: !isPrivileged && !loading && !submitting && !kickoutActive && !timeUp,
+    onViolation: handleViolation,
+  })
+
   // ─── Face detection (Level 4 only) ────────────────────────────────
   const faceDetection = useFaceDetection({
     enabled: !isPrivileged && !loading && !submitting && !freezeActive && monitorLevel === 4,
@@ -663,6 +671,7 @@ export default function ExamRoom() {
   }, [])
 
   function handleAnswer(qNum, value, isEssay = false) {
+    if (isTranslated) return
     if (lockedQuestions[String(qNum)]) return
     if (!engineRef.current) {
       const updated = { ...answersRef.current, [String(qNum)]: value }
@@ -686,6 +695,7 @@ export default function ExamRoom() {
   }
 
   function handleQuizNext(isSubmit = false) {
+    if (isTranslated) return
     const currQ = questionList[currentQ - 1]
     if (!currQ) return;
     const { breakdown } = gradeExam(answersRef.current, [currQ])
@@ -969,6 +979,14 @@ export default function ExamRoom() {
         />
       )}
 
+      {/* Auto-Translation Blocked Barrier Modal */}
+      {isTranslated && (
+        <TranslationBlockedModal
+          onRecheck={recheckTranslation}
+          violationCount={violations}
+        />
+      )}
+
       {/* Time reduction notification */}
       {timeReductionMsg && (
         <div style={{
@@ -1038,9 +1056,14 @@ export default function ExamRoom() {
                 questionKey={`q-${currentQ}`}
                 onExpire={handleQuestionTimerExpire}
                 onWarning={handleQuestionTimeWarning}
+                paused={isTranslated || freezeActive}
               />
             ) : (
-              <Timer endTimestamp={adjustedEndTimestamp} onExpire={handleTimerExpire} />
+              <Timer
+                endTimestamp={adjustedEndTimestamp}
+                onExpire={handleTimerExpire}
+                paused={isTranslated || freezeActive}
+              />
             )}
 
             {/* Passive Autosave Notice */}
@@ -1114,7 +1137,7 @@ export default function ExamRoom() {
           <button
             className="btn btn-gold btn-sm no-print"
             onClick={() => setShowSubmitConfirm(true)}
-            disabled={submitting}
+            disabled={submitting || isTranslated}
           >
             <Send size={14} /> Kumpulkan
           </button>
@@ -1167,7 +1190,13 @@ export default function ExamRoom() {
             }}
           >
             {q && (
-              <div>
+              <div
+                id="quiz-area"
+                lang="en"
+                translate="no"
+                className="notranslate"
+                style={{ display: isTranslated ? 'none' : 'block' }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <div>
                     <span className="text-muted text-xs">Soal {currentQ} dari {totalQ}</span>
@@ -1265,21 +1294,21 @@ export default function ExamRoom() {
               <>
                 <div style={{ flex: 1 }} />
                 {currentQ < totalQ ? (
-                  <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => handleQuizNext(false)}>
+                  <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => handleQuizNext(false)} disabled={isTranslated}>
                     Selanjutnya <ChevronRight size={15} />
                   </button>
                 ) : (
-                  <button className="btn btn-gold btn-sm" style={{ flex: 1 }} onClick={() => handleQuizNext(true)} disabled={submitting}>
+                  <button className="btn btn-gold btn-sm" style={{ flex: 1 }} onClick={() => handleQuizNext(true)} disabled={submitting || isTranslated}>
                     <Send size={14} /> Kumpulkan
                   </button>
                 )}
               </>
             ) : (
               <>
-                <button className="btn btn-ghost btn-sm" onClick={() => setCurrentQ(q => Math.max(1, q - 1))} disabled={currentQ <= 1}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setCurrentQ(q => Math.max(1, q - 1))} disabled={currentQ <= 1 || isTranslated}>
                   <ChevronLeft size={15} /> Sebelumnya
                 </button>
-                <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => setCurrentQ(q => Math.min(totalQ, q + 1))} disabled={currentQ >= totalQ}>
+                <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => setCurrentQ(q => Math.min(totalQ, q + 1))} disabled={currentQ >= totalQ || isTranslated}>
                   Selanjutnya <ChevronRight size={15} />
                 </button>
               </>

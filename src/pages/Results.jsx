@@ -139,7 +139,7 @@ export default function Results() {
 
         {/* Breakdown table */}
         {result.exams?.status !== 'published' && (
-          <div className="card">
+          <div id="quiz-area" lang="en" translate="no" className="card notranslate">
             <div className="card-header">
               <h3>Rincian Jawaban per Soal</h3>
             </div>

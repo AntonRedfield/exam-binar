@@ -30,21 +30,22 @@ export const MONITORING_LEVELS = {
     color: '#f59e0b',        // amber
     colorBg: 'white',
     colorBorder: 'rgba(245,158,11,0.3)',
-    restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
+    restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit', 'no_translate'],
     hasPenalty: false,
     hasFaceDetection: false,
-    description: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, serta keluar dari aplikasi. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
+    description: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, keluar dari aplikasi, serta menggunakan fitur terjemahan otomatis browser. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
     guide: {
       title: 'Level 2 - Scout Mode',
-      overview: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, serta keluar dari aplikasi. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
+      overview: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, keluar dari aplikasi, serta menggunakan fitur terjemahan otomatis browser. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
     },
     briefRules: [
       'Pengguna dilarang melakukan klik kanan dan klik ganda.',
       'Dilarang berpindah tab atau jendela.',
       'Dilarang keluar dari aplikasi.',
+      'Dilarang menggunakan fitur terjemahan otomatis browser (Auto-Translate).',
       'Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
     ],
-    teacherInfo: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, serta keluar dari aplikasi. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
+    teacherInfo: 'Pengguna dilarang melakukan klik kanan, klik ganda, berpindah tab atau jendela, keluar dari aplikasi, serta menggunakan fitur terjemahan otomatis browser. Setiap pelanggaran akan dicatat oleh sistem, namun tidak ada sanksi langsung yang diberikan.',
   },
   3: {
     id: 3,
@@ -53,7 +54,7 @@ export const MONITORING_LEVELS = {
     color: '#8b5cf6',        // violet
     colorBg: 'white',
     colorBorder: 'rgba(139,92,246,0.3)',
-    restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
+    restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit', 'no_translate'],
     hasPenalty: true,
     hasFaceDetection: false,
     description: 'Menerapkan larangan aktivitas yang sama dengan Mode Scout. Namun, sistem sanksi berlaku setiap terjadi 3 kali pelanggaran dalam bentuk pembekuan layar (screen freeze).',
@@ -68,7 +69,7 @@ export const MONITORING_LEVELS = {
       ]
     },
     briefRules: [
-      'Menerapkan larangan aktivitas yang sama dengan Mode Scout.',
+      'Menerapkan larangan aktivitas yang sama dengan Mode Scout (termasuk larangan auto-translate).',
       'Sanksi pembekuan layar berlaku setiap 3 kali pelanggaran.',
       'Pelanggaran ke-1: 10s, ke-2: 20s, ke-3: 30s. Kuis: 5s per pelanggaran.',
     ],
@@ -82,7 +83,7 @@ export const MONITORING_LEVELS = {
     color: '#ef4444',         // red
     colorBg: 'white',
     colorBorder: 'rgba(239,68,68,0.3)',
-    restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit'],
+    restrictions: ['no_rightclick', 'no_doubleclick', 'no_tab_switch', 'no_quit', 'no_translate'],
     hasPenalty: true,
     hasFaceDetection: true,
     fullName: 'Smart Camera Automatic Recognition System',
@@ -95,16 +96,17 @@ export const MONITORING_LEVELS = {
       rules: [
         { label: 'Sanksi penguncian layar', desc: 'Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).' },
         { label: 'Sanksi pengurangan waktu', desc: 'Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).' },
+        { label: 'Larangan Terjemahan', desc: 'Dilarang menggunakan fitur terjemahan otomatis browser (Google Translate / Edge Translate).' },
         { label: 'Akses Kamera', desc: 'Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.' },
       ]
     },
     briefRules: [
-      'STRIX adalah Bahasa Latin yang berarti burung hantu, terkenal akan matanya yang selalu siaga dan presisi.',
-      'Kamera pintar ini dibekali deteksi wajah yang tidak pernah lengah. Ujian tidak dapat dimulai tanpa kamera.',
+      'STRIX dibekali deteksi wajah yang tidak pernah lengah. Ujian tidak dapat dimulai tanpa kamera.',
+      'Dilarang menggunakan fitur terjemahan otomatis (Auto-Translate).',
       'Sanksi layar: Setiap 3 poin pelanggaran membekukan layar (15s, 30s, 60s+).',
       'Sanksi waktu: Setiap 7 poin mengurangi durasi 5 menit (Ujian) / 20% (Kuis).',
     ],
-    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\n\nMakna Filosofis: STRIX adalah Bahasa Latin yang berarti burung hantu, yang terkenal akan matanya yang selalu siaga, tetap menatap tajam dan presisi bahkan di malam yang paling gelap. Filosofi itu yang menjadi alasan nama STRIX Kamera pintar ini dibekali deteksi wajah yang tidak pernah lengah, siap mengenali dan memantau siapa pun secara presisi dalam keadaan apapun.\n\nKetentuan Sanksi:\n• Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\n• Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\n• Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
+    teacherInfo: 'Ini merupakan tingkatan tertinggi dengan pengawasan berbasis deteksi wajah.\n\nMakna Filosofis: STRIX adalah Bahasa Latin yang berarti burung hantu, yang terkenal akan matanya yang selalu siaga, tetap menatap tajam dan presisi bahkan di malam yang paling gelap. Filosofi itu yang menjadi alasan nama STRIX Kamera pintar ini dibekali deteksi wajah yang tidak pernah lengah, siap mengenali dan memantau siapa pun secara presisi dalam keadaan apapun.\n\nKetentuan Sanksi:\n• Sanksi penguncian layar: Setiap 3 poin pelanggaran akan membekukan layar selama 15 detik (pertama), 30 detik (kedua), dan 60 detik (ketiga atau lebih).\n• Sanksi pengurangan waktu: Setiap 7 poin pelanggaran akan mengakibatkan pengurangan durasi ujian selama 5 menit (atau pengurangan 20% waktu pengerjaan pada mode kuis).\n• Larangan Terjemahan: Dilarang menggunakan fitur terjemahan browser.\n• Akses Kamera: Ujian tidak dapat dimulai jika kamera tidak aktif atau mengalami kendala teknis.',
     freezeDurations: { exam: [15, 30, 60], quiz: 5 },
     timeReduction: { exam: 5 * 60, quiz: 0.20 }, // exam: 5 min in seconds, quiz: 20%
     timeReductionInterval: 7, // every 7 violations

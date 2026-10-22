@@ -13,12 +13,28 @@ import { Clock, AlertTriangle } from 'lucide-react'
  *  - onExpire: callback when timer hits 0
  *  - onWarning: callback when timer reaches warning threshold
  */
-export default function Timer({ endTimestamp, durationSeconds, questionKey, onExpire, onWarning }) {
+export default function Timer({ endTimestamp, durationSeconds, questionKey, onExpire, onWarning, paused = false }) {
   const [remaining, setRemaining] = useState(null)
   const triggeredRef = useRef(false)
   const warningTriggeredRef = useRef(false)
   const onExpireRef = useRef(onExpire)
   const onWarningRef = useRef(onWarning)
+  const pausedTimeRef = useRef(0)
+  const pauseStartRef = useRef(null)
+
+  // Track pause intervals
+  useEffect(() => {
+    if (paused) {
+      if (!pauseStartRef.current) {
+        pauseStartRef.current = Date.now()
+      }
+    } else {
+      if (pauseStartRef.current) {
+        pausedTimeRef.current += (Date.now() - pauseStartRef.current)
+        pauseStartRef.current = null
+      }
+    }
+  }, [paused])
 
   // Keep callback refs fresh without restarting the interval
   useEffect(() => {
@@ -34,13 +50,19 @@ export default function Timer({ endTimestamp, durationSeconds, questionKey, onEx
     if (!durationSeconds) return
     triggeredRef.current = false
     warningTriggeredRef.current = false
+    pausedTimeRef.current = 0
+    pauseStartRef.current = null
 
     const startTime = Date.now()
-    const endTime = startTime + durationSeconds * 1000
+    const baseEndTime = startTime + durationSeconds * 1000
 
     function tick() {
+      if (paused) return
       const now = Date.now()
-      const diff = Math.max(0, Math.floor((endTime - now) / 1000))
+      const currentPause = pauseStartRef.current ? (now - pauseStartRef.current) : 0
+      const totalPaused = pausedTimeRef.current + currentPause
+      const effectiveEnd = baseEndTime + totalPaused
+      const diff = Math.max(0, Math.floor((effectiveEnd - now) / 1000))
       setRemaining(diff)
 
       // Warning at 20% time remaining
@@ -59,7 +81,7 @@ export default function Timer({ endTimestamp, durationSeconds, questionKey, onEx
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [durationSeconds, questionKey])
+  }, [durationSeconds, questionKey, paused])
 
   // Global timer mode (existing behavior)
   useEffect(() => {
@@ -68,9 +90,13 @@ export default function Timer({ endTimestamp, durationSeconds, questionKey, onEx
     warningTriggeredRef.current = false
 
     function tick() {
+      if (paused) return
       const end = new Date(endTimestamp).getTime()
       const now = Date.now()
-      const diff = Math.max(0, Math.floor((end - now) / 1000))
+      const currentPause = pauseStartRef.current ? (now - pauseStartRef.current) : 0
+      const totalPaused = pausedTimeRef.current + currentPause
+      const effectiveEnd = end + totalPaused
+      const diff = Math.max(0, Math.floor((effectiveEnd - now) / 1000))
       setRemaining(diff)
       if (diff <= 0 && !triggeredRef.current) {
         triggeredRef.current = true
@@ -81,7 +107,7 @@ export default function Timer({ endTimestamp, durationSeconds, questionKey, onEx
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [endTimestamp, durationSeconds])
+  }, [endTimestamp, durationSeconds, paused])
 
   if (remaining === null) return null
 

@@ -272,7 +272,7 @@ export default function QuestionAgreeDisagree({ question, value, onChange }) {
                       {key}
                     </span>
                     <div style={{ flex: 1, minWidth: 0, fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text-primary)' }}>
-                      {options[key]}
+                      <span className="option-text">{options[key]}</span>
                     </div>
                     <div style={{ flexShrink: 0, color: isSelected ? 'var(--accent)' : 'var(--text-muted)' }}>
                       {isSelected ? <CheckSquare size={20} /> : <Square size={20} style={{ opacity: 0.4 }} />}
