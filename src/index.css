@@ -37,10 +37,29 @@
   --surface: #ffffff;
 }
 
-/* ─── RESET ──────────────────────────────────────────────────────────────── */
+/* ─── RESET & ANTI-TRANSLATE ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
+.notranslate, [translate="no"] {
+  -webkit-translate: no !important;
+  translate: no !important;
+}
+/* Suppress Google Translate / Edge Translator injected widgets & highlights */
+.goog-te-banner-frame,
+.goog-te-balloon-frame,
+#goog-gt-tt,
+.goog-tooltip,
+.goog-tooltip:hover {
+  display: none !important;
+  visibility: hidden !important;
+}
+.goog-text-highlight {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
 body {
+  top: 0px !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background: var(--navy);
   color: var(--text-primary);

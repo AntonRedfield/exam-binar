@@ -30,7 +30,10 @@ export default function TeacherDashboard() {
 
         let avgScore = 0
         if (recentResults.length) {
-          const pcts = recentResults.map(r => r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0)
+          const pcts = recentResults.map(r => {
+            const tot = (r.auto_score || 0) + (r.essay_score || 0)
+            return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
+          })
           avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
         }
 

@@ -81,15 +81,15 @@ export function gradeExam(answers, questions) {
 
   for (const q of questions) {
     const studentAnswer = answers[String(q.number)]
-    const pts = q.points || 1
+    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+
+    maxAutoScore += pts
 
     if (q.type === 'ESSAY' || q.type === 'PARAGRAPH') {
       essayPending = true
       breakdown.push({ number: q.number, type: q.type, status: 'pending', earned: 0, max: pts, given: studentAnswer })
       continue
     }
-
-    maxAutoScore += pts
 
     if (q.type === 'MCQ' || q.type === 'DROPDOWN') {
       const correctArr = parseOptionList(q.correct_answer)
@@ -356,7 +356,7 @@ export function gradeExam(answers, questions) {
     }
   }
 
-  return { autoScore: Math.round(autoScore * 100) / 100, maxAutoScore, essayPending, breakdown }
+  return { autoScore: Math.round(autoScore * 100) / 100, maxAutoScore: Math.round(maxAutoScore * 100) / 100, essayPending, breakdown }
 }
 
 /**

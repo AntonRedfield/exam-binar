@@ -17,6 +17,7 @@ export default defineConfig({
         name: 'Sistem Asesmen Terpadu SNT 10 Kupang',
         short_name: 'SNT 10 Kupang',
         description: 'Sistem Asesmen Terpadu SNT 10 Kupang',
+        lang: 'id',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',

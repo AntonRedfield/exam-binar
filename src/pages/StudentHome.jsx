@@ -184,7 +184,10 @@ export default function StudentHome() {
               let scoreNode = null
               if (isDone && result && !isSurvey) {
                 const totalScore = (result.auto_score || 0) + (result.essay_score || 0)
-                const pctNum = result.max_auto_score > 0 ? (totalScore / result.max_auto_score) * 100 : 0
+                const bd = (() => { try { return JSON.parse(result.breakdown || '[]') } catch { return [] } })()
+                const bdMax = bd.reduce((sum, b) => sum + (Number(b.max) || 0), 0)
+                const maxScore = Math.max(result.max_auto_score || 0, bdMax)
+                const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
                 const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
                 scoreNode = <span className="text-success">Nilai: {pctStr}%</span>
               }

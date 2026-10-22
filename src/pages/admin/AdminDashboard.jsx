@@ -43,11 +43,15 @@ export default function AdminDashboard() {
         let totalViolations = 0
         const distrib = [0, 0, 0, 0, 0]
         if (recentResults?.length) {
-          const pcts = recentResults.map(r => r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0)
+          const pcts = recentResults.map(r => {
+            const tot = (r.auto_score || 0) + (r.essay_score || 0)
+            return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
+          })
           avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
           totalViolations = recentResults.reduce((sum, r) => sum + (r.violation_count || 0), 0)
           recentResults.forEach(r => {
-            const pct = r.max_auto_score > 0 ? (r.auto_score / r.max_auto_score) * 100 : 0
+            const tot = (r.auto_score || 0) + (r.essay_score || 0)
+            const pct = r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
             const idx = Math.min(4, Math.floor(pct / 20))
             distrib[idx]++
           })
