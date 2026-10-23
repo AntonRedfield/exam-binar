@@ -223,9 +223,17 @@ export async function setExamReturneeToken(examId, customToken = null, durationS
       .eq('id', examId)
 
     if (error) {
-      // 42703 = column does not exist (migration not yet applied to remote DB)
-      if (error.code === '42703' || String(error.message).includes('returnee_token_expires_at')) {
-        console.warn('[Returnee] Falling back to existing columns for token duration storage')
+      // 42703 = PostgreSQL column does not exist
+      // PGRST204 = PostgREST schema cache missing column
+      const isMissingColumn =
+        error.code === '42703' ||
+        error.code === 'PGRST204' ||
+        String(error.message).includes('returnee_token_duration') ||
+        String(error.message).includes('returnee_token_expires_at') ||
+        String(error.message).includes('schema cache')
+
+      if (isMissingColumn) {
+        console.warn('[Returnee] Falling back to existing columns for token duration storage:', error.message)
         const { error: fallbackError } = await supabase
           .from('exams')
           .update({
@@ -295,15 +303,25 @@ export async function clearExamReturneeToken(examId) {
       .update(updatePayload)
       .eq('id', examId)
 
-    if (error && (error.code === '42703' || String(error.message).includes('returnee_token_expires_at'))) {
-      const { error: fallbackError } = await supabase
-        .from('exams')
-        .update({
-          returnee_token: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', examId)
-      return { error: fallbackError }
+    if (error) {
+      const isMissingColumn =
+        error.code === '42703' ||
+        error.code === 'PGRST204' ||
+        String(error.message).includes('returnee_token_expires_at') ||
+        String(error.message).includes('returnee_token_duration') ||
+        String(error.message).includes('schema cache')
+
+      if (isMissingColumn) {
+        const { error: fallbackError } = await supabase
+          .from('exams')
+          .update({
+            returnee_token: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', examId)
+        return { error: fallbackError }
+      }
+      return { error }
     }
 
     return { error }
