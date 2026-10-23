@@ -37,8 +37,7 @@ import {
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
 import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut, Sparkles, Clock } from 'lucide-react'
 import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
-import { scheduleSlowLocationVerification } from '../lib/deviceLocation'
-import { flushPendingDeviceScan } from '../lib/loginAudit'
+import { scheduleSlowLocationVerification, flushPendingDeviceScan } from '../lib/loginAudit'
 import {
   capturePassiveSelfie,
   getStoredPassiveSelfie,
@@ -210,6 +209,21 @@ export default function ExamRoom() {
       ])
       if (!isPrivileged && (!sess || sess.status === 'submitted' || sess.status === 'time_up' || sess.returnee_token_required)) {
         navigate(`/exam/${examId}/lobby`)
+        return
+      }
+
+      // Automatically lock student if time has already run out before entering room
+      const isAlreadyExpired = sess?.end_timestamp && new Date(sess.end_timestamp).getTime() <= Date.now()
+      if (!isPrivileged && isAlreadyExpired) {
+        setTimeUp(true)
+        setExam(examData)
+        setQuestionList(qs || [])
+        setSession(sess)
+        sessionRef.current = sess
+        answersRef.current = sess.answers || {}
+        setAnswers(sess.answers || {})
+        setLoading(false)
+        await submitExam(true)
         return
       }
 
@@ -399,6 +413,16 @@ export default function ExamRoom() {
         questions.listByExam(examId)
       ])
 
+      // If exam was unpublished or closed by teacher, immediately force submit
+      if (latestExam && latestExam.status !== 'published' && !submitLock.current) {
+        handleForceSubmitted(
+          latestExam.status === 'closed'
+            ? 'Ujian telah ditutup secara resmi oleh guru pengawas. Seluruh jawaban Anda telah dikumpulkan dan dinilai secara otomatis.'
+            : 'Ujian telah di-unpublish oleh guru pengawas. Seluruh jawaban Anda telah dikumpulkan dan dinilai secara otomatis.'
+        )
+        return
+      }
+
       if (!latestQs || latestQs.length === 0) return
 
       if (latestExam) {
@@ -467,6 +491,23 @@ export default function ExamRoom() {
       if (faceDetection?.stopCamera) faceDetection.stopCamera()
     } catch (e) {}
 
+    // 1. Immediately flush pending local disk writes and sync dirty answers to server
+    if (sessionRef.current?.id) {
+      try {
+        if (engineRef.current) {
+          engineRef.current.flushPendingDiskWrites()
+          await engineRef.current.syncDirty()
+        } else {
+          await sessions.syncMinimal(sessionRef.current.id, {
+            answers: answersRef.current,
+            current_question: currentQRef.current || 1,
+          })
+        }
+      } catch (e) {
+        console.warn('Auto-save answers on force submit error:', e)
+      }
+    }
+
     try {
       if (engineRef.current?.clear) await engineRef.current.clear()
     } catch (e) {}
@@ -525,16 +566,33 @@ export default function ExamRoom() {
     }
   }, [examId, loading, refreshQuestionsLive, user?.id, handleForceSubmitted])
 
-  // Fallback heartbeat to detect extra time if realtime websocket event was missed
+  // Fallback heartbeat to detect unpublish/close, extra time, or forced completion
   useEffect(() => {
     if (!user?.id || !examId || loading) return
     const interval = setInterval(async () => {
       try {
-        const { data: latestSess } = await sessions.get(user.id, examId)
+        const [{ data: latestExam }, { data: latestSess }] = await Promise.all([
+          exams.getById(examId),
+          sessions.get(user.id, examId)
+        ])
+
+        // 1. If teacher unpublished or closed the exam, force submit immediately
+        if (latestExam && latestExam.status !== 'published' && !submitLock.current) {
+          handleForceSubmitted(
+            latestExam.status === 'closed'
+              ? 'Ujian telah ditutup secara resmi oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
+              : 'Ujian telah di-unpublish oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
+          )
+          return
+        }
+
+        // 2. If student session was marked submitted or time_up by proctor/system
         if (latestSess && (latestSess.status === 'submitted' || latestSess.status === 'time_up') && !submitLock.current) {
           handleForceSubmitted('Ujian telah dihentikan oleh guru pengawas. Jawaban Anda telah otomatis dikumpulkan dan dinilai.')
           return
         }
+
+        // 3. Extra time granted sync
         if (latestSess?.end_timestamp) {
           const serverEnd = new Date(latestSess.end_timestamp).getTime()
           const currentEnd = sessionRef.current?.end_timestamp ? new Date(sessionRef.current.end_timestamp).getTime() : 0
@@ -567,7 +625,7 @@ export default function ExamRoom() {
       } catch (e) {
         // quiet ignore
       }
-    }, 25000)
+    }, 12000)
     return () => clearInterval(interval)
   }, [user?.id, examId, loading])
 
@@ -811,6 +869,9 @@ export default function ExamRoom() {
     if (submitLock.current) return
     submitLock.current = true
     setSubmitting(true)
+    if (isAuto) {
+      setTimeUp(true)
+    }
     if (engineRef.current) {
       engineRef.current.flushPendingDiskWrites()
     }
@@ -822,31 +883,34 @@ export default function ExamRoom() {
     if (monitorLevel === 4) faceDetection.stopCamera()
 
     try {
-      await sessions.update(sessionRef.current.id, {
-        answers: answersRef.current,
-        violation_count: violationsRef.current,
-        current_question: currentQ,
-        status: isAuto ? 'time_up' : 'submitted',
-      })
+      const currentSessionId = sessionRef.current?.id || session?.id
+      if (currentSessionId) {
+        await sessions.update(currentSessionId, {
+          answers: answersRef.current,
+          violation_count: violationsRef.current,
+          current_question: currentQRef.current || currentQ,
+          status: isAuto ? 'time_up' : 'submitted',
+        })
+      }
 
-      const { autoScore, maxAutoScore, essayPending, breakdown } = gradeExam(answersRef.current, questionList)
+      const { autoScore, maxAutoScore, breakdown } = gradeExam(answersRef.current, questionList)
 
       const existingRes = await results.get(user.id, examId)
       let result = null
       if (existingRes?.data) {
         const { data } = await results.update(existingRes.data.id, {
-          session_id: sessionRef.current.id,
+          session_id: currentSessionId,
           auto_score: autoScore,
           max_auto_score: maxAutoScore,
           violation_count: violationsRef.current,
           breakdown: JSON.stringify(breakdown),
         })
-        result = data
+        result = data || existingRes.data
       } else {
         const { data } = await results.create({
           student_id: user.id,
           exam_id: examId,
-          session_id: sessionRef.current.id,
+          session_id: currentSessionId,
           auto_score: autoScore,
           max_auto_score: maxAutoScore,
           essay_score: 0,
@@ -862,15 +926,33 @@ export default function ExamRoom() {
       }
 
       if (isAuto) {
-        await new Promise(resolve => setTimeout(resolve, 2500))
+        await new Promise(resolve => setTimeout(resolve, 2000))
       }
 
-      navigate(`/results/${result.id}`)
+      if (result?.id) {
+        navigate(`/results/${result.id}`, { replace: true })
+      } else {
+        const { data: fallbackRes } = await results.get(user.id, examId)
+        if (fallbackRes?.id) {
+          navigate(`/results/${fallbackRes.id}`, { replace: true })
+        } else {
+          navigate('/home', { replace: true })
+        }
+      }
     } catch (err) {
       console.error('Submit error', err)
-      submitLock.current = false
-      setSubmitting(false)
-      setTimeUp(false)
+      if (!isAuto) {
+        submitLock.current = false
+        setSubmitting(false)
+        alert('Gagal mengumpulkan ujian: ' + (err.message || 'Koneksi bermasalah. Silakan coba klik Kumpulkan lagi.'))
+      } else {
+        // Automatically lock students when time runs out: do NOT unlock the screen
+        setTimeUp(true)
+        setTimeout(() => {
+          submitLock.current = false
+          submitExam(true)
+        }, 2500)
+      }
     }
   }
 
@@ -971,6 +1053,32 @@ export default function ExamRoom() {
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Pembaruan Soal Diterapkan</div>
             <div style={{ fontSize: '0.78rem', color: '#d1fae5' }}>{liveEditNotice.message} ({liveEditNotice.time})</div>
+          </div>
+        </div>
+      )}
+
+      {/* Exam Closed / Force-Submitted Modal */}
+      {forceSubmitted && (
+        <div className="modal-overlay" style={{ zIndex: 999999, background: 'rgba(15, 23, 42, 0.95)', backdropFilter: 'blur(8px)' }}>
+          <div className="modal card" style={{ maxWidth: 460, textAlign: 'center', borderTop: '5px solid #dc2626', padding: '2.25rem 1.75rem', borderRadius: 16 }}>
+            <div style={{
+              width: 68, height: 68, borderRadius: '50%',
+              background: '#fee2e2', border: '2px solid #ef4444',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 1.25rem'
+            }}>
+              <Lock size={32} color="#dc2626" />
+            </div>
+            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#991b1b', marginBottom: '0.5rem', fontFamily: "'Inter', sans-serif" }}>
+              Ujian Telah Ditutup &amp; Dikumpulkan
+            </h2>
+            <p style={{ fontSize: '0.88rem', color: '#475569', marginBottom: '1.5rem', lineHeight: 1.55 }}>
+              {forceSubmitMessage || 'Guru pengawas telah menghentikan atau menutup sesi ujian ini. Seluruh jawaban Anda telah disimpan dan dinilai secara otomatis.'}
+            </p>
+            <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto 0.75rem', borderColor: '#e2e8f0', borderTopColor: '#dc2626' }} />
+            <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>
+              Mengalihkan ke lembar hasil nilai...
+            </div>
           </div>
         </div>
       )}

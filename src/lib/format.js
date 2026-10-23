@@ -11,7 +11,11 @@
  */
 export function formatScore(val, maxDigits = 2) {
   if (val === null || val === undefined || val === '') return '0'
-  const num = Number(val)
+  let raw = val
+  if (typeof raw === 'string' && raw.includes(',')) {
+    raw = raw.replace(',', '.')
+  }
+  const num = Number(raw)
   if (isNaN(num)) return String(val)
   return num.toLocaleString('id-ID', {
     minimumFractionDigits: 0,
@@ -34,7 +38,11 @@ export function formatPct(val, maxDigits = 2) {
  */
 export function roundScore(val, decimals = 2) {
   if (val === null || val === undefined || val === '') return 0
-  const num = Number(val)
+  let raw = val
+  if (typeof raw === 'string' && raw.includes(',')) {
+    raw = raw.replace(',', '.')
+  }
+  const num = Number(raw)
   if (isNaN(num)) return 0
   const factor = Math.pow(10, decimals)
   return Math.round((num + Number.EPSILON) * factor) / factor

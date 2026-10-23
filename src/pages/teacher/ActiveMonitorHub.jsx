@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { exams } from '../../lib/db'
+import { exams, sessions } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { supabase, isSupabaseConfigured } from '../../lib/supabase'
 import { getExamTokenInfo } from '../../lib/returnee'
@@ -49,17 +49,26 @@ export default function ActiveMonitorHub() {
       if (isSupabaseConfigured && supabase) {
         const { data: sessData, error: sessErr } = await supabase
           .from('exam_sessions')
-          .select('id, exam_id, status, returnee_token_required, selfie_status, selfie_image')
+          .select('id, exam_id, status, returnee_token_required, selfie_status, selfie_image, end_timestamp')
 
         if (!sessErr && sessData) {
           const statsMap = {}
+          const expiredExamIds = new Set()
+          const now = Date.now()
+
           for (const s of sessData) {
             if (!statsMap[s.exam_id]) {
               statsMap[s.exam_id] = { total: 0, active: 0, returnees: 0, unverifiedSelfies: 0 }
             }
             statsMap[s.exam_id].total += 1
+
+            const isExpired = s.end_timestamp && new Date(s.end_timestamp).getTime() <= now
             if (s.status === 'active') {
-              statsMap[s.exam_id].active += 1
+              if (isExpired) {
+                expiredExamIds.add(s.exam_id)
+              } else {
+                statsMap[s.exam_id].active += 1
+              }
             }
             if (s.returnee_token_required) {
               statsMap[s.exam_id].returnees += 1
@@ -69,6 +78,11 @@ export default function ActiveMonitorHub() {
             }
           }
           setSessionStatsMap(statsMap)
+
+          // Background auto-lock & sync expired sessions for any active exams detected
+          if (expiredExamIds.size > 0) {
+            Promise.all(Array.from(expiredExamIds).map(eid => sessions.autoLockAndSyncExam(eid))).catch(() => {})
+          }
         }
       }
     } catch (err) {

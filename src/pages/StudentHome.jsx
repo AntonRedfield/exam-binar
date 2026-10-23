@@ -55,6 +55,11 @@ export default function StudentHome() {
           let isVisible = exam.status === 'published'
           const { data: sess } = await sessions.get(user.id, exam.id)
           if (sess) {
+            const isExpired = sess.end_timestamp && new Date(sess.end_timestamp).getTime() <= Date.now()
+            if (isExpired && sess.status === 'active') {
+              sess.status = 'time_up'
+              await sessions.autoLockAndSyncExam(exam.id)
+            }
             sMap[exam.id] = sess
             isVisible = true // Always show if they have a session/result
           }

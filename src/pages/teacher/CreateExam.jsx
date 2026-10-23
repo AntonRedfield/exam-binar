@@ -211,19 +211,19 @@ export default function CreateExam() {
   const [showUnpublishModal, setShowUnpublishModal] = useState(false)
   const [isUnpublishing, setIsUnpublishing] = useState(false)
 
-  async function handleConfirmUnpublish() {
+  async function handleConfirmUnpublish(targetStatus = 'draft') {
     setIsUnpublishing(true)
     try {
       await handleSave(false, null, { stayOnPage: true, unpublish: true })
       const examIdToUnpublish = currentExamId || examId
       if (examIdToUnpublish) {
-        await exams.unpublishAndForceSubmit(examIdToUnpublish)
+        await exams.unpublishAndForceSubmit(examIdToUnpublish, targetStatus)
       }
-      setExamStatus('draft')
+      setExamStatus(targetStatus)
       setShowUnpublishModal(false)
     } catch (err) {
       console.error('Error during unpublish in CreateExam:', err)
-      alert('Gagal membatalkan publikasi: ' + (err.message || err))
+      alert('Gagal memproses penutupan/unpublish: ' + (err.message || err))
     } finally {
       setIsUnpublishing(false)
     }

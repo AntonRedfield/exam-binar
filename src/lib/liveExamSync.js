@@ -76,6 +76,7 @@ export function subscribeToExamLiveUpdates(examId, onUpdate) {
   let bc = null
   let realtimeChannel = null
   let postgresChannel = null
+  let examChannel = null
   let heartbeatTimer = null
   let lastUpdateTimestamp = Date.now()
 
@@ -129,18 +130,59 @@ export function subscribeToExamLiveUpdates(examId, onUpdate) {
     } catch (err) {
       console.warn('[LiveExamSync] Postgres changes setup error:', err)
     }
+
+    // 4. Listen to Postgres Changes on exams table for status changes (close/unpublish)
+    try {
+      examChannel = supabase
+        .channel(`exam_db_status_${examId}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'exams',
+          filter: `id=eq.${examId}`
+        }, (payload) => {
+          const newStatus = payload?.new?.status
+          if (newStatus && newStatus !== 'published') {
+            handleUpdate({
+              examId,
+              type: 'EXAM_UNPUBLISHED',
+              targetStatus: newStatus,
+              message: newStatus === 'closed'
+                ? 'Ujian telah ditutup secara resmi oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
+                : 'Ujian telah di-unpublish oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
+            })
+          } else {
+            handleUpdate({ examId, type: 'DB_EXAM_CHANGED', timestamp: Date.now() })
+          }
+        })
+        .subscribe()
+    } catch (err) {
+      console.warn('[LiveExamSync] Postgres exam status setup error:', err)
+    }
   }
 
-  // 4. Fallback Polling / Heartbeat
-  // Every 20 seconds, check if the exam has been updated
+  // 5. Fallback Polling / Heartbeat
+  // Every 15 seconds, check if the exam status has closed/unpublished or updated
   const checkSync = async () => {
     if (!isSupabaseConfigured || !supabase) return
     try {
       const { data: examData } = await supabase
         .from('exams')
-        .select('updated_at')
+        .select('id, status, updated_at')
         .eq('id', examId)
         .maybeSingle()
+
+      if (examData?.status && examData.status !== 'published') {
+        handleUpdate({
+          examId,
+          type: 'EXAM_UNPUBLISHED',
+          targetStatus: examData.status,
+          message: examData.status === 'closed'
+            ? 'Ujian telah ditutup secara resmi oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
+            : 'Ujian telah di-unpublish oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
+        })
+        return
+      }
 
       if (examData?.updated_at) {
         const remoteTime = new Date(examData.updated_at).getTime()
@@ -152,7 +194,7 @@ export function subscribeToExamLiveUpdates(examId, onUpdate) {
     } catch (e) {}
   }
 
-  heartbeatTimer = setInterval(checkSync, 20000)
+  heartbeatTimer = setInterval(checkSync, 15000)
 
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
@@ -171,6 +213,9 @@ export function subscribeToExamLiveUpdates(examId, onUpdate) {
     }
     if (postgresChannel && supabase) {
       try { supabase.removeChannel(postgresChannel) } catch (e) {}
+    }
+    if (examChannel && supabase) {
+      try { supabase.removeChannel(examChannel) } catch (e) {}
     }
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     document.removeEventListener('visibilitychange', handleVisibilityChange)

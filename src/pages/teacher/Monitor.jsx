@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { exams, sessions } from '../../lib/db'
+import { exams, sessions, users } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
 import {
@@ -30,7 +30,9 @@ import {
   Camera,
   UserCheck,
   MapPin,
-  Users
+  Users,
+  UserX,
+  Globe
 } from 'lucide-react'
 import { questions } from '../../lib/db'
 import { liveUpdateSingleQuestion } from '../../lib/liveExamSync'
@@ -114,6 +116,12 @@ export default function Monitor() {
   const [, forceUpdate] = useState(0)
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
 
+  // Auto-scan Target Class & Attendance State
+  const [targetStudents, setTargetStudents] = useState([])
+  const [unenteredStudents, setUnenteredStudents] = useState([])
+  const [showAbsentModal, setShowAbsentModal] = useState(false)
+  const [copiedWaNotice, setCopiedWaNotice] = useState('')
+
   // Exam-level centralized token management state (OSN & TKA System)
   const [isTokenPanelCollapsed, setIsTokenPanelCollapsed] = useState(false)
   const [examTokenCopied, setExamTokenCopied] = useState(false)
@@ -146,13 +154,14 @@ export default function Monitor() {
   const [unpublishModalOpen, setUnpublishModalOpen] = useState(false)
   const [isUnpublishing, setIsUnpublishing] = useState(false)
 
-  async function handleConfirmUnpublish() {
+  async function handleConfirmUnpublish(targetStatus = 'closed') {
     setIsUnpublishing(true)
     try {
-      const res = await exams.unpublishAndForceSubmit(examId)
+      const res = await exams.unpublishAndForceSubmit(examId, targetStatus)
       setUnpublishModalOpen(false)
       await load()
-      alert(`Ujian berhasil ditutup & di-unpublish. Sebanyak ${res.countSubmitted || 0} siswa aktif dikumpulkan & dinilai otomatis.`)
+      const statusLabel = targetStatus === 'closed' ? 'ditutup' : 'di-unpublish ke draft'
+      alert(`Ujian berhasil ${statusLabel}. Sebanyak ${res.countSubmitted || 0} siswa aktif dikumpulkan & dinilai otomatis.`)
       navigate(isUnderAdmin ? `/admin/results/${examId}` : `/teacher/results/${examId}`)
     } catch (err) {
       console.error('Error during unpublish in Monitor:', err)
@@ -185,6 +194,9 @@ export default function Monitor() {
 
   const load = useCallback(async () => {
     try {
+      // Automatically lock students whose time has expired and extract & sync their scores into results
+      await sessions.autoLockAndSyncExam(examId)
+
       const [{ data: examData }, { data: sess }, { data: activeList }] = await Promise.all([
         exams.getById(examId),
         sessions.listByExam(examId),
@@ -198,6 +210,24 @@ export default function Monitor() {
       } else if (examData?.survey_notify_time && Number(examData.survey_notify_time) > 0) {
         setTokenDuration(Number(examData.survey_notify_time))
       }
+
+      // Auto-scan target class students to monitor attendance & detect absentees
+      if (examData?.target_kelas) {
+        try {
+          const { data: targets } = await users.listTargetStudents(examData.target_kelas)
+          const targetRoster = targets || []
+          setTargetStudents(targetRoster)
+
+          const enteredIds = new Set((sess || []).map(s => s.student_id).filter(Boolean))
+          const unentered = targetRoster.filter(t => !enteredIds.has(t.id))
+          setUnenteredStudents(unentered)
+        } catch (scanErr) {
+          console.warn('[Monitor] listTargetStudents error:', scanErr)
+        }
+      } else {
+        setTargetStudents([])
+        setUnenteredStudents([])
+      }
     } catch (err) {
       console.error('[Monitor] Gagal memuat data ujian:', err)
     } finally {
@@ -208,6 +238,31 @@ export default function Monitor() {
   useEffect(() => {
     load()
   }, [load])
+
+  const handleCopyAbsentList = () => {
+    if (!unenteredStudents.length) return
+    const examTitle = exam?.title || 'Ujian'
+    const targetKelas = exam?.target_kelas ? exam.target_kelas.toUpperCase() : 'Semua Target'
+
+    let listText = unenteredStudents.map((s, idx) => {
+      const name = s.full_name || s.name || 'Siswa'
+      const kelas = s.kelas || targetKelas
+      const username = s.username ? `(@${s.username})` : ''
+      return `${idx + 1}. ${name} - ${kelas} ${username}`
+    }).join('\n')
+
+    const message =
+      `*PEMBERITAHUAN MONITORING UJIAN: SISWA BELUM MASUK RUANG UJIAN*\n\n` +
+      `Mata Pelajaran: *${examTitle}*\n` +
+      `Target Kelas: *${targetKelas}*\n` +
+      `Total Siswa Belum Masuk: *${unenteredStudents.length} siswa* dari ${targetStudents.length} target\n\n` +
+      `*Daftar Nama Siswa:*\n${listText}\n\n` +
+      `_Mohon wali kelas atau orang tua segera mengarahkan siswa untuk login ke sistem asesmen._`
+
+    navigator.clipboard.writeText(message)
+    setCopiedWaNotice('✅ Berhasil Disalin!')
+    setTimeout(() => setCopiedWaNotice(''), 3000)
+  }
 
   // Open Quick Live Edit & load questions
   const openQuickEdit = async () => {
@@ -536,6 +591,8 @@ export default function Monitor() {
   const active = sessionList.filter(s => s.status === 'active' && !s.returnee_token_required).length
   const returnees = sessionList.filter(s => s.returnee_token_required).length
   const done = sessionList.filter(s => s.status === 'submitted' || s.status === 'time_up').length
+  const targetCount = targetStudents.length
+  const unenteredCount = unenteredStudents.length
 
   // Anti-Joki Metric: students with missing selfie that have not been physically confirmed by a teacher
   const unverifiedSelfies = sessionList.filter(s =>
@@ -732,7 +789,7 @@ export default function Monitor() {
               <Edit2 size={13} /> Edit Lengkap
             </button>
             <button className="btn btn-ghost btn-sm" onClick={load}><RefreshCcw size={15} /> Refresh</button>
-            {exam?.status === 'published' && (
+            {exam?.status === 'published' ? (
               <button
                 className="btn btn-sm"
                 onClick={() => setUnpublishModalOpen(true)}
@@ -749,6 +806,29 @@ export default function Monitor() {
                 title="Tutup & Kumpul Paksa Ujian (Force submit semua siswa & nilai otomatis)"
               >
                 <Lock size={14} /> Tutup &amp; Nilai Ujian
+              </button>
+            ) : (
+              <button
+                className="btn btn-sm"
+                onClick={async () => {
+                  if (confirm(`Publikasikan kembali ujian "${exam?.title}"? Siswa akan dapat mengakses dan melanjutkan ujian.`)) {
+                    await exams.update(examId, { status: 'published' })
+                    await load()
+                  }
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: 700,
+                  boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
+                }}
+                title="Buka / Publikasikan Ujian Kembali"
+              >
+                <Globe size={14} /> Buka / Publikasikan Ujian
               </button>
             )}
           </div>
@@ -808,6 +888,37 @@ export default function Monitor() {
 
         {/* Stat Cards */}
         <div className="stat-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+          {targetCount > 0 && (
+            <div
+              className="stat-card"
+              style={unenteredCount > 0 ? {
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                background: 'rgba(239, 68, 68, 0.05)',
+                cursor: 'pointer'
+              } : { cursor: 'pointer' }}
+              onClick={() => unenteredCount > 0 && setShowAbsentModal(true)}
+              title={unenteredCount > 0 ? 'Klik untuk melihat siswa yang belum masuk ujian' : 'Semua siswa target telah masuk'}
+            >
+              <div className="stat-icon" style={{ background: unenteredCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(16, 185, 129, 0.15)' }}>
+                {unenteredCount > 0 ? <UserX size={22} color="var(--danger)" /> : <Users size={22} color="var(--success)" />}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem', flexWrap: 'wrap' }}>
+                  <div className="stat-value" style={unenteredCount > 0 ? { color: 'var(--danger)' } : { color: 'var(--success)' }}>
+                    {unenteredCount > 0 ? `${unenteredCount} Belum` : '✓ Lengkap'}
+                  </div>
+                  {unenteredCount > 0 && (
+                    <span className="badge badge-danger" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}>
+                      Cek Siswa
+                    </span>
+                  )}
+                </div>
+                <div className="stat-label">
+                  Target: {targetCount} ({exam?.target_kelas ? exam.target_kelas.toUpperCase() : 'Semua'})
+                </div>
+              </div>
+            </div>
+          )}
           <div className="stat-card">
             <div className="stat-icon" style={{ background: 'var(--warning-bg)' }}><Activity size={22} color="var(--warning)" /></div>
             <div><div className="stat-value">{active}</div><div className="stat-label">Sedang Ujian</div></div>
@@ -2510,6 +2621,95 @@ export default function Monitor() {
                 )}
               </div>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Absent / Unentered Students Modal */}
+      {showAbsentModal && (
+        <div className="modal-overlay" onClick={() => setShowAbsentModal(false)}>
+          <div
+            className="modal-box"
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: 650, width: '92%' }}
+          >
+            <div className="modal-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '8px', background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <UserX size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem' }}>
+                    Siswa Belum Masuk Ujian ({unenteredStudents.length})
+                  </h3>
+                  <p className="text-muted text-xs" style={{ margin: '0.15rem 0 0' }}>
+                    Target Kelas: <strong>{exam?.target_kelas ? exam.target_kelas.toUpperCase() : 'Semua'}</strong> ({targetStudents.length} total target)
+                  </p>
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowAbsentModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto', padding: '1rem 0' }}>
+              <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.82rem', color: '#475569' }}>
+                  Terdapat <strong>{unenteredStudents.length}</strong> siswa yang belum login atau memulai sesi ujian ini.
+                </span>
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={handleCopyAbsentList}
+                  style={{
+                    borderColor: '#f87171',
+                    color: '#b91c1c',
+                    fontWeight: 600,
+                    fontSize: '0.78rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  <Copy size={13} />
+                  {copiedWaNotice || 'Salin List (Format WA)'}
+                </button>
+              </div>
+
+              <div className="table-wrap">
+                <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                      <th>Nama Siswa</th>
+                      <th style={{ width: 90 }}>Kelas</th>
+                      <th style={{ width: 140 }}>Username</th>
+                      <th style={{ width: 110, textAlign: 'center' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unenteredStudents.map((st, idx) => (
+                      <tr key={st.id}>
+                        <td style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                        <td style={{ fontWeight: 600 }}>{st.full_name || st.name}</td>
+                        <td>{st.kelas || '—'}</td>
+                        <td style={{ color: 'var(--text-muted)' }}>@{st.username}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span className="badge badge-danger" style={{ fontSize: '0.7rem' }}>
+                            Belum Masuk
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowAbsentModal(false)}>
+                Tutup
+              </button>
             </div>
           </div>
         </div>

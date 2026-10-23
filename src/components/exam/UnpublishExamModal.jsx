@@ -7,16 +7,17 @@ import {
   BarChart2,
   FileText,
   RefreshCw,
-  ShieldAlert
+  ShieldAlert,
+  RotateCcw
 } from 'lucide-react'
 
 /**
  * UnpublishExamModal
  * 
- * Prominent confirmation dialog displayed before unpublishing an exam.
+ * Prominent confirmation dialog displayed before unpublishing or closing an exam.
  * Explains clearly that all currently active students will be force-submitted,
  * their answers will be extracted and automatically graded, and the exam will
- * revert to draft status.
+ * be closed or reverted to draft status.
  */
 export default function UnpublishExamModal({
   isOpen,
@@ -47,7 +48,7 @@ export default function UnpublishExamModal({
         className="modal card"
         onClick={(e) => e.stopPropagation()}
         style={{
-          maxWidth: 540,
+          maxWidth: 580,
           width: '100%',
           padding: 0,
           borderRadius: '16px',
@@ -97,7 +98,7 @@ export default function UnpublishExamModal({
                 lineHeight: 1.3
               }}
             >
-              Konfirmasi Unpublish &amp; Kumpul Paksa
+              Konfirmasi Penutupan &amp; Kumpul Paksa
             </h3>
             <div
               style={{
@@ -147,7 +148,7 @@ export default function UnpublishExamModal({
               fontWeight: 500
             }}
           >
-            Membatalkan publikasi (Unpublish) akan menghentikan pelaksanaan ujian ini seketika. Sistem akan secara otomatis menjalankan tindakan berikut:
+            Menutup atau membatalkan publikasi ujian akan menghentikan pengerjaan siswa seketika. Sistem akan secara otomatis menjalankan tindakan berikut:
           </p>
 
           {/* Action Explanations */}
@@ -242,7 +243,7 @@ export default function UnpublishExamModal({
                 <Lock size={16} />
               </div>
               <div style={{ fontSize: '0.84rem', color: '#1e293b', lineHeight: 1.45 }}>
-                <strong style={{ color: '#0f172a' }}>4. Ujian Masuk Draft:</strong> Status ujian berubah menjadi Draft. Siswa di ruang ujian akan dialihkan ke lembar nilai dan tidak bisa lagi mengerjakan.
+                <strong style={{ color: '#0f172a' }}>4. Layar Siswa Terkunci:</strong> Seluruh siswa di ruang ujian langsung dialihkan ke lembar nilai dan tidak bisa lagi mengubah jawaban.
               </div>
             </div>
           </div>
@@ -261,7 +262,7 @@ export default function UnpublishExamModal({
           >
             <ShieldAlert size={18} color="#d97706" style={{ flexShrink: 0 }} />
             <span style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.4 }}>
-              Pastikan Anda memang ingin menutup ujian sekarang. Hasil nilai yang diekstrak dapat ditinjau kapan saja melalui menu <strong>Hasil Ujian</strong>.
+              Pilih <strong>Tutup &amp; Kunci</strong> jika ujian telah selesai resmi, atau <strong>Kembalikan ke Draft</strong> jika Anda ingin mengedit kembali butir soal.
             </span>
           </div>
         </div>
@@ -274,8 +275,9 @@ export default function UnpublishExamModal({
             background: 'var(--surface-subtle, #f8fafc)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: '0.75rem'
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            flexWrap: 'wrap'
           }}
         >
           <button
@@ -288,35 +290,56 @@ export default function UnpublishExamModal({
             Batal
           </button>
 
-          <button
-            type="button"
-            className="btn btn-danger"
-            onClick={onConfirm}
-            disabled={isProcessing}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontWeight: 700,
-              background: '#dc2626',
-              borderColor: '#b91c1c',
-              color: '#ffffff',
-              padding: '0.6rem 1.25rem',
-              boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)'
-            }}
-          >
-            {isProcessing ? (
-              <>
-                <RefreshCw size={16} className="spin" />
-                <span>Mengekstrak &amp; Menilai...</span>
-              </>
-            ) : (
-              <>
-                <Lock size={15} />
-                <span>Ya, Unpublish &amp; Kumpulkan Jawaban</span>
-              </>
-            )}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => onConfirm('draft')}
+              disabled={isProcessing}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontWeight: 600,
+                padding: '0.6rem 1.15rem'
+              }}
+              title="Kumpulkan jawaban siswa dan kembalikan ujian ke status Draft (dapat diedit kembali)"
+            >
+              <RotateCcw size={15} />
+              <span>Kembalikan ke Draft</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => onConfirm('closed')}
+              disabled={isProcessing}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontWeight: 700,
+                background: '#dc2626',
+                borderColor: '#b91c1c',
+                color: '#ffffff',
+                padding: '0.6rem 1.35rem',
+                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)'
+              }}
+              title="Tutup resmi ujian, kumpul paksa jawaban seluruh siswa aktif, dan nilai otomatis"
+            >
+              {isProcessing ? (
+                <>
+                  <RefreshCw size={16} className="spin" />
+                  <span>Memproses &amp; Menilai...</span>
+                </>
+              ) : (
+                <>
+                  <Lock size={15} />
+                  <span>Tutup &amp; Kunci Ujian</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

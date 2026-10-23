@@ -67,8 +67,33 @@ export default function ExamLobby() {
       let currentSess = sess
       const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
 
+      // Guard: if exam is not published (closed or draft), redirect student
+      if (!isPrivileged && examData && examData.status !== 'published') {
+        const { data: res } = await results.get(user.id, examId)
+        if (res?.id) {
+          navigate(`/results/${res.id}`, { replace: true })
+        } else {
+          alert(
+            examData.status === 'closed'
+              ? 'Ujian ini telah ditutup secara resmi oleh guru pengawas.'
+              : 'Ujian ini sedang tidak aktif / berstatus draft.'
+          )
+          navigate('/home', { replace: true })
+        }
+        return
+      }
+
+      // Check if time has expired for this student, automatically lock them and sync score
+      if (!isPrivileged && sess) {
+        const isExpired = sess.end_timestamp && new Date(sess.end_timestamp).getTime() <= Date.now()
+        if (isExpired && sess.status === 'active') {
+          await sessions.autoLockAndSyncExam(examId)
+          currentSess = { ...sess, status: 'time_up' }
+        }
+      }
+
       // Check if student has active session that was interrupted / from outside the room
-      if (!isPrivileged && sess && sess.status === 'active') {
+      if (!isPrivileged && currentSess && currentSess.status === 'active') {
         const inRoom = sessionStorage.getItem('binar_exam_active_room') === examId
         const isRecentlyUnlocked = sess.returnee_unlocked_at && 
           (Date.now() - new Date(sess.returnee_unlocked_at).getTime() < 15 * 60 * 1000)
@@ -150,11 +175,15 @@ export default function ExamLobby() {
       return
     }
 
-    const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
-    // If session requires returnee token, student cannot directly start
-    if (!isPrivileged && session?.returnee_token_required) {
-      setReturneeError('Anda berstatus Returnee. Masukkan token dari pengawas untuk melanjutkan.')
-      return
+    // If student's time already expired, prevent start, lock, and show message
+    if (!isPrivileged && session) {
+      const isExpired = session.end_timestamp && new Date(session.end_timestamp).getTime() <= Date.now()
+      if (isExpired || session.status === 'time_up' || session.status === 'submitted') {
+        await sessions.autoLockAndSyncExam(examId)
+        setSession(prev => ({ ...prev, status: 'time_up' }))
+        setError('Waktu ujian Anda telah habis dan ujian telah dikumpulkan secara otomatis.')
+        return
+      }
     }
 
     setStarting(true)

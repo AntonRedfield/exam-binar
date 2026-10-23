@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { exams, results, sessions, questions, fetchStudentProfilesMap } from '../../lib/db'
+import { exams, results, sessions, questions, users, fetchStudentProfilesMap } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { gradeExam } from '../../lib/grader'
 import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
-import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText } from 'lucide-react'
+import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText, Copy, Plus, Users, UserX, AlertTriangle } from 'lucide-react'
 import { formatScore, roundScore } from '../../lib/format'
 
 export default function ResultsView() {
@@ -22,6 +22,13 @@ export default function ResultsView() {
   const [regrading, setRegrading] = useState(false)
   const [selectedDetailResult, setSelectedDetailResult] = useState(null)
   const [unauthorized, setUnauthorized] = useState(false)
+
+  // Target class attendance tracking state
+  const [targetStudents, setTargetStudents] = useState([])
+  const [unattemptedStudents, setUnattemptedStudents] = useState([])
+  const [attendanceFilter, setAttendanceFilter] = useState('all') // 'all' | 'all_targets' | 'unattempted' | 'passed' | 'failed'
+  const [copiedWaNotice, setCopiedWaNotice] = useState('')
+  const [makeupLoading, setMakeupLoading] = useState(null)
 
   // Map of questions by question number for quick metadata lookup
   const questionMap = new Map((questionList || []).map(q => [Number(q.number), q]))
@@ -47,6 +54,9 @@ export default function ResultsView() {
 
   async function load() {
     try {
+      // Automatically lock expired sessions and extract & sync their scores into results
+      await sessions.autoLockAndSyncExam(examId)
+
       const [{ data: examData }, { data: res }, { data: sess }, { data: qs }] = await Promise.all([
         exams.getById(examId),
         results.listByExam(examId),
@@ -178,6 +188,37 @@ export default function ResultsView() {
 
       setExam(examData)
       setResultList(formattedResults)
+
+      // Auto-scan target class students configured for this exam session
+      try {
+        const { data: targetData } = await users.listTargetStudents(examData?.target_kelas)
+        const expectedTargets = targetData || []
+        setTargetStudents(expectedTargets)
+
+        // Identify students who have not attempted, attended, or submitted
+        const recordedIds = new Set(formattedResults.map(r => r.student_id).filter(Boolean))
+        const absentList = expectedTargets
+          .filter(ts => !recordedIds.has(ts.id))
+          .map(ts => {
+            const sess = sessionMap[ts.id]
+            return {
+              id: `unattempted-${ts.id}`,
+              student_id: ts.id,
+              isUnattempted: true,
+              users: ts,
+              student: ts,
+              auto_score: 0,
+              essay_score: 0,
+              max_auto_score: computedTotalMax || 100,
+              violation_count: sess?.violation_count || 0,
+              sessionStatus: sess?.status || 'none',
+              hasSession: Boolean(sess)
+            }
+          })
+        setUnattemptedStudents(absentList)
+      } catch (scanErr) {
+        console.warn('[ResultsView] Error scanning target class students:', scanErr)
+      }
     } catch (err) {
       console.error('[ResultsView] load error:', err)
     } finally {
@@ -188,6 +229,75 @@ export default function ResultsView() {
   useEffect(() => { load() }, [examId])
 
   const passingGrade = exam?.passing_grade ?? 60
+
+  // Copy absent students list in WhatsApp-friendly format
+  function handleCopyAbsentList() {
+    if (!unattemptedStudents.length) return
+    const examTitle = exam?.title || 'Ujian'
+    const targetKelas = exam?.target_kelas ? `Kelas ${exam.target_kelas.split(',').join(', ')}` : 'Semua Kelas'
+    const listText = unattemptedStudents.map((s, idx) => {
+      const name = s.users?.full_name || s.users?.name || 'Siswa'
+      const kelas = s.users?.kelas || s.users?.class_section || targetKelas
+      const uname = s.users?.username ? ` (@${s.users.username})` : ''
+      return `${idx + 1}. ${name} - ${kelas}${uname}`
+    }).join('\n')
+
+    const message = `📢 *PEMBERITAHUAN SISWA BELUM MENGERJAKAN UJIAN*\n` +
+      `Mata Pelajaran: *${examTitle}*\n` +
+      `Target Kelas: *${targetKelas}*\n` +
+      `Waktu Pengecekan: ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}\n\n` +
+      `Total Belum Mengerjakan: *${unattemptedStudents.length} dari ${targetStudents.length} siswa target*\n\n` +
+      `*Daftar Nama Siswa:*\n${listText}\n\n` +
+      `_Mohon bantuan Bapak/Ibu Wali Kelas atau Orang Tua untuk mengingatkan siswa bersangkutan agar segera mengikuti ujian susulan._`
+
+    navigator.clipboard.writeText(message)
+    setCopiedWaNotice('✅ Berhasil Disalin!')
+    setTimeout(() => setCopiedWaNotice(''), 3000)
+  }
+
+  // Grant makeup exam session for an absent student
+  async function handleGrantMakeupExam(student) {
+    const studentName = student.users?.full_name || student.users?.name || 'Siswa'
+    if (!window.confirm(`Izinkan ujian susulan untuk ${studentName}?\n\nSistem akan membuatkan dan mengaktifkan sesi ujian selama ${exam?.duration_minutes || 60} menit agar siswa dapat langsung login dan mengerjakan ujian dari akunnya.`)) return
+
+    setMakeupLoading(student.student_id)
+    try {
+      const durationMs = (exam?.duration_minutes || 60) * 60 * 1000
+      const newEnd = new Date(Date.now() + durationMs).toISOString()
+
+      const { data: sess, error: sErr } = await sessions.getOrCreate(examId, student.student_id)
+      if (sErr) throw sErr
+
+      if (sess) {
+        await sessions.update(sess.id, {
+          status: 'active',
+          end_timestamp: newEnd,
+          returnee_token_required: false,
+          returnee_token: null,
+          returnee_reason: null,
+          returnee_unlocked_at: new Date().toISOString()
+        })
+      }
+
+      alert(`✅ Berhasil! Sesi ujian susulan untuk ${studentName} telah dibuka aktif selama ${exam?.duration_minutes || 60} menit. Siswa dapat langsung masuk dari akunnya.`)
+      await load()
+    } catch (err) {
+      alert('Gagal membuat sesi susulan: ' + (err.message || 'Error'))
+    } finally {
+      setMakeupLoading(null)
+    }
+  }
+
+  function handleCopySingleStudent(student) {
+    const studentName = student.users?.full_name || student.users?.name || 'Siswa'
+    const studentClass = student.users?.kelas || '—'
+    const username = student.users?.username ? `@${student.users.username}` : ''
+    const examTitle = exam?.title || 'Ujian'
+
+    const text = `Halo ${studentName} (${studentClass} ${username}), Anda tercatat BELUM MENGERJAKAN ujian "${examTitle}". Silakan segera hubungi guru pengawas untuk mengikuti ujian susulan.`
+    navigator.clipboard.writeText(text)
+    alert(`Teks pengingat untuk ${studentName} telah disalin ke clipboard!`)
+  }
 
   async function handleDeleteResult(resultId, studentName) {
     if (!window.confirm(`Hapus hasil ujian untuk ${studentName || 'siswa ini'}? Tindakan ini tidak bisa dibatalkan.`)) return
@@ -348,6 +458,9 @@ export default function ResultsView() {
     if (!window.confirm('Hitung ulang semua nilai siswa berdasarkan sistem penilaian terbaru?')) return
     setRegrading(true)
     try {
+      // Sync and lock any completed or expired sessions first
+      await sessions.autoLockAndSyncExam(examId)
+
       const [{ data: qs }, { data: sess }, { data: currentRes }] = await Promise.all([
         questions.listByExam(examId),
         sessions.listByExam(examId),
@@ -410,13 +523,42 @@ export default function ResultsView() {
     setSortConfig({ key, direction })
   }
 
-  const sortedResults = [...resultList].sort((a, b) => {
+  // Combined and filtered display list based on attendanceFilter
+  let displayList = []
+  if (attendanceFilter === 'unattempted') {
+    displayList = [...unattemptedStudents]
+  } else if (attendanceFilter === 'all_targets') {
+    displayList = [...resultList, ...unattemptedStudents]
+  } else if (attendanceFilter === 'passed') {
+    displayList = resultList.filter(r => {
+      const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
+      const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+      const pct = maxPossible > 0 ? (total / maxPossible) * 100 : 0
+      return pct >= passingGrade
+    })
+  } else if (attendanceFilter === 'failed') {
+    displayList = resultList.filter(r => {
+      const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
+      const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+      const pct = maxPossible > 0 ? (total / maxPossible) * 100 : 0
+      return pct < passingGrade
+    })
+  } else {
+    // 'all' = submitted results
+    displayList = [...resultList]
+  }
+
+  const sortedResults = displayList.sort((a, b) => {
+    // If one is unattempted and sorting by score, unattempted goes to bottom
+    if (a.isUnattempted !== b.isUnattempted && sortConfig.key === 'nilai') {
+      return a.isUnattempted ? 1 : -1
+    }
     const key = sortConfig.key
     let aVal, bVal
 
     if (key === 'nilai') {
-      const aTotal = a.auto_score + (a.essay_score || 0)
-      const bTotal = b.auto_score + (b.essay_score || 0)
+      const aTotal = (a.auto_score || 0) + (a.essay_score || 0)
+      const bTotal = (b.auto_score || 0) + (b.essay_score || 0)
       aVal = a.max_auto_score > 0 ? (aTotal / a.max_auto_score) * 100 : 0
       bVal = b.max_auto_score > 0 ? (bTotal / b.max_auto_score) * 100 : 0
     } else if (key === 'pelanggaran') {
@@ -491,6 +633,14 @@ export default function ResultsView() {
   }).length
   const failCount = resultList.length - passCount
 
+  const targetStudentCount = targetStudents.length
+  const attendedCount = resultList.length
+  const unattendedCount = unattemptedStudents.length
+  const attendanceRate = targetStudentCount > 0 ? (attendedCount / targetStudentCount) * 100 : 100
+  const attendanceRateStr = formatScore(Math.min(100, attendanceRate))
+  const absentRate = targetStudentCount > 0 ? (unattendedCount / targetStudentCount) * 100 : 0
+  const absentRateStr = formatScore(absentRate)
+
   return (
     <>
       <div className="page-header no-print">
@@ -500,11 +650,19 @@ export default function ResultsView() {
             <div>
               <h2>Hasil: {exam?.title}</h2>
               <p className="text-muted text-sm">
-                {resultList.length} siswa · Rata-rata: {avgStr}% · KKM: {passingGrade}
+                {resultList.length} siswa menyelesaikan · Rata-rata: {avgStr}% · KKM: {passingGrade}
                 {' · '}
                 <span style={{ color: 'var(--success)' }}>✓ {passCount} Lulus</span>
                 {' · '}
                 <span style={{ color: 'var(--danger)' }}>✗ {failCount} Belum Lulus</span>
+                {unattendedCount > 0 && (
+                  <>
+                    {' · '}
+                    <span style={{ color: 'var(--danger)', fontWeight: 700 }}>
+                      ⚠️ {unattendedCount} Belum Mengerjakan (Absen)
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -553,6 +711,134 @@ export default function ResultsView() {
         <h2 style={{ margin: '0.25rem 0 0', fontSize: '1.15rem', fontWeight: 'normal', color: 'black' }}>Hasil Ujian — Mata Pelajaran: {exam?.title} — KKM: {passingGrade}</h2>
       </div>
       <div className="page-body">
+        {/* Class Target & Attendance KPI Card */}
+        {targetStudents.length > 0 && (
+          <div
+            className="no-print"
+            style={{
+              background: unattendedCount > 0 ? 'linear-gradient(135deg, #fff5f5 0%, #fff 100%)' : 'linear-gradient(135deg, #f0fdf4 0%, #fff 100%)',
+              border: unattendedCount > 0 ? '1px solid #fecaca' : '1px solid #bbf7d0',
+              borderRadius: '12px',
+              padding: '1.25rem 1.5rem',
+              marginBottom: '1.5rem',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: unattendedCount > 0 ? '#fee2e2' : '#dcfce7',
+                    color: unattendedCount > 0 ? '#dc2626' : '#16a34a',
+                    flexShrink: 0
+                  }}
+                >
+                  {unattendedCount > 0 ? <UserX size={26} /> : <Users size={26} />}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>
+                      Pemantauan Kehadiran: Kelas {exam?.target_kelas ? exam.target_kelas.toUpperCase() : 'Semua Target'}
+                    </h3>
+                    {unattendedCount > 0 ? (
+                      <span className="badge badge-danger" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem' }}>
+                        {unattendedCount} Belum Mengerjakan (Absen)
+                      </span>
+                    ) : (
+                      <span className="badge badge-success" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem' }}>
+                        ✓ 100% Hadir Lengkap
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-muted text-xs" style={{ margin: '0.25rem 0 0' }}>
+                    Total Target: <strong>{targetStudentCount}</strong> siswa · Sudah Mengumpulkan: <strong>{attendedCount}</strong> ({attendanceRateStr}%) · Belum Masuk/Submit: <strong>{unattendedCount}</strong> ({absentRateStr}%)
+                  </p>
+                </div>
+              </div>
+
+              {unattendedCount > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={handleCopyAbsentList}
+                    title="Salin daftar siswa yang belum mengerjakan dalam format teks WhatsApp untuk wali kelas / orang tua"
+                    style={{
+                      background: '#fff',
+                      borderColor: '#f87171',
+                      color: '#b91c1c',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <Copy size={14} />
+                    {copiedWaNotice || 'Salin Siswa Absen (Format WA)'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Filter Navigation Tabs */}
+        <div className="no-print" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className={`btn btn-sm ${attendanceFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setAttendanceFilter('all')}
+            style={{ fontWeight: 600, borderRadius: '8px' }}
+          >
+            Sudah Mengumpulkan ({resultList.length})
+          </button>
+          {targetStudents.length > 0 && (
+            <>
+              <button
+                className={`btn btn-sm ${attendanceFilter === 'all_targets' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setAttendanceFilter('all_targets')}
+                style={{ fontWeight: 600, borderRadius: '8px' }}
+              >
+                Semua Target Siswa ({targetStudentCount})
+              </button>
+              <button
+                className={`btn btn-sm ${attendanceFilter === 'unattempted' ? 'btn-danger' : 'btn-ghost'}`}
+                onClick={() => setAttendanceFilter('unattempted')}
+                style={{
+                  fontWeight: 600,
+                  borderRadius: '8px',
+                  color: attendanceFilter === 'unattempted' ? '#fff' : (unattendedCount > 0 ? '#dc2626' : undefined),
+                  borderColor: unattendedCount > 0 ? 'rgba(239, 68, 68, 0.4)' : undefined,
+                  background: attendanceFilter === 'unattempted' ? '#dc2626' : (unattendedCount > 0 ? '#fff5f5' : undefined)
+                }}
+              >
+                <UserX size={14} style={{ marginRight: '0.3rem', display: 'inline' }} />
+                Belum Mengerjakan ({unattendedCount})
+              </button>
+            </>
+          )}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+            <button
+              className={`btn btn-sm ${attendanceFilter === 'passed' ? 'btn-success' : 'btn-ghost'}`}
+              onClick={() => setAttendanceFilter('passed')}
+              style={{ fontWeight: 600, borderRadius: '8px' }}
+            >
+              ✓ Lulus ({passCount})
+            </button>
+            <button
+              className={`btn btn-sm ${attendanceFilter === 'failed' ? 'btn-secondary' : 'btn-ghost'}`}
+              onClick={() => setAttendanceFilter('failed')}
+              style={{ fontWeight: 600, borderRadius: '8px' }}
+            >
+              ✗ Belum Lulus ({failCount})
+            </button>
+          </div>
+        </div>
+
         <div className="card" style={{ padding: 0 }}>
           <div className="table-wrap">
             <table>
@@ -585,128 +871,282 @@ export default function ResultsView() {
                 {sortedResults.length === 0 ? (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
-                      Belum ada hasil ujian yang diselesaikan untuk ujian ini.
+                      {attendanceFilter === 'unattempted' ? (
+                        <div style={{ color: '#16a34a' }}>
+                          <div style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>🎉</div>
+                          <strong>Seluruh siswa target kelas telah mengikuti ujian!</strong>
+                          <div style={{ fontSize: '0.85rem', marginTop: '0.25rem', color: '#64748b' }}>
+                            Tidak ada siswa yang absen atau belum mengumpulkan.
+                          </div>
+                        </div>
+                      ) : attendanceFilter === 'passed' ? (
+                        'Belum ada siswa yang lulus KKM.'
+                      ) : attendanceFilter === 'failed' ? (
+                        'Semua siswa yang mengumpulkan telah lulus KKM.'
+                      ) : (
+                        'Belum ada hasil ujian yang diselesaikan untuk ujian ini.'
+                      )}
                     </td>
                   </tr>
                 ) : (
                   sortedResults.map((r, i) => {
-                  const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
-                  const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
-                  const pctNum = maxPossible > 0 ? (total / maxPossible) * 100 : 0
-                  const pctStr = formatScore(pctNum)
-                  const essayVal = essayEdits[r.id] !== undefined ? essayEdits[r.id] : (r.essay_score || 0)
-                  const currentTotal = (Number(r.auto_score) || 0) + (Number(essayVal) || 0)
-                  const nilaiColor = pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)'
-
-                  const rBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
-                  const rEssays = rBd.filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
-                  const isPendingGrading = rEssays.some(b => b.status === 'pending')
-                  const hasEssays = rEssays.length > 0 || totalMaxEssayScore > 0
-
-                  return (
-                    <tr key={r.id}>
-                      <td className="text-muted no-print">{i + 1}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        {r.users?.full_name || r.student?.full_name || r.users?.name || r.student?.name || (r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa')}
-                        {r.users?.username && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-                            @{r.users.username}
-                          </div>
-                        )}
-                      </td>
-                      <td>{r.users?.classes?.name || r.users?.kelas || r.student?.kelas || '—'}</td>
-                      <td className="no-print">{formatScore(r.auto_score)}</td>
-                      <td className="no-print">
-                        {totalMaxEssayScore > 0 ? (
-                          <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <input
-                              type="number"
-                              className="form-input"
-                              style={{ width: 68, padding: '0.3rem 0.4rem', fontSize: '0.85rem', textAlign: 'center' }}
-                              value={essayVal !== '' && !isNaN(Number(essayVal)) ? roundScore(essayVal) : essayVal}
-                              step="0.01"
-                              min="0"
-                              max={totalMaxEssayScore}
-                              title={`Maksimal nilai esai: ${formatScore(totalMaxEssayScore)} poin`}
-                              onChange={e => {
-                                let val = e.target.value
-                                if (val !== '') {
-                                  let num = parseFloat(val)
-                                  if (num > totalMaxEssayScore) num = totalMaxEssayScore
-                                  if (num < 0) num = 0
-                                  val = roundScore(num)
-                                }
-                                setEssayEdits(prev => ({ ...prev, [r.id]: val }))
+                    if (r.isUnattempted) {
+                      return (
+                        <tr
+                          key={r.id}
+                          style={{
+                            background: 'rgba(254, 226, 226, 0.45)',
+                            borderLeft: '4px solid #ef4444'
+                          }}
+                        >
+                          <td className="text-muted no-print">{i + 1}</td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 700, color: '#991b1b' }}>
+                                {r.users?.full_name || r.users?.name || 'Siswa'}
+                              </span>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.2rem',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  background: '#fee2e2',
+                                  color: '#dc2626',
+                                  border: '1px solid #fecaca',
+                                  borderRadius: '6px',
+                                  padding: '0.15rem 0.45rem'
+                                }}
+                              >
+                                ❌ Belum Mengerjakan (Absen)
+                              </span>
+                            </div>
+                            {r.users?.username && (
+                              <div style={{ fontSize: '0.75rem', color: '#b91c1c', fontWeight: 500, marginTop: '0.1rem' }}>
+                                @{r.users.username} {r.users?.nisn ? `· NISN: ${r.users.nisn}` : ''}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ fontWeight: 600, color: '#991b1b' }}>{r.users?.kelas || '—'}</td>
+                          <td className="no-print">
+                            <span className="text-muted" style={{ fontSize: '0.82rem' }}>—</span>
+                          </td>
+                          <td className="no-print">
+                            <span className="text-muted" style={{ fontSize: '0.82rem' }}>—</span>
+                          </td>
+                          <td className="no-print">
+                            <span style={{ color: '#dc2626', fontWeight: 600 }}>0</span>
+                          </td>
+                          <td>
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                background: '#dc2626',
+                                color: '#ffffff',
+                                borderRadius: '4px',
+                                padding: '0.2rem 0.5rem',
+                                letterSpacing: '0.03em'
                               }}
-                            />
-                            <span className="text-muted text-xs">/ {formatScore(totalMaxEssayScore)}</span>
+                            >
+                              TIDAK HADIR
+                            </span>
+                          </td>
+                          <td>
+                            <span className="text-muted">—</span>
+                          </td>
+                          <td className="no-print">
+                            <div className="action-btn-group" style={{ justifyContent: 'center' }}>
+                              <button
+                                className="action-btn action-btn-info"
+                                onClick={() => handleGrantMakeupExam(r)}
+                                disabled={makeupLoading === r.student_id}
+                                title="Buka sesi ujian susulan untuk siswa ini sekarang"
+                                style={{
+                                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                                  color: '#ffffff',
+                                  borderColor: 'transparent',
+                                  fontWeight: 700,
+                                  boxShadow: '0 1px 3px rgba(37, 99, 235, 0.3)'
+                                }}
+                              >
+                                {makeupLoading === r.student_id ? (
+                                  'Membuka...'
+                                ) : (
+                                  <>
+                                    <Plus size={14} /> Izinkan Susulan
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                className="action-btn"
+                                onClick={() => handleCopySingleStudent(r)}
+                                title="Salin pesan pengingat WA untuk siswa ini"
+                                style={{
+                                  background: '#ffffff',
+                                  color: '#475569',
+                                  borderColor: '#cbd5e1'
+                                }}
+                              >
+                                <Copy size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+
+                    const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
+                    const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+                    const pctNum = maxPossible > 0 ? (total / maxPossible) * 100 : 0
+                    const pctStr = formatScore(pctNum)
+                    const essayVal = essayEdits[r.id] !== undefined ? essayEdits[r.id] : (r.essay_score || 0)
+                    const currentTotal = (Number(r.auto_score) || 0) + (Number(essayVal) || 0)
+                    const nilaiColor = pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)'
+
+                    const rBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
+                    const rEssays = rBd.filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
+                    const isPendingGrading = rEssays.some(b => b.status === 'pending')
+                    const hasEssays = rEssays.length > 0 || totalMaxEssayScore > 0
+
+                    return (
+                      <tr key={r.id}>
+                        <td className="text-muted no-print">{i + 1}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          {r.users?.full_name || r.student?.full_name || r.users?.name || r.student?.name || (r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa')}
+                          {r.users?.username && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                              @{r.users.username}
+                            </div>
+                          )}
+                        </td>
+                        <td>{r.users?.classes?.name || r.users?.kelas || r.student?.kelas || '—'}</td>
+                        <td className="no-print">{formatScore(r.auto_score)}</td>
+                        <td className="no-print">
+                          {totalMaxEssayScore > 0 ? (
+                            <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <input
+                                type="number"
+                                className="form-input"
+                                style={{ width: 68, padding: '0.3rem 0.4rem', fontSize: '0.85rem', textAlign: 'center' }}
+                                value={essayVal !== '' && !isNaN(Number(essayVal)) ? roundScore(essayVal) : essayVal}
+                                step="0.01"
+                                min="0"
+                                max={totalMaxEssayScore}
+                                title={`Maksimal nilai esai: ${formatScore(totalMaxEssayScore)} poin`}
+                                onChange={e => {
+                                  let val = e.target.value
+                                  if (val !== '') {
+                                    let num = parseFloat(val)
+                                    if (num > totalMaxEssayScore) num = totalMaxEssayScore
+                                    if (num < 0) num = 0
+                                    val = roundScore(num)
+                                  }
+                                  setEssayEdits(prev => ({ ...prev, [r.id]: val }))
+                                }}
+                              />
+                              <span className="text-muted text-xs">/ {formatScore(totalMaxEssayScore)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-muted">—</span>
+                          )}
+                          <span className="print-only">{formatScore(r.essay_score || 0)}</span>
+                        </td>
+                        <td className="no-print" style={{ fontWeight: 700, color: nilaiColor }}>
+                          {formatScore(currentTotal)} <span className="text-muted text-xs" style={{ fontWeight: 400 }}>/ {formatScore(maxPossible)}</span>
+                        </td>
+                        <td style={{ fontWeight: 700, color: nilaiColor }}>{pctStr}%</td>
+                        <td>
+                          {r.violation_count > 0
+                            ? <span style={{ color: 'var(--warning)' }}>⚠ {r.violation_count}</span>
+                            : <span className="text-muted">—</span>}
+                        </td>
+                        <td className="no-print">
+                          <div className="action-btn-group" style={{ justifyContent: 'center' }}>
+                            <button
+                              className="action-btn action-btn-info"
+                              onClick={() => setSelectedDetailResult(r)}
+                              title="Lihat rincian lembar jawaban lengkap siswa"
+                              style={{
+                                background: 'rgba(37, 99, 235, 0.08)',
+                                color: '#2563eb',
+                                borderColor: 'rgba(37, 99, 235, 0.3)',
+                                fontWeight: 600,
+                              }}
+                            >
+                              <FileText size={15} /> Detail Jawaban
+                            </button>
+                            {hasEssays && (
+                              <button
+                                className={`action-btn ${isPendingGrading ? 'action-btn-warning' : 'action-btn-preview'}`}
+                                onClick={() => openEssayModal(r)}
+                                title={isPendingGrading ? 'Ada esai yang belum dinilai - Klik untuk memberi nilai per soal' : 'Tinjau / ubah nilai esai per soal'}
+                                style={isPendingGrading ? { borderColor: 'var(--warning)', color: 'var(--warning)', fontWeight: 600 } : {}}
+                              >
+                                <Edit3 size={15} /> {isPendingGrading ? 'Beri Nilai' : 'Nilai Esai'}
+                                {isPendingGrading && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--warning)', marginLeft: 3, display: 'inline-block' }} />}
+                              </button>
+                            )}
+                            {totalMaxEssayScore > 0 && (
+                              <button
+                                className="action-btn action-btn-result"
+                                onClick={() => saveEssay(r.id, essayVal)}
+                                disabled={saving === r.id}
+                                title="Simpan Skor Esai Cepat"
+                              >
+                                {saving === r.id ? '...' : <><Save size={15} /> Simpan</>}
+                              </button>
+                            )}
+                            <button
+                              className="action-btn action-btn-danger"
+                              onClick={() => handleDeleteResult(r.id, r.users?.full_name || r.student?.full_name)}
+                              title="Hapus Hasil Ujian Siswa"
+                            >
+                              <Trash2 size={15} /> Hapus
+                            </button>
                           </div>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                        <span className="print-only">{formatScore(r.essay_score || 0)}</span>
-                      </td>
-                      <td className="no-print" style={{ fontWeight: 700, color: nilaiColor }}>
-                        {formatScore(currentTotal)} <span className="text-muted text-xs" style={{ fontWeight: 400 }}>/ {formatScore(maxPossible)}</span>
-                      </td>
-                      <td style={{ fontWeight: 700, color: nilaiColor }}>{pctStr}%</td>
-                      <td>
-                        {r.violation_count > 0
-                          ? <span style={{ color: 'var(--warning)' }}>⚠ {r.violation_count}</span>
-                          : <span className="text-muted">—</span>}
-                      </td>
-                      <td className="no-print">
-                        <div className="action-btn-group" style={{ justifyContent: 'center' }}>
-                          <button
-                            className="action-btn action-btn-info"
-                            onClick={() => setSelectedDetailResult(r)}
-                            title="Lihat rincian lembar jawaban lengkap siswa"
-                            style={{
-                              background: 'rgba(37, 99, 235, 0.08)',
-                              color: '#2563eb',
-                              borderColor: 'rgba(37, 99, 235, 0.3)',
-                              fontWeight: 600,
-                            }}
-                          >
-                            <FileText size={15} /> Detail Jawaban
-                          </button>
-                          {hasEssays && (
-                            <button
-                              className={`action-btn ${isPendingGrading ? 'action-btn-warning' : 'action-btn-preview'}`}
-                              onClick={() => openEssayModal(r)}
-                              title={isPendingGrading ? 'Ada esai yang belum dinilai - Klik untuk memberi nilai per soal' : 'Tinjau / ubah nilai esai per soal'}
-                              style={isPendingGrading ? { borderColor: 'var(--warning)', color: 'var(--warning)', fontWeight: 600 } : {}}
-                            >
-                              <Edit3 size={15} /> {isPendingGrading ? 'Beri Nilai' : 'Nilai Esai'}
-                              {isPendingGrading && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--warning)', marginLeft: 3, display: 'inline-block' }} />}
-                            </button>
-                          )}
-                          {totalMaxEssayScore > 0 && (
-                            <button
-                              className="action-btn action-btn-result"
-                              onClick={() => saveEssay(r.id, essayVal)}
-                              disabled={saving === r.id}
-                              title="Simpan Skor Esai Cepat"
-                            >
-                              {saving === r.id ? '...' : <><Save size={15} /> Simpan</>}
-                            </button>
-                          )}
-                          <button
-                            className="action-btn action-btn-danger"
-                            onClick={() => handleDeleteResult(r.id, r.users?.full_name || r.student?.full_name)}
-                            title="Hapus Hasil Ujian Siswa"
-                          >
-                            <Trash2 size={15} /> Hapus
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                }))}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
               </tbody>
             </table>
           </div>
         </div>
+
+        {/* Print-only Absent Students Roster */}
+        {unattendedCount > 0 && (
+          <div className="print-only" style={{ marginTop: '2rem', pageBreakInside: 'avoid' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'black', borderBottom: '1px solid #000', paddingBottom: '0.35rem', marginBottom: '0.75rem' }}>
+              Daftar Siswa Tidak Hadir / Belum Mengikuti Ujian ({unattendedCount} Siswa)
+            </h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10pt' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #000' }}>
+                  <th style={{ textAlign: 'left', width: 40, padding: '4px' }}>No</th>
+                  <th style={{ textAlign: 'left', padding: '4px' }}>Nama Lengkap Siswa</th>
+                  <th style={{ textAlign: 'left', width: 100, padding: '4px' }}>Kelas</th>
+                  <th style={{ textAlign: 'left', width: 140, padding: '4px' }}>Username / NISN</th>
+                  <th style={{ textAlign: 'left', width: 160, padding: '4px' }}>Keterangan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unattemptedStudents.map((us, idx) => (
+                  <tr key={us.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '4px' }}>{idx + 1}</td>
+                    <td style={{ padding: '4px', fontWeight: 600 }}>{us.users?.full_name || us.users?.name || 'Siswa'}</td>
+                    <td style={{ padding: '4px' }}>{us.users?.kelas || '—'}</td>
+                    <td style={{ padding: '4px' }}>{us.users?.username ? `@${us.users.username}` : '—'}</td>
+                    <td style={{ padding: '4px', color: '#b91c1c', fontWeight: 600 }}>Tidak Hadir (Belum Ujian)</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
       
       {selectedResult && (() => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { exams, results, questions } from '../../lib/db'
+import { exams, results, questions, sessions } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { ChevronLeft, AlertTriangle, CheckCircle, XCircle, TrendingUp, TrendingDown, HelpCircle, ShieldAlert } from 'lucide-react'
 import { formatScore, roundScore } from '../../lib/format'
@@ -16,6 +16,9 @@ export default function QuestionAnalytics() {
 
   useEffect(() => {
     async function load() {
+      // Auto-lock expired sessions and sync latest scores into results before computing analytics
+      await sessions.autoLockAndSyncExam(examId)
+
       const [{ data: examData }, { data: resultList }, { data: questionList }] = await Promise.all([
         exams.getById(examId),
         results.listByExam(examId),

@@ -14,8 +14,7 @@
  * - Automatic Network IP geolocation fallback if browser geolocation is denied or unavailable.
  */
 
-import { sessions } from './db.js'
-import { updateLoginLogLocation } from './loginAudit.js'
+
 
 // 0.0025 degrees latitude/longitude equates to approx 275 meters in equatorial & tropical zones (Indonesia)
 const SPATIAL_GRID_STEP = 0.0025
@@ -183,83 +182,3 @@ export async function captureFuzzedDeviceLocation() {
   }
 }
 
-/**
- * Schedules a slow, quiet location verification 1-5 minutes after exam start.
- *
- * @param {Object} options
- * @param {string} options.examId
- * @param {string} options.sessionId
- * @param {Object} options.user
- * @param {number} [options.minMinutes=1]
- * @param {number} [options.maxMinutes=4]
- * @param {Function} [options.onVerified]
- * @returns {Function} cleanup / cancel function
- */
-export function scheduleSlowLocationVerification({
-  examId,
-  sessionId,
-  user,
-  minMinutes = 1,
-  maxMinutes = 4,
-  onVerified = null
-}) {
-  if (typeof window === 'undefined' || !sessionId) return () => {}
-
-  const cacheKey = `binar_loc_verified_${sessionId}`
-  const existingVerified = sessionStorage.getItem(cacheKey)
-  if (existingVerified) {
-    try {
-      const parsed = JSON.parse(existingVerified)
-      if (typeof onVerified === 'function') onVerified(parsed)
-    } catch (e) {}
-    return () => {}
-  }
-
-  // Random delay between minMinutes (e.g. 1 min = 60s) and maxMinutes (e.g. 4 min = 240s)
-  const minSeconds = Math.max(10, Math.floor(minMinutes * 60))
-  const maxSeconds = Math.max(minSeconds + 10, Math.floor(maxMinutes * 60))
-  const randomDelaySec = Math.floor(Math.random() * (maxSeconds - minSeconds + 1)) + minSeconds
-  const delayMs = randomDelaySec * 1000
-
-  const timerId = setTimeout(async () => {
-    try {
-      const result = await captureFuzzedDeviceLocation()
-      if (result && result.locationName) {
-        sessionStorage.setItem(cacheKey, JSON.stringify(result))
-
-        // 1. Update active exam session in DB
-        try {
-          await sessions.update(sessionId, {
-            location: result.locationName,
-            location_precision: result.precision || '200-300m',
-            location_captured_at: result.capturedAt
-          })
-        } catch (sessErr) {
-          console.warn('[DeviceLocation] Session location update notice:', sessErr)
-        }
-
-        // 2. Update user's latest login log in Supabase & local cache
-        try {
-          await updateLoginLogLocation({
-            identifier: user?.username || user?.identifier || user?.email,
-            userId: user?.id,
-            locationText: result.locationName,
-            locationMetadata: result
-          })
-        } catch (auditErr) {
-          console.warn('[DeviceLocation] Login log location update notice:', auditErr)
-        }
-
-        if (typeof onVerified === 'function') {
-          onVerified(result)
-        }
-      }
-    } catch (err) {
-      console.warn('[DeviceLocation] Verification execution notice:', err)
-    }
-  }, delayMs)
-
-  return () => {
-    clearTimeout(timerId)
-  }
-}

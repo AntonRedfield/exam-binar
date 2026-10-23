@@ -293,6 +293,60 @@ export const users = {
     const { data: profs } = await supabase.from('profiles').select('class_section')
     const unique = Array.from(new Set((profs || []).map(p => p.class_section).filter(Boolean))).sort()
     return { data: unique, error: null }
+  },
+
+  /**
+   * Fetches the expected target students for an exam based on target_kelas.
+   * If targetKelasStr is 'all' or empty, returns all registered students.
+   * Otherwise returns all students belonging to the specified target classes.
+   */
+  listTargetStudents: async (targetKelasStr) => {
+    if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('fullname', { ascending: true })
+
+      if (error) {
+        console.error('[DB] listTargetStudents error:', error)
+        return { data: [], error }
+      }
+
+      // Filter out admins and teachers so only students / officers remain
+      const allStudents = (data || [])
+        .map(users._mapProfile)
+        .filter(u => u && u.role !== 'admin' && u.role !== 'teacher')
+
+      if (!targetKelasStr || targetKelasStr === 'all') {
+        return { data: allStudents, error: null }
+      }
+
+      const normalizeClass = str => String(str || '').toLowerCase().replace(/[\s\-_]/g, '')
+
+      const targets = String(targetKelasStr)
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean)
+
+      if (targets.length === 0) {
+        return { data: allStudents, error: null }
+      }
+
+      const matched = allStudents.filter(u => {
+        const rawClass = u.kelas || u.class_section || ''
+        const normUser = normalizeClass(rawClass)
+        return targets.some(t => {
+          const normTarget = normalizeClass(t)
+          return normUser === normTarget || normUser.startsWith(normTarget) || normTarget.startsWith(normUser)
+        })
+      })
+
+      return { data: matched, error: null }
+    } catch (err) {
+      console.error('[DB] listTargetStudents fatal error:', err)
+      return { data: [], error: err }
+    }
   }
 }
 
@@ -606,7 +660,7 @@ export const exams = {
     return { data: attached, error: null }
   },
 
-  unpublishAndForceSubmit: async (examId) => {
+  unpublishAndForceSubmit: async (examId, targetStatus = 'draft') => {
     if (!isSupabaseConfigured || !supabase) return { success: false, error: 'Database offline' }
 
     // 1. Fetch questions for the exam (for grading)
@@ -618,11 +672,11 @@ export const exams = {
 
     const questionList = qData || []
 
-    // 2. Fetch all exam sessions for this exam
-    const { data: sessionData, error: sessErr } = await supabase
-      .from('exam_sessions')
-      .select('*')
-      .eq('exam_id', examId)
+    // 2. Fetch all exam sessions and existing results in parallel
+    const [{ data: sessionData, error: sessErr }, { data: resultsData, error: resErr }] = await Promise.all([
+      supabase.from('exam_sessions').select('*').eq('exam_id', examId),
+      supabase.from('results').select('*').eq('exam_id', examId)
+    ])
 
     if (sessErr) {
       console.error('[DB] Failed to fetch sessions on unpublish:', sessErr)
@@ -630,52 +684,59 @@ export const exams = {
     }
 
     const sessionList = sessionData || []
+    const existingResults = resultsData || []
+    const resultsMapByStudent = new Map()
+    const resultsMapBySession = new Map()
+    existingResults.forEach(r => {
+      if (r.student_id) resultsMapByStudent.set(r.student_id, r)
+      if (r.session_id) resultsMapBySession.set(r.session_id, r)
+    })
+
     let countSubmitted = 0
     let countGraded = 0
 
     // 3. Extract answers, grade, and force submit each session
     for (const s of sessionList) {
+      if (!s.student_id) continue
+
       const isAlreadySubmitted = s.status === 'submitted' || s.status === 'time_up'
+      const existingRes = resultsMapByStudent.get(s.student_id) || resultsMapBySession.get(s.id)
 
-      // Check if result already exists for this student & exam
-      const { data: existingRes } = await supabase
-        .from('results')
-        .select('*')
-        .eq('exam_id', examId)
-        .eq('student_id', s.student_id)
-        .maybeSingle()
+      const answers = s.answers || {}
+      const { autoScore, maxAutoScore, breakdown } = gradeExam(answers, questionList)
+      const cleanAuto = roundScore(autoScore)
+      const cleanMax = roundScore(maxAutoScore)
 
-      if (!isAlreadySubmitted || !existingRes) {
-        try {
-          const answers = s.answers || {}
-          const { autoScore, maxAutoScore, breakdown } = gradeExam(answers, questionList)
-
-          if (existingRes) {
-            await results.update(existingRes.id, {
-              session_id: s.id,
-              auto_score: autoScore,
-              max_auto_score: maxAutoScore,
-              violation_count: s.violation_count || 0,
-              breakdown: JSON.stringify(breakdown),
-            })
-          } else {
-            await results.create({
-              student_id: s.student_id,
-              exam_id: examId,
-              session_id: s.id,
-              auto_score: autoScore,
-              max_auto_score: maxAutoScore,
-              essay_score: 0,
-              violation_count: s.violation_count || 0,
-              breakdown: JSON.stringify(breakdown),
-            })
-          }
-          countGraded++
-        } catch (gradeErr) {
-          console.warn('[DB] Error grading session during force submit:', s.id, gradeErr)
+      try {
+        if (existingRes) {
+          await results.update(existingRes.id, {
+            session_id: s.id,
+            auto_score: cleanAuto,
+            max_auto_score: cleanMax,
+            violation_count: s.violation_count || 0,
+            breakdown: JSON.stringify(breakdown),
+            updated_at: new Date().toISOString()
+          })
+        } else {
+          await results.create({
+            student_id: s.student_id,
+            exam_id: examId,
+            session_id: s.id,
+            auto_score: cleanAuto,
+            max_auto_score: cleanMax,
+            essay_score: 0,
+            violation_count: s.violation_count || 0,
+            breakdown: JSON.stringify(breakdown),
+            submitted_at: new Date().toISOString()
+          })
         }
+        countGraded++
+      } catch (gradeErr) {
+        console.warn('[DB] Error grading/saving result during force submit for student:', s.student_id, gradeErr)
+      }
 
-        // Force session status to 'submitted'
+      // If session is not already submitted, force status to 'submitted'
+      if (!isAlreadySubmitted) {
         try {
           await supabase
             .from('exam_sessions')
@@ -691,16 +752,17 @@ export const exams = {
       }
     }
 
-    // 4. Update exam status to 'draft'
+    // 4. Update exam status to targetStatus ('draft' or 'closed')
+    const finalStatus = targetStatus === 'closed' ? 'closed' : 'draft'
     const { data: updatedExam, error: examErr } = await supabase
       .from('exams')
-      .update({ status: 'draft', updated_at: new Date().toISOString() })
+      .update({ status: finalStatus, updated_at: new Date().toISOString() })
       .eq('id', examId)
       .select()
       .single()
 
     if (examErr) {
-      console.error('[DB] Failed to update exam status to draft:', examErr)
+      console.error(`[DB] Failed to update exam status to ${finalStatus}:`, examErr)
       return { success: false, error: examErr.message }
     }
 
@@ -709,7 +771,10 @@ export const exams = {
       await broadcastExamLiveUpdate(examId, {
         type: 'EXAM_UNPUBLISHED',
         action: 'force_submitted',
-        message: 'Ujian telah dihentikan oleh guru pengawas. Seluruh jawaban Anda telah dikumpulkan dan dinilai secara otomatis.'
+        targetStatus: finalStatus,
+        message: finalStatus === 'closed'
+          ? 'Ujian telah ditutup secara resmi oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
+          : 'Ujian telah dihentikan/di-unpublish oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
       })
     } catch (bcErr) {
       console.warn('[DB] Broadcast EXAM_UNPUBLISHED error:', bcErr)
@@ -720,8 +785,13 @@ export const exams = {
       data: updatedExam,
       countSubmitted,
       countGraded,
-      totalSessions: sessionList.length
+      totalSessions: sessionList.length,
+      finalStatus
     }
+  },
+
+  closeExam: async (examId) => {
+    return exams.unpublishAndForceSubmit(examId, 'closed')
   }
 }
 
@@ -1188,6 +1258,130 @@ export const sessions = {
     return { data: resultsList, errors: errors.length > 0 ? errors : null, success: resultsList.length > 0 }
   },
 
+  // Automatically lock students whose time has expired and extract & sync their scores into results
+  autoLockAndSyncExam: async (examId) => {
+    if (!isSupabaseConfigured || !supabase || !examId) return { lockedCount: 0, syncedCount: 0 }
+
+    try {
+      const [{ data: qs }, { data: sessionList, error: sessErr }, { data: existingResults, error: resErr }] = await Promise.all([
+        questions.listByExam(examId),
+        supabase.from('exam_sessions').select('*').eq('exam_id', examId),
+        supabase.from('results').select('*').eq('exam_id', examId)
+      ])
+
+      if (sessErr || !sessionList) {
+        console.warn('[DB] autoLockAndSyncExam fetch sessions error:', sessErr)
+        return { lockedCount: 0, syncedCount: 0, error: sessErr }
+      }
+
+      const rawQuestions = qs || []
+      const resultsMapByStudent = new Map()
+      const resultsMapBySession = new Map()
+      ;(existingResults || []).forEach(r => {
+        if (r.student_id) resultsMapByStudent.set(r.student_id, r)
+        if (r.session_id) resultsMapBySession.set(r.session_id, r)
+      })
+
+      const now = Date.now()
+      let lockedCount = 0
+      let syncedCount = 0
+
+      for (const s of sessionList) {
+        if (!s.student_id) continue
+
+        const hasEndTimestamp = Boolean(s.end_timestamp)
+        const isExpired = hasEndTimestamp && (new Date(s.end_timestamp).getTime() <= now)
+        const isDone = s.status === 'time_up' || s.status === 'submitted'
+
+        // 1. If time expired and session is still active, automatically lock the student
+        if (isExpired && s.status === 'active') {
+          try {
+            await supabase
+              .from('exam_sessions')
+              .update({
+                status: 'time_up',
+                last_sync: new Date().toISOString()
+              })
+              .eq('id', s.id)
+            s.status = 'time_up'
+            lockedCount++
+          } catch (lockErr) {
+            console.warn(`[DB] autoLockAndSyncExam failed locking session ${s.id}:`, lockErr)
+          }
+        }
+
+        // 2. If session is completed or time is up, extract and sync latest score into results
+        if (isExpired || isDone) {
+          const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers || {}, rawQuestions)
+          const cleanAuto = roundScore(autoScore)
+          const cleanMax = roundScore(maxAutoScore)
+          const existingRes = resultsMapByStudent.get(s.student_id) || resultsMapBySession.get(s.id)
+
+          if (existingRes) {
+            const existingAuto = roundScore(existingRes.auto_score || 0)
+            const needsSync = existingAuto !== cleanAuto ||
+              existingRes.session_id !== s.id ||
+              !existingRes.breakdown ||
+              existingRes.breakdown === '[]'
+
+            if (needsSync) {
+              try {
+                await supabase
+                  .from('results')
+                  .update({
+                    session_id: s.id,
+                    auto_score: cleanAuto,
+                    max_auto_score: cleanMax,
+                    violation_count: s.violation_count || 0,
+                    breakdown: JSON.stringify(breakdown),
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', existingRes.id)
+                syncedCount++
+              } catch (upErr) {
+                console.warn(`[DB] autoLockAndSyncExam update result error for ${s.student_id}:`, upErr)
+              }
+            }
+          } else {
+            try {
+              const newRes = {
+                id: generateId('res'),
+                student_id: s.student_id,
+                exam_id: examId,
+                session_id: s.id,
+                auto_score: cleanAuto,
+                max_auto_score: cleanMax,
+                essay_score: 0,
+                violation_count: s.violation_count || 0,
+                breakdown: JSON.stringify(breakdown),
+                submitted_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
+              }
+              const { data: created, error: createErr } = await supabase
+                .from('results')
+                .insert([newRes])
+                .select()
+                .maybeSingle()
+
+              if (!createErr && created) {
+                resultsMapByStudent.set(s.student_id, created)
+                resultsMapBySession.set(s.id, created)
+                syncedCount++
+              }
+            } catch (insErr) {
+              console.warn(`[DB] autoLockAndSyncExam insert result error for ${s.student_id}:`, insErr)
+            }
+          }
+        }
+      }
+
+      return { lockedCount, syncedCount, error: null }
+    } catch (err) {
+      console.error('[DB] autoLockAndSyncExam fatal error:', err)
+      return { lockedCount: 0, syncedCount: 0, error: err }
+    }
+  },
+
   // Returnee helpers
   markReturnee: markSessionAsReturnee,
   markActiveReturnee: markActiveSessionsAsReturnee,
@@ -1255,13 +1449,19 @@ export const results = {
         .maybeSingle()
 
       if (existing) {
-        // If existing result already has equal or higher auto_score, preserve it
-        const existingScore = (existing.auto_score || 0) + (existing.essay_score || 0)
-        const incomingScore = (data.auto_score || 0) + (data.essay_score || 0)
-        if (existingScore >= incomingScore) {
-          return { data: existing, error: null }
+        // Synchronize and update existing result with incoming score and breakdown, preserving any manual essay_score
+        const updatePayload = {
+          ...data,
+          session_id: data.session_id || existing.session_id,
+          auto_score: data.auto_score !== undefined ? roundScore(data.auto_score) : roundScore(existing.auto_score || 0),
+          max_auto_score: data.max_auto_score !== undefined ? roundScore(data.max_auto_score) : roundScore(existing.max_auto_score || 0),
+          essay_score: (data.essay_score !== undefined && data.essay_score !== null && data.essay_score > 0)
+            ? roundScore(data.essay_score)
+            : roundScore(existing.essay_score || 0),
+          violation_count: data.violation_count !== undefined ? data.violation_count : (existing.violation_count || 0),
+          breakdown: data.breakdown ? (typeof data.breakdown === 'string' ? data.breakdown : JSON.stringify(data.breakdown)) : existing.breakdown
         }
-        return results.update(existing.id, data)
+        return results.update(existing.id, updatePayload)
       }
     }
 

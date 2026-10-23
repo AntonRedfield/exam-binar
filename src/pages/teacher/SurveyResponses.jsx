@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { exams, questions, sessions, surveys } from '../../lib/db'
 import { ChevronLeft, Printer, Users, UserX, ClipboardList, BarChart2, Eye, X, Download, Clock, CheckCircle } from 'lucide-react'
 import FormattedText from '../../components/common/FormattedText'
+import { formatScore } from '../../lib/format'
 
 const SURVEY_TYPE_LABELS = {
   SHORT_ANSWER: 'Jawaban Singkat',
@@ -47,7 +48,7 @@ export default function SurveyResponses() {
 
   const respondedCount = sessionList.length
   const totalTarget = respondedCount + missingUsers.length
-  const responsePct = totalTarget > 0 ? ((respondedCount / totalTarget) * 100).toFixed(1) : 0
+  const responsePct = totalTarget > 0 ? formatScore((respondedCount / totalTarget) * 100) : '0'
 
   // Build aggregated data for each question
   function getAggregation(q) {
@@ -98,7 +99,7 @@ export default function SurveyResponses() {
       })
 
       const sum = allAnswers.reduce((s, a) => s + Number(a), 0)
-      const avg = allAnswers.length > 0 ? (sum / allAnswers.length).toFixed(2) : '—'
+      const avg = allAnswers.length > 0 ? formatScore(sum / allAnswers.length) : '—'
       return { type: 'scale', counts, min, max, avg, minLabel: q.scale_min_label, maxLabel: q.scale_max_label, total: allAnswers.length }
     }
 
@@ -119,7 +120,7 @@ export default function SurveyResponses() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         {Object.entries(agg.counts).map(([key, count]) => {
           const label = agg.options?.[key] || key
-          const pct = agg.total > 0 ? ((count / agg.total) * 100).toFixed(1) : 0
+          const pct = agg.total > 0 ? formatScore((count / agg.total) * 100) : '0'
           return (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <span className="text-sm" style={{ minWidth: 120, fontWeight: 500 }}>{label}</span>

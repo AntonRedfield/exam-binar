@@ -33,20 +33,21 @@ export default function ExamOversight() {
     await load()
   }
 
-  async function handleConfirmUnpublish() {
+  async function handleConfirmUnpublish(targetStatus = 'closed') {
     if (!unpublishModal.exam) return
     const targetExam = unpublishModal.exam
     setUnpublishModal(prev => ({ ...prev, isProcessing: true }))
     try {
-      const res = await exams.unpublishAndForceSubmit(targetExam.id)
+      const res = await exams.unpublishAndForceSubmit(targetExam.id, targetStatus)
       setUnpublishModal({ isOpen: false, exam: null, isProcessing: false })
       await load()
       const submittedCount = res.countSubmitted || 0
-      setNotification(`Ujian "${targetExam.title}" berhasil di-unpublish. ${submittedCount > 0 ? `${submittedCount} siswa aktif berhasil dikumpulkan & dinilai otomatis.` : 'Ujian kini berstatus Draft.'}`)
+      const statusLabel = targetStatus === 'closed' ? 'ditutup & dikunci' : 'di-unpublish ke draft'
+      setNotification(`Ujian "${targetExam.title}" berhasil ${statusLabel}. ${submittedCount > 0 ? `${submittedCount} siswa aktif berhasil dikumpulkan & dinilai otomatis.` : `Ujian kini berstatus ${targetStatus === 'closed' ? 'Tutup' : 'Draft'}.`}`)
       setTimeout(() => setNotification(null), 6000)
     } catch (err) {
-      console.error('Error during unpublish:', err)
-      alert('Terjadi kesalahan saat membatalkan publikasi ujian: ' + (err.message || err))
+      console.error('Error during unpublish/close:', err)
+      alert('Terjadi kesalahan saat menutup/membatalkan publikasi ujian: ' + (err.message || err))
       setUnpublishModal(prev => ({ ...prev, isProcessing: false }))
     }
   }

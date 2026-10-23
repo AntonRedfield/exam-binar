@@ -41,7 +41,18 @@ export default function StudentAnswerDetailModal({
   const autoScore = Number(result?.auto_score || 0)
   const essayScore = Number(result?.essay_score || 0)
   const totalScore = roundScore(autoScore + essayScore)
-  const maxPossible = Number(result?.max_auto_score || 0)
+
+  const computedMaxFromQuestions = useMemo(() => {
+    return (questions || []).reduce((sum, q) => {
+      const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+      return sum + pts
+    }, 0)
+  }, [questions])
+
+  const maxPossible = Number(result?.max_auto_score || 0) > 0
+    ? Number(result.max_auto_score)
+    : (computedMaxFromQuestions > 0 ? computedMaxFromQuestions : 100)
+
   const passingGrade = exam?.passing_grade ?? 60
   const pct = maxPossible > 0 ? (totalScore / maxPossible) * 100 : 0
   const isPassed = pct >= passingGrade
@@ -50,44 +61,64 @@ export default function StudentAnswerDetailModal({
   // Question lookup map by number
   const questionMap = useMemo(() => {
     const map = new Map()
-    questions.forEach(q => {
+    ;(questions || []).forEach(q => {
       map.set(Number(q.number), q)
     })
     return map
   }, [questions])
 
-  // Parse breakdown
+  // Parse breakdown safely (handles arrays, JSON strings, and double-encoded JSON strings)
   const breakdownList = useMemo(() => {
     let bd = []
-    try {
-      bd = JSON.parse(result?.breakdown || '[]')
-    } catch {
-      bd = []
+    if (Array.isArray(result?.breakdown)) {
+      bd = result.breakdown
+    } else if (typeof result?.breakdown === 'string') {
+      try {
+        const parsed = JSON.parse(result.breakdown)
+        if (Array.isArray(parsed)) {
+          bd = parsed
+        } else if (typeof parsed === 'string') {
+          const doubleParsed = JSON.parse(parsed)
+          if (Array.isArray(doubleParsed)) bd = doubleParsed
+        }
+      } catch {
+        bd = []
+      }
     }
 
-    // Merge with questions list to ensure all questions appear even if not in breakdown
-    const fullList = questions.map(q => {
-      const existing = bd.find(b => Number(b.number) === Number(q.number))
-      if (existing) {
+    if (!Array.isArray(bd)) bd = []
+
+    // If questions prop is provided, merge with questions list
+    if (questions && questions.length > 0) {
+      return questions.map(q => {
+        const qNum = Number(q.number)
+        const existing = bd.find(b => Number(b.number) === qNum || b.id === q.id)
+        if (existing) {
+          return {
+            ...existing,
+            number: q.number,
+            questionObj: q,
+          }
+        }
         return {
-          ...existing,
+          number: q.number,
+          type: q.type,
+          status: (q.type === 'ESSAY' || q.type === 'PARAGRAPH') ? 'pending' : 'wrong',
+          earned: 0,
+          max: q.points || 1,
+          correct: q.correct_answer,
+          given: null,
           questionObj: q,
         }
-      }
-      return {
-        number: q.number,
-        type: q.type,
-        status: (q.type === 'ESSAY' || q.type === 'PARAGRAPH') ? 'pending' : 'wrong',
-        earned: 0,
-        max: q.points || 1,
-        correct: q.correct_answer,
-        given: null,
-        questionObj: q,
-      }
-    })
+      })
+    }
 
-    return fullList
-  }, [result?.breakdown, questions])
+    // If questions array is empty, use the breakdown items directly
+    return bd.map(b => ({
+      ...b,
+      questionObj: questionMap.get(Number(b.number)) || b.questionObj || {}
+    }))
+  }, [result?.breakdown, questions, questionMap])
 
   // Breakdown statistics
   const stats = useMemo(() => {
@@ -117,68 +148,72 @@ export default function StudentAnswerDetailModal({
       className="modal-overlay"
       style={{
         zIndex: 99999,
-        background: 'rgba(15, 23, 42, 0.82)',
-        backdropFilter: 'blur(5px)',
+        background: 'rgba(15, 23, 42, 0.75)',
+        backdropFilter: 'blur(6px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '1.25rem',
+        padding: '1rem',
       }}
     >
       <div
         className="modal"
         style={{
-          maxWidth: 920,
-          width: '100%',
+          maxWidth: 940,
+          width: '95vw',
+          height: '92vh',
           maxHeight: '92vh',
-          background: 'var(--surface, #ffffff)',
+          background: '#ffffff',
           borderRadius: 16,
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.35)',
           display: 'flex',
           flexDirection: 'column',
           padding: 0,
           overflow: 'hidden',
-          border: '1px solid var(--border)',
+          border: '1px solid #e2e8f0',
         }}
       >
         {/* ─── Modal Header ─────────────────────────────────────────── */}
         <div
           style={{
-            padding: '1.25rem 1.75rem',
-            background: 'var(--navy, #1b3361)',
+            padding: '1.15rem 1.5rem',
+            background: '#0f172a',
             color: '#ffffff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
             <div
               style={{
-                width: 44,
-                height: 44,
+                width: 42,
+                height: 42,
                 borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.15)',
+                background: 'rgba(255, 255, 255, 0.08)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 800,
-                fontSize: '1.2rem',
-                color: 'var(--gold, #dfae34)',
-                border: '1.5px solid rgba(223, 174, 52, 0.4)',
+                fontSize: '1.15rem',
+                color: '#dfae34',
+                border: '1.5px solid rgba(223, 174, 52, 0.5)',
+                flexShrink: 0,
               }}
             >
               {studentName.charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#ffffff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#ffffff' }}>
                   {studentName}
                 </h3>
                 <span
                   style={{
-                    background: 'rgba(255, 255, 255, 0.2)',
+                    background: 'rgba(255, 255, 255, 0.14)',
+                    color: '#f8fafc',
                     fontSize: '0.72rem',
                     padding: '0.15rem 0.55rem',
                     borderRadius: 999,
@@ -188,13 +223,13 @@ export default function StudentAnswerDetailModal({
                   Kelas {studentClass}
                 </span>
                 {studentUsername && (
-                  <span style={{ fontSize: '0.75rem', opacity: 0.75 }}>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                     ({studentUsername})
                   </span>
                 )}
               </div>
-              <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', opacity: 0.85 }}>
-                Rincian Lembar Jawaban: <strong>{exam?.title || 'Ujian'}</strong>
+              <p style={{ margin: '0.15rem 0 0', fontSize: '0.78rem', color: '#cbd5e1' }}>
+                Rincian Lembar Jawaban: <strong style={{ color: '#ffffff' }}>{exam?.title || 'Ujian'}</strong>
               </p>
             </div>
           </div>
@@ -203,20 +238,35 @@ export default function StudentAnswerDetailModal({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.25)' }}
+              style={{
+                color: '#f8fafc',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'rgba(255, 255, 255, 0.05)',
+                fontSize: '0.8rem',
+                borderRadius: 8,
+              }}
               onClick={() => window.print()}
               title="Cetak Lembar Jawaban Siswa"
             >
-              <Printer size={15} /> Cetak
+              <Printer size={14} /> Cetak
             </button>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ color: '#ffffff', padding: '0.4rem', borderRadius: '50%' }}
+              style={{
+                color: '#f8fafc',
+                padding: '0.45rem',
+                borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               onClick={onClose}
               title="Tutup Modal"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
         </div>
@@ -224,26 +274,28 @@ export default function StudentAnswerDetailModal({
         {/* ─── Score Overview & Filter Card ─────────────────────────── */}
         <div
           style={{
-            padding: '1.25rem 1.75rem',
-            background: 'var(--navy-light, #f8fafc)',
-            borderBottom: '1px solid var(--border)',
+            padding: '1rem 1.5rem',
+            background: '#ffffff',
+            borderBottom: '1px solid #e2e8f0',
+            flexShrink: 0,
           }}
         >
+          {/* KPI Metrics */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-              gap: '1rem',
-              marginBottom: '1rem',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+              gap: '0.75rem',
+              marginBottom: '0.875rem',
             }}
           >
             {/* Total Nilai */}
             <div
               style={{
-                padding: '0.85rem 1rem',
+                padding: '0.75rem 0.95rem',
                 borderRadius: 10,
-                background: '#ffffff',
-                border: '1px solid var(--border)',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.75rem',
@@ -254,22 +306,23 @@ export default function StudentAnswerDetailModal({
                   width: 38,
                   height: 38,
                   borderRadius: 8,
-                  background: isPassed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                  background: isPassed ? '#dcfce7' : '#fee2e2',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: isPassed ? 'var(--success)' : 'var(--danger)',
+                  color: isPassed ? '#16a34a' : '#dc2626',
+                  flexShrink: 0,
                 }}
               >
-                <Award size={22} />
+                <Award size={20} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.3px' }}>
                   NILAI AKHIR
                 </div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: isPassed ? 'var(--success)' : 'var(--danger)' }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: isPassed ? '#16a34a' : '#dc2626', lineHeight: 1.2 }}>
                   {pctStr}%
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, marginLeft: 6 }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', marginLeft: 6 }}>
                     ({formatScore(totalScore)} / {formatScore(maxPossible)})
                   </span>
                 </div>
@@ -279,21 +332,21 @@ export default function StudentAnswerDetailModal({
             {/* Skor Otomatis vs Esai */}
             <div
               style={{
-                padding: '0.85rem 1rem',
+                padding: '0.75rem 0.95rem',
                 borderRadius: 10,
-                background: '#ffffff',
-                border: '1px solid var(--border)',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
               }}
             >
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.3px' }}>
                 KOMPONEN SKOR
               </div>
-              <div style={{ fontSize: '0.92rem', fontWeight: 700, marginTop: 4, display: 'flex', gap: '0.75rem' }}>
-                <span title="Skor Pilihan Ganda & Soal Otomatis">
+              <div style={{ fontSize: '0.9rem', fontWeight: 700, marginTop: 4, display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                <span style={{ color: '#0f172a' }} title="Skor Pilihan Ganda & Soal Otomatis">
                   Auto: <strong>{formatScore(autoScore)}</strong>
                 </span>
-                <span style={{ color: 'var(--text-muted)' }}>|</span>
-                <span title="Skor Esai Manual">
+                <span style={{ color: '#cbd5e1' }}>|</span>
+                <span style={{ color: '#0f172a' }} title="Skor Esai Manual">
                   Esai: <strong>{formatScore(essayScore)}</strong>
                 </span>
               </div>
@@ -302,13 +355,13 @@ export default function StudentAnswerDetailModal({
             {/* Status Kelulusan */}
             <div
               style={{
-                padding: '0.85rem 1rem',
+                padding: '0.75rem 0.95rem',
                 borderRadius: 10,
-                background: '#ffffff',
-                border: '1px solid var(--border)',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
               }}
             >
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.3px' }}>
                 STATUS KELULUSAN (KKM {passingGrade})
               </div>
               <div style={{ marginTop: 4 }}>
@@ -317,40 +370,64 @@ export default function StudentAnswerDetailModal({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '0.35rem',
-                    padding: '0.2rem 0.6rem',
+                    padding: '0.2rem 0.55rem',
                     borderRadius: 6,
-                    fontSize: '0.8rem',
+                    fontSize: '0.75rem',
                     fontWeight: 700,
-                    background: isPassed ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                    color: isPassed ? 'var(--success)' : 'var(--danger)',
+                    background: isPassed ? '#dcfce7' : '#fee2e2',
+                    color: isPassed ? '#15803d' : '#b91c1c',
                   }}
                 >
-                  {isPassed ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                  {isPassed ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
                   {isPassed ? 'TUNTAS (LULUS)' : 'BELUM TUNTAS'}
                 </span>
               </div>
             </div>
 
-            {/* Pelanggaran */}
+            {/* Integritas CBT */}
             <div
               style={{
-                padding: '0.85rem 1rem',
+                padding: '0.75rem 0.95rem',
                 borderRadius: 10,
-                background: '#ffffff',
-                border: '1px solid var(--border)',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
               }}
             >
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.3px' }}>
                 INTEGRITAS CBT
               </div>
-              <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ marginTop: 4, display: 'flex', alignItems: 'center' }}>
                 {result?.violation_count > 0 ? (
-                  <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <ShieldAlert size={16} /> {result.violation_count} Pelanggaran
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: 6,
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      background: '#fee2e2',
+                      color: '#b91c1c',
+                    }}
+                  >
+                    <ShieldAlert size={14} /> {result.violation_count} Pelanggaran
                   </span>
                 ) : (
-                  <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <CheckCircle2 size={16} /> 0 Pelanggaran (Tertib)
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      padding: '0.2rem 0.55rem',
+                      borderRadius: 6,
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      background: '#dcfce7',
+                      color: '#15803d',
+                    }}
+                  >
+                    <CheckCircle2 size={14} /> 0 Pelanggaran (Tertib)
                   </span>
                 )}
               </div>
@@ -358,29 +435,57 @@ export default function StudentAnswerDetailModal({
           </div>
 
           {/* Filter Pills */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginRight: '0.25rem' }}>
-              Filter Soal:
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginRight: '0.25rem' }}>
+              Filter:
             </span>
             <button
               type="button"
-              className={`btn btn-xs ${filterType === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '0.3rem 0.65rem',
+                borderRadius: 6,
+                border: filterType === 'all' ? '1px solid #0f172a' : '1px solid #e2e8f0',
+                background: filterType === 'all' ? '#0f172a' : '#ffffff',
+                color: filterType === 'all' ? '#ffffff' : '#475569',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
               onClick={() => setFilterType('all')}
             >
               Semua ({stats.total})
             </button>
             <button
               type="button"
-              className={`btn btn-xs ${filterType === 'correct' ? 'btn-primary' : 'btn-ghost'}`}
-              style={filterType === 'correct' ? { background: 'var(--success)', borderColor: 'var(--success)' } : {}}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '0.3rem 0.65rem',
+                borderRadius: 6,
+                border: filterType === 'correct' ? '1px solid #16a34a' : '1px solid #e2e8f0',
+                background: filterType === 'correct' ? '#16a34a' : '#ffffff',
+                color: filterType === 'correct' ? '#ffffff' : '#15803d',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
               onClick={() => setFilterType('correct')}
             >
               ✓ Benar ({stats.correct})
             </button>
             <button
               type="button"
-              className={`btn btn-xs ${filterType === 'wrong' ? 'btn-primary' : 'btn-ghost'}`}
-              style={filterType === 'wrong' ? { background: 'var(--danger)', borderColor: 'var(--danger)' } : {}}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '0.3rem 0.65rem',
+                borderRadius: 6,
+                border: filterType === 'wrong' ? '1px solid #dc2626' : '1px solid #e2e8f0',
+                background: filterType === 'wrong' ? '#dc2626' : '#ffffff',
+                color: filterType === 'wrong' ? '#ffffff' : '#b91c1c',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
               onClick={() => setFilterType('wrong')}
             >
               ✗ Salah ({stats.wrong})
@@ -388,8 +493,17 @@ export default function StudentAnswerDetailModal({
             {stats.partial > 0 && (
               <button
                 type="button"
-                className={`btn btn-xs ${filterType === 'partial' ? 'btn-primary' : 'btn-ghost'}`}
-                style={filterType === 'partial' ? { background: 'var(--warning)', borderColor: 'var(--warning)' } : {}}
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  padding: '0.3rem 0.65rem',
+                  borderRadius: 6,
+                  border: filterType === 'partial' ? '1px solid #d97706' : '1px solid #e2e8f0',
+                  background: filterType === 'partial' ? '#d97706' : '#ffffff',
+                  color: filterType === 'partial' ? '#ffffff' : '#b45309',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
                 onClick={() => setFilterType('partial')}
               >
                 ~ Parsial ({stats.partial})
@@ -398,18 +512,35 @@ export default function StudentAnswerDetailModal({
             {stats.pending > 0 && (
               <button
                 type="button"
-                className={`btn btn-xs ${filterType === 'pending' ? 'btn-primary' : 'btn-ghost'}`}
-                style={filterType === 'pending' ? { background: '#3b82f6', borderColor: '#3b82f6' } : {}}
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  padding: '0.3rem 0.65rem',
+                  borderRadius: 6,
+                  border: filterType === 'pending' ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                  background: filterType === 'pending' ? '#2563eb' : '#ffffff',
+                  color: filterType === 'pending' ? '#ffffff' : '#1d4ed8',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
                 onClick={() => setFilterType('pending')}
               >
                 ⏳ Esai Menunggu ({stats.pending})
               </button>
             )}
+
             {onOpenEssayGrading && stats.pending > 0 && (
               <button
                 type="button"
                 className="btn btn-gold btn-xs"
-                style={{ marginLeft: 'auto', fontWeight: 700 }}
+                style={{
+                  marginLeft: 'auto',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                }}
                 onClick={() => {
                   onClose()
                   onOpenEssayGrading(result)
@@ -424,17 +555,28 @@ export default function StudentAnswerDetailModal({
         {/* ─── Question Breakdown List (Scrollable) ──────────────────── */}
         <div
           style={{
-            padding: '1.5rem 1.75rem',
+            padding: '1.25rem 1.5rem',
             overflowY: 'auto',
-            flex: 1,
+            flex: '1 1 0',
+            minHeight: 0,
+            background: '#f8fafc',
             display: 'flex',
             flexDirection: 'column',
-            gap: '1.25rem',
+            gap: '1rem',
           }}
         >
           {displayedItems.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
-              Tidak ada soal dengan filter status ini.
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '3.5rem 1rem',
+                color: '#64748b',
+                background: '#ffffff',
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              Tidak ada butir soal dengan status filter ini.
             </div>
           ) : (
             displayedItems.map((b) => {
@@ -446,22 +588,26 @@ export default function StudentAnswerDetailModal({
               const earnedPts = b.earned !== undefined ? Number(b.earned) : 0
               const maxPts = Number(b.max || qObj.points || 1)
 
+              const borderAccentColor =
+                b.status === 'correct'
+                  ? '#10b981'
+                  : b.status === 'wrong'
+                  ? '#ef4444'
+                  : b.status === 'partial'
+                  ? '#f59e0b'
+                  : '#3b82f6'
+
               return (
                 <div
                   key={qNum}
                   style={{
+                    flexShrink: 0,
+                    width: '100%',
                     background: '#ffffff',
                     borderRadius: 12,
-                    border: `1.5px solid ${
-                      b.status === 'correct'
-                        ? 'rgba(16, 185, 129, 0.35)'
-                        : b.status === 'wrong'
-                        ? 'rgba(239, 68, 68, 0.35)'
-                        : b.status === 'partial'
-                        ? 'rgba(245, 158, 11, 0.35)'
-                        : 'rgba(59, 130, 246, 0.35)'
-                    }`,
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                    border: '1px solid #e2e8f0',
+                    borderLeft: `4px solid ${borderAccentColor}`,
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
                     overflow: 'hidden',
                   }}
                 >
@@ -469,46 +615,47 @@ export default function StudentAnswerDetailModal({
                   <div
                     style={{
                       padding: '0.75rem 1.15rem',
-                      background: 'var(--navy-light, #f8fafc)',
-                      borderBottom: '1px solid var(--border)',
+                      background: '#ffffff',
+                      borderBottom: '1px solid #f1f5f9',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       flexWrap: 'wrap',
-                      gap: '0.5rem',
+                      gap: '0.65rem',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                       <span
                         style={{
-                          width: 28,
-                          height: 28,
+                          width: 26,
+                          height: 26,
                           borderRadius: '50%',
-                          background: 'var(--navy)',
+                          background: '#0f172a',
                           color: '#ffffff',
-                          fontWeight: 800,
-                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          fontSize: '0.8rem',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
+                          flexShrink: 0,
                         }}
                       >
                         {qNum}
                       </span>
                       <span
                         style={{
-                          background: 'var(--surface)',
-                          border: '1px solid var(--border)',
-                          padding: '0.15rem 0.55rem',
+                          background: '#f1f5f9',
+                          border: '1px solid #e2e8f0',
+                          padding: '0.15rem 0.5rem',
                           borderRadius: 6,
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          color: 'var(--text-secondary)',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          color: '#475569',
                         }}
                       >
                         {typeLabel(qType)}
                       </span>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748b' }}>
                         Bobot: {formatScore(maxPts)} poin
                       </span>
                     </div>
@@ -516,9 +663,9 @@ export default function StudentAnswerDetailModal({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                       <span
                         style={{
-                          fontSize: '0.85rem',
-                          fontWeight: 800,
-                          color: earnedPts > 0 ? 'var(--success)' : 'var(--danger)',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          color: earnedPts > 0 ? '#15803d' : '#b91c1c',
                         }}
                       >
                         Skor: {formatScore(earnedPts)} / {formatScore(maxPts)}
@@ -528,35 +675,39 @@ export default function StudentAnswerDetailModal({
                   </div>
 
                   {/* Question Content Body */}
-                  <div style={{ padding: '1.25rem 1.35rem' }}>
+                  <div style={{ padding: '1.15rem 1.25rem' }}>
                     {/* Stimulus Media if present */}
                     {qObj.image_url && (
-                      <div style={{ marginBottom: '1rem', maxWidth: 450 }}>
-                        <AdaptiveExamImage src={qObj.image_url} alt={`Soal ${qNum}`} maxHeight={260} type="question" />
+                      <div style={{ marginBottom: '0.875rem', maxWidth: 450 }}>
+                        <AdaptiveExamImage src={qObj.image_url} alt={`Soal ${qNum}`} maxHeight={240} type="question" />
                       </div>
                     )}
 
                     {/* Question Text */}
-                    {qObj.question_text && (
-                      <div
-                        style={{
-                          fontSize: '0.95rem',
-                          lineHeight: 1.6,
-                          marginBottom: '1rem',
-                          color: 'var(--text-primary)',
-                        }}
-                      >
+                    <div
+                      style={{
+                        fontSize: '0.92rem',
+                        lineHeight: 1.6,
+                        marginBottom: '0.875rem',
+                        color: '#1e293b',
+                      }}
+                    >
+                      {qObj.question_text ? (
                         <FormattedText text={qObj.question_text} />
-                      </div>
-                    )}
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                          (Soal Butir #{qNum})
+                        </span>
+                      )}
+                    </div>
 
                     {/* Detailed Answer Breakdown based on Question Type */}
                     <div
                       style={{
-                        padding: '1rem',
+                        padding: '0.875rem 1rem',
                         borderRadius: 10,
-                        background: 'var(--navy-light, #f8fafc)',
-                        border: '1px solid var(--border)',
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
                       }}
                     >
                       <RenderQuestionAnswerBreakdown
@@ -579,18 +730,29 @@ export default function StudentAnswerDetailModal({
         {/* ─── Modal Footer ─────────────────────────────────────────── */}
         <div
           style={{
-            padding: '1rem 1.75rem',
-            background: 'var(--surface)',
-            borderTop: '1px solid var(--border)',
+            padding: '0.875rem 1.5rem',
+            background: '#ffffff',
+            borderTop: '1px solid #e2e8f0',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexShrink: 0,
           }}
         >
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
             Menampilkan {displayedItems.length} dari {breakdownList.length} butir soal
           </div>
-          <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            style={{
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              padding: '0.35rem 1.15rem',
+              borderRadius: 8,
+            }}
+            onClick={onClose}
+          >
             Tutup
           </button>
         </div>
@@ -608,15 +770,15 @@ function StatusBadge({ status }) {
           display: 'inline-flex',
           alignItems: 'center',
           gap: '0.25rem',
-          padding: '0.2rem 0.55rem',
+          padding: '0.15rem 0.5rem',
           borderRadius: 6,
-          background: 'rgba(16, 185, 129, 0.12)',
-          color: 'var(--success)',
+          background: '#dcfce7',
+          color: '#15803d',
           fontWeight: 700,
-          fontSize: '0.75rem',
+          fontSize: '0.72rem',
         }}
       >
-        <CheckCircle2 size={13} /> Benar
+        <CheckCircle2 size={12} /> Benar
       </span>
     )
   }
@@ -627,15 +789,15 @@ function StatusBadge({ status }) {
           display: 'inline-flex',
           alignItems: 'center',
           gap: '0.25rem',
-          padding: '0.2rem 0.55rem',
+          padding: '0.15rem 0.5rem',
           borderRadius: 6,
-          background: 'rgba(239, 68, 68, 0.12)',
-          color: 'var(--danger)',
+          background: '#fee2e2',
+          color: '#b91c1c',
           fontWeight: 700,
-          fontSize: '0.75rem',
+          fontSize: '0.72rem',
         }}
       >
-        <XCircle size={13} /> Salah
+        <XCircle size={12} /> Salah
       </span>
     )
   }
@@ -646,15 +808,15 @@ function StatusBadge({ status }) {
           display: 'inline-flex',
           alignItems: 'center',
           gap: '0.25rem',
-          padding: '0.2rem 0.55rem',
+          padding: '0.15rem 0.5rem',
           borderRadius: 6,
-          background: 'rgba(245, 158, 11, 0.12)',
-          color: 'var(--warning)',
+          background: '#fef3c7',
+          color: '#b45309',
           fontWeight: 700,
-          fontSize: '0.75rem',
+          fontSize: '0.72rem',
         }}
       >
-        <AlertTriangle size={13} /> Parsial
+        <AlertTriangle size={12} /> Parsial
       </span>
     )
   }
@@ -664,15 +826,15 @@ function StatusBadge({ status }) {
         display: 'inline-flex',
         alignItems: 'center',
         gap: '0.25rem',
-        padding: '0.2rem 0.55rem',
+        padding: '0.15rem 0.5rem',
         borderRadius: 6,
-        background: 'rgba(59, 130, 246, 0.12)',
-        color: '#2563eb',
+        background: '#dbeafe',
+        color: '#1d4ed8',
         fontWeight: 700,
-        fontSize: '0.75rem',
+        fontSize: '0.72rem',
       }}
     >
-      <Clock size={13} /> Belum Dinilai
+      <Clock size={12} /> Belum Dinilai
     </span>
   )
 }
@@ -681,15 +843,15 @@ function StatusBadge({ status }) {
 function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status, earned, max }) {
   const options = question?.options || {}
 
-  // 1. MCQ
+  // 1. MCQ & DROPDOWN
   if (qType === 'MCQ' || qType === 'DROPDOWN') {
     const keys = Object.keys(options).filter(k => k !== 'option_images')
     const givenKey = String(Array.isArray(given) ? given[0] : (given || '')).trim().toLowerCase()
     const correctKey = String(Array.isArray(correct) ? correct[0] : (correct || '')).trim().toLowerCase()
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', marginBottom: '0.15rem' }}>
           Pilihan Jawaban &amp; Respon Siswa:
         </div>
         {keys.map(k => {
@@ -697,29 +859,29 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
           const isStudentPick = givenKey === lk
           const isCorrectOption = correctKey === lk
 
-          let border = '1px solid var(--border)'
+          let border = '1px solid #e2e8f0'
           let bg = '#ffffff'
           let label = null
 
           if (isStudentPick && isCorrectOption) {
-            border = '2px solid var(--success)'
-            bg = 'rgba(16, 185, 129, 0.08)'
-            label = <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.75rem' }}>✓ Jawaban Siswa (Benar)</span>
+            border = '1.5px solid #16a34a'
+            bg = '#f0fdf4'
+            label = <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.72rem' }}>✓ Jawaban Siswa (Benar)</span>
           } else if (isStudentPick && !isCorrectOption) {
-            border = '2px solid var(--danger)'
-            bg = 'rgba(239, 68, 68, 0.08)'
-            label = <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.75rem' }}>✗ Jawaban Siswa (Salah)</span>
+            border = '1.5px solid #ef4444'
+            bg = '#fef2f2'
+            label = <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: '0.72rem' }}>✗ Jawaban Siswa (Salah)</span>
           } else if (!isStudentPick && isCorrectOption) {
-            border = '2px dashed var(--success)'
-            bg = 'rgba(16, 185, 129, 0.04)'
-            label = <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.75rem' }}>★ Kunci Jawaban</span>
+            border = '1.5px dashed #16a34a'
+            bg = '#f0fdf4'
+            label = <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.72rem' }}>★ Kunci Jawaban</span>
           }
 
           return (
             <div
               key={k}
               style={{
-                padding: '0.65rem 0.85rem',
+                padding: '0.6rem 0.85rem',
                 borderRadius: 8,
                 border,
                 background: bg,
@@ -735,18 +897,22 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
                     width: 24,
                     height: 24,
                     borderRadius: 6,
-                    background: isStudentPick ? (isCorrectOption ? 'var(--success)' : 'var(--danger)') : 'var(--slate)',
-                    color: isStudentPick ? '#ffffff' : 'var(--text-primary)',
+                    background: isStudentPick
+                      ? (isCorrectOption ? '#16a34a' : '#ef4444')
+                      : '#f1f5f9',
+                    color: isStudentPick ? '#ffffff' : '#334155',
+                    border: isStudentPick ? 'none' : '1px solid #cbd5e1',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '0.78rem',
-                    fontWeight: 800,
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    flexShrink: 0,
                   }}
                 >
                   {k.toUpperCase()}
                 </span>
-                <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                <span style={{ fontSize: '0.85rem', color: '#1e293b' }}>
                   {options[k]}
                 </span>
               </div>
@@ -755,7 +921,7 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
           )
         })}
         {!givenKey && (
-          <div style={{ fontSize: '0.8rem', color: 'var(--danger)', fontStyle: 'italic', marginTop: '0.25rem' }}>
+          <div style={{ fontSize: '0.75rem', color: '#b91c1c', fontStyle: 'italic', marginTop: '0.2rem' }}>
             ⚠️ Siswa tidak memilih jawaban untuk soal ini.
           </div>
         )}
@@ -763,7 +929,7 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
     )
   }
 
-  // 2. COMPLEX_MCQ
+  // 2. COMPLEX_MCQ & CHECKBOXES
   if (qType === 'COMPLEX_MCQ' || qType === 'CHECKBOXES') {
     const keys = Object.keys(options).filter(k => k !== 'option_images')
     const studentPicks = Array.isArray(given)
@@ -774,8 +940,8 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
       : (typeof correct === 'string' ? correct.split(',').map(s => s.trim().toLowerCase()) : [])
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', marginBottom: '0.15rem' }}>
           Pilihan Ganda Kompleks (Pilihan Siswa vs Kunci):
         </div>
         {keys.map(k => {
@@ -783,29 +949,29 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
           const isSelected = studentPicks.includes(lk)
           const isKey = correctPicks.includes(lk)
 
-          let border = '1px solid var(--border)'
+          let border = '1px solid #e2e8f0'
           let bg = '#ffffff'
           let badge = null
 
           if (isSelected && isKey) {
-            border = '2px solid var(--success)'
-            bg = 'rgba(16, 185, 129, 0.08)'
-            badge = <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.75rem' }}>✓ Dipilih Siswa (Benar)</span>
+            border = '1.5px solid #16a34a'
+            bg = '#f0fdf4'
+            badge = <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.72rem' }}>✓ Dipilih Siswa (Benar)</span>
           } else if (isSelected && !isKey) {
-            border = '2px solid var(--danger)'
-            bg = 'rgba(239, 68, 68, 0.08)'
-            badge = <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.75rem' }}>✗ Dipilih Siswa (Salah)</span>
+            border = '1.5px solid #ef4444'
+            bg = '#fef2f2'
+            badge = <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: '0.72rem' }}>✗ Dipilih Siswa (Salah)</span>
           } else if (!isSelected && isKey) {
-            border = '2px dashed var(--warning)'
-            bg = 'rgba(245, 158, 11, 0.05)'
-            badge = <span style={{ color: 'var(--warning)', fontWeight: 700, fontSize: '0.75rem' }}>⚠ Seharusnya Dipilih</span>
+            border = '1.5px dashed #d97706'
+            bg = '#fffbeb'
+            badge = <span style={{ color: '#b45309', fontWeight: 700, fontSize: '0.72rem' }}>⚠ Seharusnya Dipilih</span>
           }
 
           return (
             <div
               key={k}
               style={{
-                padding: '0.65rem 0.85rem',
+                padding: '0.6rem 0.85rem',
                 borderRadius: 8,
                 border,
                 background: bg,
@@ -816,9 +982,13 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                {isSelected ? <CheckSquare size={18} color={isKey ? 'var(--success)' : 'var(--danger)'} /> : <Square size={18} style={{ opacity: 0.3 }} />}
-                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{k.toUpperCase()}.</span>
-                <span style={{ fontSize: '0.9rem' }}>{options[k]}</span>
+                {isSelected ? (
+                  <CheckSquare size={16} color={isKey ? '#16a34a' : '#ef4444'} />
+                ) : (
+                  <Square size={16} style={{ color: '#94a3b8' }} />
+                )}
+                <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#1e293b' }}>{k.toUpperCase()}.</span>
+                <span style={{ fontSize: '0.85rem', color: '#1e293b' }}>{options[k]}</span>
               </div>
               {badge}
             </div>
@@ -835,8 +1005,8 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
     const correctMap = (correct && typeof correct === 'object') ? correct : {}
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>
           Pernyataan Benar / Salah:
         </div>
         {keys.map((k, idx) => {
@@ -848,35 +1018,35 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
             <div
               key={k}
               style={{
-                padding: '0.75rem 0.9rem',
+                padding: '0.65rem 0.85rem',
                 borderRadius: 8,
                 background: '#ffffff',
-                border: isMatch ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
+                border: isMatch ? '1px solid #bbf7d0' : '1px solid #fecaca',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.4rem',
+                gap: '0.35rem',
               }}
             >
-              <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1e293b' }}>
                 {idx + 1}. {options[k]}
               </div>
-              <div style={{ display: 'flex', gap: '1rem', fontSize: '0.82rem', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '1rem', fontSize: '0.78rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div>
                   Jawaban Siswa:{' '}
-                  <strong style={{ color: isMatch ? 'var(--success)' : 'var(--danger)' }}>
+                  <strong style={{ color: isMatch ? '#15803d' : '#b91c1c' }}>
                     {sVal === 'true' ? '✓ Benar' : sVal === 'false' ? '✗ Salah' : '— (Tidak Dijawab)'}
                   </strong>
                 </div>
                 <div>
                   Kunci:{' '}
-                  <strong style={{ color: 'var(--text-primary)' }}>
+                  <strong style={{ color: '#0f172a' }}>
                     {cVal === 'true' ? 'Benar' : cVal === 'false' ? 'Salah' : '—'}
                   </strong>
                 </div>
                 {isMatch ? (
-                  <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.75rem' }}>✓ Tepat</span>
+                  <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.72rem' }}>✓ Tepat</span>
                 ) : (
-                  <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.75rem' }}>✗ Tidak Tepat</span>
+                  <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: '0.72rem' }}>✗ Tidak Tepat</span>
                 )}
               </div>
             </div>
@@ -895,8 +1065,8 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
     const correctPairs = (correct && typeof correct === 'object') ? correct : {}
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>
           Pasangan Menjodohkan:
         </div>
         {leftKeys.map((lKey, idx) => {
@@ -908,31 +1078,31 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
             <div
               key={lKey}
               style={{
-                padding: '0.75rem 0.9rem',
+                padding: '0.65rem 0.85rem',
                 borderRadius: 8,
                 background: '#ffffff',
-                border: isMatch ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
+                border: isMatch ? '1px solid #bbf7d0' : '1px solid #fecaca',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
-                gap: '0.75rem',
+                gap: '0.5rem',
               }}
             >
-              <div style={{ flex: 1, minWidth: 200, fontSize: '0.88rem' }}>
+              <div style={{ flex: 1, minWidth: 180, fontSize: '0.85rem', color: '#1e293b' }}>
                 <strong>{idx + 1}.</strong> {leftItems[lKey]}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem' }}>
-                <ArrowRight size={14} color="var(--text-muted)" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem' }}>
+                <ArrowRight size={13} color="#94a3b8" />
                 <div>
                   Pilihan Siswa:{' '}
-                  <strong style={{ color: isMatch ? 'var(--success)' : 'var(--danger)' }}>
+                  <strong style={{ color: isMatch ? '#15803d' : '#b91c1c' }}>
                     {sRight ? `${sRight}. ${rightItems[sRight] || ''}` : '— (Kosong)'}
                   </strong>
                 </div>
                 {!isMatch && (
-                  <div style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
-                    (Kunci: <strong style={{ color: 'var(--success)' }}>{cRight}. {rightItems[cRight] || ''}</strong>)
+                  <div style={{ color: '#64748b', marginLeft: 6 }}>
+                    (Kunci: <strong style={{ color: '#15803d' }}>{cRight}. {rightItems[cRight] || ''}</strong>)
                   </div>
                 )}
               </div>
@@ -956,18 +1126,18 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
     const correctOrder = Array.isArray(correct) ? correct : []
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>
           Urutan Langkah / Kejadian:
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
           {/* Urutan Siswa */}
-          <div style={{ padding: '0.75rem', borderRadius: 8, background: '#ffffff', border: '1px solid var(--border)' }}>
-            <div style={{ fontWeight: 700, fontSize: '0.82rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+          <div style={{ padding: '0.75rem', borderRadius: 8, background: '#ffffff', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.78rem', marginBottom: '0.4rem', color: '#475569' }}>
               Urutan Jawaban Siswa:
             </div>
             {studentOrder.length === 0 ? (
-              <span style={{ fontSize: '0.82rem', color: 'var(--danger)', fontStyle: 'italic' }}>
+              <span style={{ fontSize: '0.78rem', color: '#b91c1c', fontStyle: 'italic' }}>
                 Tidak ada urutan yang diatur oleh siswa.
               </span>
             ) : (
@@ -977,19 +1147,19 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
                   <div
                     key={idx}
                     style={{
-                      fontSize: '0.82rem',
-                      padding: '0.35rem 0',
+                      fontSize: '0.78rem',
+                      padding: '0.3rem 0',
                       borderBottom: '1px dashed #f1f5f9',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.4rem',
                     }}
                   >
-                    <span style={{ fontWeight: 700, color: isMatchAtRank ? 'var(--success)' : 'var(--danger)' }}>
+                    <span style={{ fontWeight: 700, color: isMatchAtRank ? '#15803d' : '#b91c1c' }}>
                       {idx + 1}.
                     </span>
-                    <span>{itemMap[itId] || itId}</span>
-                    {isMatchAtRank && <span style={{ color: 'var(--success)', fontSize: '0.75rem' }}>✓</span>}
+                    <span style={{ color: '#1e293b' }}>{itemMap[itId] || itId}</span>
+                    {isMatchAtRank && <span style={{ color: '#15803d', fontSize: '0.72rem' }}>✓</span>}
                   </div>
                 )
               })
@@ -997,24 +1167,24 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
           </div>
 
           {/* Urutan Kunci */}
-          <div style={{ padding: '0.75rem', borderRadius: 8, background: '#ffffff', border: '1px solid var(--border)' }}>
-            <div style={{ fontWeight: 700, fontSize: '0.82rem', marginBottom: '0.5rem', color: 'var(--success)' }}>
+          <div style={{ padding: '0.75rem', borderRadius: 8, background: '#ffffff', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.78rem', marginBottom: '0.4rem', color: '#15803d' }}>
               Kunci Urutan yang Benar:
             </div>
             {correctOrder.map((itId, idx) => (
               <div
                 key={idx}
                 style={{
-                  fontSize: '0.82rem',
-                  padding: '0.35rem 0',
+                  fontSize: '0.78rem',
+                  padding: '0.3rem 0',
                   borderBottom: '1px dashed #f1f5f9',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.4rem',
                 }}
               >
-                <strong style={{ color: 'var(--success)' }}>{idx + 1}.</strong>
-                <span>{itemMap[itId] || itId}</span>
+                <strong style={{ color: '#15803d' }}>{idx + 1}.</strong>
+                <span style={{ color: '#1e293b' }}>{itemMap[itId] || itId}</span>
               </div>
             ))}
           </div>
@@ -1033,20 +1203,20 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
     const isStanceMatch = stance && stance === correctStance
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>
           Respon Setuju / Tidak Setuju:
         </div>
-        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.88rem' }}>
+        <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.82rem' }}>
           <div>
             Sikap Siswa:{' '}
-            <strong style={{ color: isStanceMatch ? 'var(--success)' : 'var(--danger)' }}>
+            <strong style={{ color: isStanceMatch ? '#15803d' : '#b91c1c' }}>
               {stance === 'agree' ? '👍 Setuju' : stance === 'disagree' ? '👎 Tidak Setuju' : '— (Kosong)'}
             </strong>
           </div>
           <div>
             Kunci Sikap:{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
+            <strong style={{ color: '#0f172a' }}>
               {correctStance === 'agree' ? '👍 Setuju' : correctStance === 'disagree' ? '👎 Tidak Setuju' : 'Bebas / Berdasarkan Argumen'}
             </strong>
           </div>
@@ -1054,10 +1224,10 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
 
         {/* Reasons */}
         {studentVal.reasons && Array.isArray(studentVal.reasons) && studentVal.reasons.length > 0 && (
-          <div style={{ fontSize: '0.84rem' }}>
-            <span style={{ fontWeight: 600 }}>Alasan Dipilih Siswa: </span>
+          <div style={{ fontSize: '0.78rem' }}>
+            <span style={{ fontWeight: 600, color: '#475569' }}>Alasan Dipilih Siswa: </span>
             {studentVal.reasons.map(rKey => (
-              <span key={rKey} style={{ background: '#ffffff', padding: '0.15rem 0.5rem', borderRadius: 4, border: '1px solid var(--border)', marginRight: 6 }}>
+              <span key={rKey} style={{ background: '#ffffff', padding: '0.15rem 0.45rem', borderRadius: 4, border: '1px solid #cbd5e1', marginRight: 6, color: '#1e293b' }}>
                 <strong>{rKey}.</strong> {options[rKey] || ''}
               </span>
             ))}
@@ -1065,11 +1235,11 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
         )}
 
         {studentVal.essay && (
-          <div style={{ background: '#ffffff', padding: '0.75rem', borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.88rem' }}>
-            <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+          <div style={{ background: '#ffffff', padding: '0.75rem', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.72rem', color: '#64748b', marginBottom: '0.2rem' }}>
               Argumen / Alasan Tertulis Siswa:
             </div>
-            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, color: '#1e293b' }}>
               {studentVal.essay}
             </div>
           </div>
@@ -1084,22 +1254,22 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
     const rubric = question?.rubric || question?.options?.rubric || ''
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569' }}>
           Jawaban Esai Siswa:
         </div>
 
         <div
           style={{
             background: '#ffffff',
-            padding: '1rem',
+            padding: '0.875rem 1rem',
             borderRadius: 8,
-            border: '1px solid var(--border)',
-            minHeight: 80,
+            border: '1px solid #e2e8f0',
+            minHeight: 70,
             whiteSpace: 'pre-wrap',
             lineHeight: 1.6,
-            fontSize: '0.92rem',
-            color: studentText ? 'var(--text-primary)' : 'var(--danger)',
+            fontSize: '0.88rem',
+            color: studentText ? '#1e293b' : '#b91c1c',
             fontStyle: studentText ? 'normal' : 'italic',
           }}
         >
@@ -1109,15 +1279,15 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
         {rubric && (
           <div
             style={{
-              background: 'rgba(245, 158, 11, 0.05)',
-              padding: '0.75rem 1rem',
+              background: '#fffbeb',
+              padding: '0.65rem 0.85rem',
               borderRadius: 8,
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              fontSize: '0.82rem',
-              color: 'var(--text-secondary)',
+              border: '1px solid #fde68a',
+              fontSize: '0.78rem',
+              color: '#92400e',
             }}
           >
-            <div style={{ fontWeight: 700, color: 'var(--warning)', marginBottom: '0.25rem' }}>
+            <div style={{ fontWeight: 700, color: '#b45309', marginBottom: '0.2rem' }}>
               Rubrik / Pedoman Jawaban Guru:
             </div>
             <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
@@ -1126,11 +1296,11 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-          <div>
-            Panjang Karakter: <strong>{studentText.length}</strong> karakter
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ color: '#64748b' }}>
+            Panjang Karakter: <strong style={{ color: '#0f172a' }}>{studentText.length}</strong> karakter
           </div>
-          <div style={{ fontWeight: 700, color: status === 'pending' ? '#2563eb' : 'var(--success)' }}>
+          <div style={{ fontWeight: 700, color: status === 'pending' ? '#2563eb' : '#15803d' }}>
             {status === 'pending'
               ? '⏳ Belum dinilai guru'
               : `Skor Diberikan: ${formatScore(earned)} / ${formatScore(max)} poin`}
@@ -1142,7 +1312,7 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
 
   // Fallback
   return (
-    <div style={{ fontSize: '0.85rem' }}>
+    <div style={{ fontSize: '0.8rem', color: '#1e293b' }}>
       <div>Jawaban Siswa: <code>{JSON.stringify(given)}</code></div>
       <div>Kunci: <code>{JSON.stringify(correct)}</code></div>
     </div>
