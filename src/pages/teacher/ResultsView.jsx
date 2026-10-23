@@ -4,8 +4,10 @@ import { exams, results, sessions, questions, users, fetchStudentProfilesMap, is
 import { getCurrentUser } from '../../lib/auth'
 import { gradeExam } from '../../lib/grader'
 import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
-import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText, Copy, Plus, Users, UserX, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText, Copy, Plus, Users, UserX, AlertTriangle, FileDown } from 'lucide-react'
 import { formatScore, roundScore } from '../../lib/format'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function ResultsView() {
   const { examId } = useParams()
@@ -29,6 +31,7 @@ export default function ResultsView() {
   const [attendanceFilter, setAttendanceFilter] = useState('all') // 'all' | 'all_targets' | 'unattempted' | 'passed' | 'failed'
   const [copiedWaNotice, setCopiedWaNotice] = useState('')
   const [makeupLoading, setMakeupLoading] = useState(null)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
 
   // Map of questions by question number for quick metadata lookup
   const questionMap = new Map((questionList || []).map(q => [Number(q.number), q]))
@@ -529,6 +532,281 @@ export default function ResultsView() {
     setSortConfig({ key, direction })
   }
 
+  // Trigger native print with synchronized auto-naming for browser print-to-PDF
+  function handlePrint() {
+    const sanitizedTitle = (exam?.title || 'Hasil_Ujian')
+      .replace(/[/\\?%*:|"<>]/g, '')
+      .trim()
+      .replace(/\s+/g, '_')
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    const dateStr = `${yyyy}-${mm}-${dd}`
+    const originalTitle = document.title
+    document.title = `${sanitizedTitle}_${dateStr}`
+    window.print()
+    setTimeout(() => {
+      document.title = originalTitle
+    }, 1000)
+  }
+
+  // Generate and download formal A4 PDF result report
+  async function handleDownloadPdf() {
+    if (downloadingPdf) return
+    setDownloadingPdf(true)
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+
+      const sanitizedTitle = (exam?.title || 'Hasil_Ujian')
+        .replace(/[/\\?%*:|"<>]/g, '')
+        .trim()
+        .replace(/\s+/g, '_')
+      const now = new Date()
+      const yyyy = now.getFullYear()
+      const mm = String(now.getMonth() + 1).padStart(2, '0')
+      const dd = String(now.getDate()).padStart(2, '0')
+      const dateStr = `${yyyy}-${mm}-${dd}`
+      const fileName = `${sanitizedTitle}_${dateStr}.pdf`
+
+      // Attempt to load school logo
+      let logoDataUrl = null
+      try {
+        logoDataUrl = await new Promise((resolve) => {
+          const img = new Image()
+          img.crossOrigin = 'Anonymous'
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas')
+              canvas.width = img.width
+              canvas.height = img.height
+              const ctx = canvas.getContext('2d')
+              ctx.drawImage(img, 0, 0)
+              resolve(canvas.toDataURL('image/png'))
+            } catch {
+              resolve(null)
+            }
+          }
+          img.onerror = () => resolve(null)
+          img.src = `${import.meta.env.BASE_URL}Logo_SNT.webp`
+        })
+      } catch {
+        logoDataUrl = null
+      }
+
+      const pageWidth = 210
+      const marginX = 12
+
+      if (logoDataUrl) {
+        try {
+          doc.addImage(logoDataUrl, 'PNG', marginX, 10, 16, 16)
+        } catch (err) {
+          console.warn('Could not render logo in PDF:', err)
+        }
+      }
+
+      // Formal School Header
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(13)
+      doc.setTextColor(27, 51, 97) // #1b3361
+      doc.text('SEKOLAH NASIONAL TERINTEGRASI 10 KUPANG', 105, 15, { align: 'center' })
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(71, 85, 105) // #475569
+      doc.text('SISTEM ASESMEN TERPADU (CBT) • REKAPITULASI HASIL ASESMEN SISWA', 105, 20, { align: 'center' })
+
+      // Decorative divider rule
+      doc.setDrawColor(27, 51, 97)
+      doc.setLineWidth(0.6)
+      doc.line(marginX, 28, pageWidth - marginX, 28)
+      doc.setDrawColor(203, 213, 225)
+      doc.setLineWidth(0.2)
+      doc.line(marginX, 29, pageWidth - marginX, 29)
+
+      // Metadata summary
+      doc.setFontSize(8)
+      doc.setTextColor(15, 23, 42)
+
+      // Left Column
+      doc.setFont('helvetica', 'bold')
+      doc.text('Nama Ujian', marginX, 35)
+      doc.text(':', marginX + 24, 35)
+      doc.setFont('helvetica', 'normal')
+      doc.text(exam?.title || '—', marginX + 27, 35)
+
+      doc.setFont('helvetica', 'bold')
+      doc.text('Mata Pelajaran', marginX, 40)
+      doc.text(':', marginX + 24, 40)
+      doc.setFont('helvetica', 'normal')
+      doc.text(exam?.subject || exam?.category || 'Umum', marginX + 27, 40)
+
+      doc.setFont('helvetica', 'bold')
+      doc.text('Kelas Target', marginX, 45)
+      doc.text(':', marginX + 24, 45)
+      doc.setFont('helvetica', 'normal')
+      const targetClassNames = targetStudents.length > 0
+        ? Array.from(new Set(targetStudents.map(s => s.users?.classes?.name || s.users?.kelas || s.users?.class_section || s.kelas).filter(Boolean))).join(', ')
+        : (exam?.target_kelas || exam?.classes?.name || 'Semua Kelas')
+      doc.text(targetClassNames || 'Semua Kelas', marginX + 27, 45)
+
+      // Right Column
+      const colRightLabel = 120
+      const colRightVal = 145
+
+      doc.setFont('helvetica', 'bold')
+      doc.text('Standar KKM', colRightLabel, 35)
+      doc.text(':', colRightVal - 2, 35)
+      doc.setFont('helvetica', 'normal')
+      doc.text(String(passingGrade), colRightVal, 35)
+
+      doc.setFont('helvetica', 'bold')
+      doc.text('Tanggal Ujian', colRightLabel, 40)
+      doc.text(':', colRightVal - 2, 40)
+      doc.setFont('helvetica', 'normal')
+      const examDateStr = exam?.created_at
+        ? new Date(exam.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+        : new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+      doc.text(examDateStr, colRightVal, 40)
+
+      doc.setFont('helvetica', 'bold')
+      doc.text('Statistik', colRightLabel, 45)
+      doc.text(':', colRightVal - 2, 45)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Rata-rata: ${avgStr}% (Lulus: ${passCount}, Belum: ${failCount})`, colRightVal, 45)
+
+      // Table rows data
+      const tableBody = sortedResults.map((r, i) => {
+        const isUnattempted = !!r.isUnattempted
+        const studentName = r.users?.full_name || r.student?.full_name || r.users?.name || r.student?.name || (r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa')
+        const studentClass = r.users?.classes?.name || r.users?.kelas || r.users?.class_section || r.student?.kelas || '—'
+        const nisnOrUser = r.users?.nisn ? `NISN: ${r.users.nisn}` : (r.users?.username ? `@${r.users.username}` : '')
+        const nameWithMeta = nisnOrUser ? `${studentName}\n${nisnOrUser}` : studentName
+
+        if (isUnattempted) {
+          return [
+            String(i + 1),
+            nameWithMeta,
+            studentClass,
+            '—',
+            '—',
+            '0.00%',
+            'TIDAK HADIR',
+            '—'
+          ]
+        }
+
+        const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
+        const essayVal = essayEdits[r.id] !== undefined ? Number(essayEdits[r.id]) : (Number(r.essay_score) || 0)
+        const currentTotal = (Number(r.auto_score) || 0) + essayVal
+        const pctNum = maxPossible > 0 ? (currentTotal / maxPossible) * 100 : 0
+        const pctStr = `${formatScore(pctNum)}%`
+        const isPassed = pctNum >= passingGrade
+
+        return [
+          String(i + 1),
+          nameWithMeta,
+          studentClass,
+          formatScore(r.auto_score),
+          formatScore(essayVal),
+          pctStr,
+          isPassed ? 'LULUS' : 'BELUM LULUS',
+          r.violation_count > 0 ? `⚠ ${r.violation_count}` : '0'
+        ]
+      })
+
+      const runAutoTable = typeof autoTable === 'function' ? autoTable : (doc.autoTable ? doc.autoTable.bind(doc) : null)
+
+      if (runAutoTable) {
+        runAutoTable(doc, {
+          startY: 50,
+          margin: { top: 20, right: marginX, bottom: 20, left: marginX },
+          head: [['No', 'Nama Siswa', 'Kelas', 'Skor Auto', 'Skor Esai', 'Nilai Akhir', 'Keterangan', 'Pelanggaran']],
+          body: tableBody,
+          showHead: 'everyPage', // Guarantees table header repeats on every paper page in PDF
+          theme: 'grid',
+          headStyles: {
+            fillColor: [27, 51, 97],
+            textColor: [255, 255, 255],
+            fontSize: 8.5,
+            fontStyle: 'bold',
+            halign: 'center',
+            valign: 'middle',
+            cellPadding: 2.5
+          },
+          styles: {
+            fontSize: 8,
+            cellPadding: 2,
+            textColor: [30, 41, 59],
+            lineColor: [203, 213, 225],
+            lineWidth: 0.15,
+            valign: 'middle'
+          },
+          columnStyles: {
+            0: { halign: 'center', cellWidth: 10 },
+            1: { halign: 'left', cellWidth: 54 },
+            2: { halign: 'center', cellWidth: 20 },
+            3: { halign: 'center', cellWidth: 20 },
+            4: { halign: 'center', cellWidth: 20 },
+            5: { halign: 'center', cellWidth: 22, fontStyle: 'bold' },
+            6: { halign: 'center', cellWidth: 24, fontStyle: 'bold' },
+            7: { halign: 'center', cellWidth: 16 }
+          },
+          alternateRowStyles: {
+            fillColor: [248, 250, 252]
+          },
+          didParseCell: (data) => {
+            if (data.section === 'body') {
+              if (data.column.index === 6) {
+                const val = data.cell.raw
+                if (val === 'LULUS') {
+                  data.cell.styles.textColor = [22, 101, 52] // green-800
+                } else if (val === 'BELUM LULUS') {
+                  data.cell.styles.textColor = [185, 28, 28] // red-700
+                } else if (val === 'TIDAK HADIR') {
+                  data.cell.styles.textColor = [220, 38, 38] // red-600
+                  data.row.styles.fillColor = [254, 242, 242]
+                }
+              }
+              if (data.column.index === 7 && String(data.cell.raw).includes('⚠')) {
+                data.cell.styles.textColor = [217, 119, 6] // amber-600
+                data.cell.styles.fontStyle = 'bold'
+              }
+            }
+          }
+        })
+      }
+
+      // Add page numbering and watermark footer to every page
+      const totalPages = doc.internal.getNumberOfPages()
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p)
+        doc.setFontSize(7.5)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(148, 163, 184) // #94a3b8
+
+        doc.setDrawColor(226, 232, 240)
+        doc.setLineWidth(0.2)
+        doc.line(marginX, 287, pageWidth - marginX, 287)
+
+        doc.text('Dokumen Resmi Rekapitulasi Penilaian CBT — SNT 10 Kupang', marginX, 291)
+        doc.text(`Halaman ${p} dari ${totalPages}`, pageWidth - marginX, 291, { align: 'right' })
+      }
+
+      doc.save(fileName)
+    } catch (err) {
+      console.error('Download PDF error:', err)
+      alert('Gagal mengunduh PDF: ' + (err.message || 'Terjadi kesalahan'))
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
   // Combined and filtered display list based on attendanceFilter
   let displayList = []
   if (attendanceFilter === 'unattempted') {
@@ -685,7 +963,24 @@ export default function ResultsView() {
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/analytics/${examId}`)}>
               <BarChart2 size={15} /> Analisis Soal
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => window.print()}><Printer size={15} /> Cetak</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf || sortedResults.length === 0}
+              title="Unduh rekapitulasi nilai siswa dalam format PDF A4"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}
+            >
+              <FileDown size={15} style={{ animation: downloadingPdf ? 'spin 1s linear infinite' : 'none' }} />
+              {downloadingPdf ? 'Menyiapkan...' : 'Unduh PDF'}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handlePrint}
+              title="Cetak lembar nilai (A4)"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}
+            >
+              <Printer size={15} /> Cetak
+            </button>
           </div>
         </div>
       </div>
@@ -850,7 +1145,7 @@ export default function ResultsView() {
             <table>
               <thead>
                 <tr>
-                  <th className="no-print">#</th>
+                  <th style={{ width: '45px', textAlign: 'center' }}>No</th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('name')}>
                     Nama Siswa {sortConfig.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
@@ -905,7 +1200,7 @@ export default function ResultsView() {
                             borderLeft: '4px solid #ef4444'
                           }}
                         >
-                          <td className="text-muted no-print">{i + 1}</td>
+                          <td className="text-muted" style={{ textAlign: 'center', fontWeight: 600 }}>{i + 1}</td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                               <span style={{ fontWeight: 700, color: '#991b1b' }}>
@@ -1019,7 +1314,7 @@ export default function ResultsView() {
 
                     return (
                       <tr key={r.id}>
-                        <td className="text-muted no-print">{i + 1}</td>
+                        <td className="text-muted" style={{ textAlign: 'center', fontWeight: 600 }}>{i + 1}</td>
                         <td style={{ fontWeight: 600 }}>
                           {r.users?.full_name || r.student?.full_name || r.users?.name || r.student?.name || (r.student_id ? `Siswa (${r.student_id.slice(0, 8)})` : 'Siswa')}
                           {r.users?.username && (
