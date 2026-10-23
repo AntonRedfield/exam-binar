@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { localDb } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { Users, BookOpen, BarChart2, Activity, Plus, ArrowRight, AlertTriangle, GraduationCap, TrendingUp, School } from 'lucide-react'
+import { formatScore } from '../../lib/format'
 
 const DEFAULT_ADMIN_STATS = {
   totalUsers: 0,
@@ -55,10 +56,10 @@ export default function AdminDashboard() {
         const distrib = [0, 0, 0, 0, 0]
         if (recentResults?.length) {
           const pcts = recentResults.map(r => {
-            const tot = (r.auto_score || 0) + (r.essay_score || 0)
+            const tot = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
             return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
           })
-          avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
+          avgScore = formatScore(pcts.reduce((a, b) => a + b, 0) / pcts.length)
           totalViolations = recentResults.reduce((sum, r) => sum + (r.violation_count || 0), 0)
           recentResults.forEach(r => {
             const tot = (r.auto_score || 0) + (r.essay_score || 0)
@@ -118,7 +119,7 @@ export default function AdminDashboard() {
             { label: 'Total Guru', value: stats.totalTeachers, color: 'var(--gold-darker)', icon: <Users size={22} /> },
             { label: 'Total Ujian', value: stats.totalExams, color: '#1b3361', icon: <BookOpen size={22} /> },
             { label: 'Ujian Aktif', value: stats.activeExams, color: 'var(--success)', icon: <Activity size={22} /> },
-            { label: 'Rata-rata Nilai', value: `${stats.avgScore}%`, color: Number(stats.avgScore) >= 60 ? 'var(--success)' : 'var(--danger)', icon: <TrendingUp size={22} /> },
+            { label: 'Rata-rata Nilai', value: `${formatScore(stats.avgScore)}%`, color: Number(String(stats.avgScore).replace(',', '.')) >= 60 ? 'var(--success)' : 'var(--danger)', icon: <TrendingUp size={22} /> },
             { label: 'Total Pelanggaran', value: stats.totalViolations, color: 'var(--warning)', icon: <AlertTriangle size={22} /> },
           ].map(s => (
             <div key={s.label} className="stat-card">

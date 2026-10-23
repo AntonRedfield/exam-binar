@@ -5,6 +5,7 @@ import { exams } from '../../lib/db'
 import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen, ClipboardList, Play, Sparkles, Search, X, ArrowDownUp, Check } from 'lucide-react'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
+import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
 
 export default function ExamList() {
   const user = getCurrentUser()
@@ -16,6 +17,8 @@ export default function ExamList() {
   const [sortConfig, setSortConfig] = useState({ key: 'auto', direction: 'desc' })
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'published' | 'draft' | 'closed'
+  const [unpublishModal, setUnpublishModal] = useState({ isOpen: false, exam: null, isProcessing: false })
+  const [notification, setNotification] = useState(null)
 
   async function load() {
     const isTeacher = user?.role === 'MODERATOR' || user?.level === 2 || user?.level === 3
@@ -28,9 +31,30 @@ export default function ExamList() {
   useEffect(() => { load() }, [user.id])
 
   async function togglePublish(exam) {
-    const newStatus = exam.status === 'published' ? 'draft' : 'published'
-    await exams.update(exam.id, { status: newStatus })
+    if (exam.status === 'published') {
+      setUnpublishModal({ isOpen: true, exam, isProcessing: false })
+      return
+    }
+    await exams.update(exam.id, { status: 'published' })
     await load()
+  }
+
+  async function handleConfirmUnpublish() {
+    if (!unpublishModal.exam) return
+    const targetExam = unpublishModal.exam
+    setUnpublishModal(prev => ({ ...prev, isProcessing: true }))
+    try {
+      const res = await exams.unpublishAndForceSubmit(targetExam.id)
+      setUnpublishModal({ isOpen: false, exam: null, isProcessing: false })
+      await load()
+      const submittedCount = res.countSubmitted || 0
+      setNotification(`Ujian "${targetExam.title}" berhasil di-unpublish. ${submittedCount > 0 ? `${submittedCount} siswa aktif berhasil dikumpulkan & dinilai otomatis.` : 'Ujian kini berstatus Draft.'}`)
+      setTimeout(() => setNotification(null), 6000)
+    } catch (err) {
+      console.error('Error during unpublish:', err)
+      alert('Terjadi kesalahan saat membatalkan publikasi ujian: ' + (err.message || err))
+      setUnpublishModal(prev => ({ ...prev, isProcessing: false }))
+    }
   }
 
   async function handleDelete(id) {
@@ -165,6 +189,18 @@ export default function ExamList() {
             </Link>
           </div>
         </div>
+
+        {notification && (
+          <div className="alert alert-success" style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', animation: 'fadeIn 0.2s ease-out' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Check size={16} />
+              <span>{notification}</span>
+            </div>
+            <button className="btn btn-ghost btn-xs" onClick={() => setNotification(null)} style={{ padding: '0.2rem' }}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="page-body">
@@ -503,6 +539,15 @@ export default function ExamList() {
           </>
         )}
       </div>
+
+      {/* Unpublish & Force-Submit Warning Modal */}
+      <UnpublishExamModal
+        isOpen={unpublishModal.isOpen}
+        onClose={() => setUnpublishModal({ isOpen: false, exam: null, isProcessing: false })}
+        exam={unpublishModal.exam}
+        onConfirm={handleConfirmUnpublish}
+        isProcessing={unpublishModal.isProcessing}
+      />
     </>
   )
 }

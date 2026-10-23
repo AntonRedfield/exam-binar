@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { exams, sessions } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
+import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
 import {
   Activity,
   Lock,
@@ -140,6 +141,26 @@ export default function Monitor() {
   const [extraTimeLoading, setExtraTimeLoading] = useState(false)
   const [extraTimeError, setExtraTimeError] = useState('')
   const [extraTimeSuccess, setExtraTimeSuccess] = useState('')
+
+  // Unpublish & Force-Submit Exam Modal State
+  const [unpublishModalOpen, setUnpublishModalOpen] = useState(false)
+  const [isUnpublishing, setIsUnpublishing] = useState(false)
+
+  async function handleConfirmUnpublish() {
+    setIsUnpublishing(true)
+    try {
+      const res = await exams.unpublishAndForceSubmit(examId)
+      setUnpublishModalOpen(false)
+      await load()
+      alert(`Ujian berhasil ditutup & di-unpublish. Sebanyak ${res.countSubmitted || 0} siswa aktif dikumpulkan & dinilai otomatis.`)
+      navigate(isUnderAdmin ? `/admin/results/${examId}` : `/teacher/results/${examId}`)
+    } catch (err) {
+      console.error('Error during unpublish in Monitor:', err)
+      alert('Gagal menutup ujian: ' + (err.message || err))
+    } finally {
+      setIsUnpublishing(false)
+    }
+  }
 
   // Bulk Extra Time Management State
   const [bulkExtraTimeOpen, setBulkExtraTimeOpen] = useState(false)
@@ -711,6 +732,25 @@ export default function Monitor() {
               <Edit2 size={13} /> Edit Lengkap
             </button>
             <button className="btn btn-ghost btn-sm" onClick={load}><RefreshCcw size={15} /> Refresh</button>
+            {exam?.status === 'published' && (
+              <button
+                className="btn btn-sm"
+                onClick={() => setUnpublishModalOpen(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: 700,
+                  boxShadow: '0 2px 8px rgba(220, 38, 38, 0.25)'
+                }}
+                title="Tutup & Kumpul Paksa Ujian (Force submit semua siswa & nilai otomatis)"
+              >
+                <Lock size={14} /> Tutup &amp; Nilai Ujian
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2474,6 +2514,15 @@ export default function Monitor() {
           </div>
         </div>
       )}
+
+      {/* Unpublish & Force-Submit Warning Modal */}
+      <UnpublishExamModal
+        isOpen={unpublishModalOpen}
+        onClose={() => setUnpublishModalOpen(false)}
+        exam={exam}
+        onConfirm={handleConfirmUnpublish}
+        isProcessing={isUnpublishing}
+      />
     </>
   )
 }

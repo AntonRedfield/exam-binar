@@ -5,6 +5,7 @@ import { exams, sessions, results } from '../lib/db'
 import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap, ClipboardList, KeyRound } from 'lucide-react'
 import BiometricPrompt from '../components/BiometricPrompt'
 import ChangePasswordModal from '../components/ChangePasswordModal'
+import { formatScore, roundScore } from '../lib/format'
 
 function getStatusBadge(status, returneeRequired = false) {
   if (returneeRequired) return <span className="badge badge-returnee">🔒 Returnee</span>
@@ -204,12 +205,12 @@ export default function StudentHome() {
 
               let scoreNode = null
               if (isDone && result && !isSurvey) {
-                const totalScore = (result.auto_score || 0) + (result.essay_score || 0)
+                const totalScore = roundScore((Number(result.auto_score) || 0) + (Number(result.essay_score) || 0))
                 const bd = (() => { try { return JSON.parse(result.breakdown || '[]') } catch { return [] } })()
-                const bdMax = bd.reduce((sum, b) => sum + (Number(b.max) || 0), 0)
-                const maxScore = Math.max(result.max_auto_score || 0, bdMax)
+                const bdMax = roundScore(bd.reduce((sum, b) => sum + (Number(b.max) || 0), 0))
+                const maxScore = roundScore(Math.max(Number(result.max_auto_score) || 0, bdMax))
                 const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
-                const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
+                const pctStr = formatScore(pctNum)
                 scoreNode = <span className="text-success">Nilai: {pctStr}%</span>
               }
 

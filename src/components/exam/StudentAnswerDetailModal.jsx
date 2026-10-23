@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import FormattedText from '../common/FormattedText'
 import AdaptiveExamImage from './AdaptiveExamImage'
+import { formatScore, roundScore } from '../../lib/format'
 
 export default function StudentAnswerDetailModal({
   result,
@@ -39,12 +40,12 @@ export default function StudentAnswerDetailModal({
   // Score metrics
   const autoScore = Number(result?.auto_score || 0)
   const essayScore = Number(result?.essay_score || 0)
-  const totalScore = autoScore + essayScore
+  const totalScore = roundScore(autoScore + essayScore)
   const maxPossible = Number(result?.max_auto_score || 0)
   const passingGrade = exam?.passing_grade ?? 60
   const pct = maxPossible > 0 ? (totalScore / maxPossible) * 100 : 0
   const isPassed = pct >= passingGrade
-  const pctStr = pct.toLocaleString('id-ID', { maximumFractionDigits: 1 })
+  const pctStr = formatScore(pct)
 
   // Question lookup map by number
   const questionMap = useMemo(() => {
@@ -269,7 +270,7 @@ export default function StudentAnswerDetailModal({
                 <div style={{ fontSize: '1.25rem', fontWeight: 800, color: isPassed ? 'var(--success)' : 'var(--danger)' }}>
                   {pctStr}%
                   <span style={{ fontSize: '0.75rem', fontWeight: 600, marginLeft: 6 }}>
-                    ({totalScore} / {maxPossible})
+                    ({formatScore(totalScore)} / {formatScore(maxPossible)})
                   </span>
                 </div>
               </div>
@@ -289,11 +290,11 @@ export default function StudentAnswerDetailModal({
               </div>
               <div style={{ fontSize: '0.92rem', fontWeight: 700, marginTop: 4, display: 'flex', gap: '0.75rem' }}>
                 <span title="Skor Pilihan Ganda & Soal Otomatis">
-                  Auto: <strong>{autoScore}</strong>
+                  Auto: <strong>{formatScore(autoScore)}</strong>
                 </span>
                 <span style={{ color: 'var(--text-muted)' }}>|</span>
                 <span title="Skor Esai Manual">
-                  Esai: <strong>{essayScore}</strong>
+                  Esai: <strong>{formatScore(essayScore)}</strong>
                 </span>
               </div>
             </div>
@@ -508,7 +509,7 @@ export default function StudentAnswerDetailModal({
                         {typeLabel(qType)}
                       </span>
                       <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                        Bobot: {maxPts} poin
+                        Bobot: {formatScore(maxPts)} poin
                       </span>
                     </div>
 
@@ -520,7 +521,7 @@ export default function StudentAnswerDetailModal({
                           color: earnedPts > 0 ? 'var(--success)' : 'var(--danger)',
                         }}
                       >
-                        Skor: {earnedPts} / {maxPts}
+                        Skor: {formatScore(earnedPts)} / {formatScore(maxPts)}
                       </span>
                       <StatusBadge status={b.status} />
                     </div>
@@ -1132,7 +1133,7 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
           <div style={{ fontWeight: 700, color: status === 'pending' ? '#2563eb' : 'var(--success)' }}>
             {status === 'pending'
               ? '⏳ Belum dinilai guru'
-              : `Skor Diberikan: ${earned} / ${max} poin`}
+              : `Skor Diberikan: ${formatScore(earned)} / ${formatScore(max)} poin`}
           </div>
         </div>
       </div>

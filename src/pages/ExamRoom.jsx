@@ -4,6 +4,7 @@ import { getCurrentUser, logout } from '../lib/auth'
 import { exams, questions, sessions, results } from '../lib/db'
 import { markSessionAsReturnee } from '../lib/returnee'
 import { gradeExam, getDriveEmbedUrl, getDriveImageUrl } from '../lib/grader'
+import { formatScore } from '../lib/format'
 import { useAntiCheat } from '../hooks/useAntiCheat'
 import { useFaceDetection } from '../hooks/useFaceDetection'
 import { ExamAtomicEngine } from '../lib/examStorage'
@@ -178,6 +179,10 @@ export default function ExamRoom() {
   const [lastSaved, setLastSaved] = useState(null) // { qNum, timeStr }
   const [saveFlash, setSaveFlash] = useState(false)
   const flashTimeoutRef = useRef(null)
+
+  // Force Submitted (Teacher Unpublish) state
+  const [forceSubmitted, setForceSubmitted] = useState(false)
+  const [forceSubmitMessage, setForceSubmitMessage] = useState('')
 
   const sessionRef = useRef(null)
   const answersRef = useRef({})
@@ -448,10 +453,44 @@ export default function ExamRoom() {
     }
   }, [examId])
 
+  const handleForceSubmitted = useCallback(async (msg) => {
+    if (submitLock.current) return
+    submitLock.current = true
+    setForceSubmitted(true)
+    if (msg) setForceSubmitMessage(msg)
+
+    try {
+      sessionStorage.removeItem('binar_exam_active_room')
+    } catch (e) {}
+
+    try {
+      if (faceDetection?.stopCamera) faceDetection.stopCamera()
+    } catch (e) {}
+
+    try {
+      if (engineRef.current?.clear) await engineRef.current.clear()
+    } catch (e) {}
+
+    setTimeout(async () => {
+      try {
+        const { data: res } = await results.get(user?.id, examId)
+        if (res?.id) {
+          navigate(`/results/${res.id}`, { replace: true })
+        } else {
+          navigate('/home', { replace: true })
+        }
+      } catch (err) {
+        navigate('/home', { replace: true })
+      }
+    }, 2800)
+  }, [examId, user?.id, navigate, faceDetection])
+
   useEffect(() => {
     if (!examId || loading) return
     const unsubscribe = subscribeToExamLiveUpdates(examId, (payload) => {
-      if (payload?.type === 'EXTRA_TIME_GRANTED') {
+      if (payload?.type === 'EXAM_UNPUBLISHED') {
+        handleForceSubmitted(payload.message)
+      } else if (payload?.type === 'EXTRA_TIME_GRANTED') {
         const isTarget = !payload.studentId || payload.studentId === user?.id
         if (isTarget && payload.newEndTimestamp) {
           setSession(prev => prev ? ({
@@ -484,7 +523,7 @@ export default function ExamRoom() {
       if (liveNoticeTimeoutRef.current) clearTimeout(liveNoticeTimeoutRef.current)
       if (extraNoticeTimeoutRef.current) clearTimeout(extraNoticeTimeoutRef.current)
     }
-  }, [examId, loading, refreshQuestionsLive, user?.id])
+  }, [examId, loading, refreshQuestionsLive, user?.id, handleForceSubmitted])
 
   // Fallback heartbeat to detect extra time if realtime websocket event was missed
   useEffect(() => {
@@ -492,6 +531,10 @@ export default function ExamRoom() {
     const interval = setInterval(async () => {
       try {
         const { data: latestSess } = await sessions.get(user.id, examId)
+        if (latestSess && (latestSess.status === 'submitted' || latestSess.status === 'time_up') && !submitLock.current) {
+          handleForceSubmitted('Ujian telah dihentikan oleh guru pengawas. Jawaban Anda telah otomatis dikumpulkan dan dinilai.')
+          return
+        }
         if (latestSess?.end_timestamp) {
           const serverEnd = new Date(latestSess.end_timestamp).getTime()
           const currentEnd = sessionRef.current?.end_timestamp ? new Date(sessionRef.current.end_timestamp).getTime() : 0
@@ -1202,7 +1245,7 @@ export default function ExamRoom() {
                     <span className="text-muted text-xs">Soal {currentQ} dari {totalQ}</span>
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                       <QuestionTypeBadge type={q.type} />
-                      <span className="badge badge-draft">{q.points || 1} poin</span>
+                      <span className="badge badge-draft">{formatScore(q.points || 1)} poin</span>
                       {isQuiz && <span className="badge badge-draft">⏱ {q.time_limit || 30}s</span>}
                       {isCurrentLocked && <span className="badge badge-closed" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Lock size={11} /> Terkunci</span>}
                     </div>
@@ -1384,7 +1427,7 @@ export default function ExamRoom() {
       )}
 
       {/* Time's Up overlay */}
-      {timeUp && (
+      {timeUp && !forceSubmitted && (
         <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(10,22,40,0.95)' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{
@@ -1402,6 +1445,32 @@ export default function ExamRoom() {
               {isQuiz ? 'Kuis' : 'Ujian'} Anda sedang dikumpulkan secara otomatis...
             </p>
             <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto', borderColor: 'rgba(239,68,68,0.2)', borderTopColor: 'var(--danger)' }} />
+          </div>
+        </div>
+      )}
+
+      {/* Teacher force submitted / exam unpublished overlay */}
+      {forceSubmitted && (
+        <div className="modal-overlay" style={{ zIndex: 99999, background: 'rgba(10,22,40,0.96)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ textAlign: 'center', maxWidth: 460, padding: '2rem' }}>
+            <div style={{
+              width: 80, height: 80, borderRadius: '50%',
+              background: 'rgba(245,158,11,0.15)', border: '3px solid #f59e0b',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 1.5rem'
+            }}>
+              <Lock size={36} color="#f59e0b" />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.75rem', color: '#f59e0b', fontFamily: "'Inter', sans-serif" }}>
+              Ujian Ditutup Pengawas
+            </h2>
+            <p style={{ color: '#e2e8f0', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+              {forceSubmitMessage || 'Guru pengawas telah menghentikan publikasi ujian ini. Seluruh jawaban Anda telah diekstrak dan dinilai secara otomatis.'}
+            </p>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>
+              <div className="spinner" style={{ width: 20, height: 20, borderColor: 'rgba(245,158,11,0.2)', borderTopColor: '#f59e0b' }} />
+              <span>Mengalihkan ke lembar hasil nilai...</span>
+            </div>
           </div>
         </div>
       )}

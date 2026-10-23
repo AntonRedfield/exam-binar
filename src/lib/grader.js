@@ -69,6 +69,8 @@ function parseArray(val) {
   return []
 }
 
+import { roundScore } from './format'
+
 /**
  * Grade an exam session against the correct answers.
  * Returns { autoScore, maxAutoScore, essayPending, breakdown }
@@ -81,9 +83,9 @@ export function gradeExam(answers, questions) {
 
   for (const q of questions) {
     const studentAnswer = answers[String(q.number)]
-    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
 
-    maxAutoScore += pts
+    maxAutoScore = roundScore(maxAutoScore + pts)
 
     if (q.type === 'ESSAY' || q.type === 'PARAGRAPH') {
       essayPending = true
@@ -356,7 +358,7 @@ export function gradeExam(answers, questions) {
     }
   }
 
-  return { autoScore: Math.round(autoScore * 100) / 100, maxAutoScore: Math.round(maxAutoScore * 100) / 100, essayPending, breakdown }
+  return { autoScore: roundScore(autoScore), maxAutoScore: roundScore(maxAutoScore), essayPending, breakdown }
 }
 
 /**

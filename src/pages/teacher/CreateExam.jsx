@@ -4,6 +4,7 @@ import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users } from '../../lib/db'
 import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, Video, FileText, Layers, Copy, Paperclip, Headphones, X, RefreshCw, Lock } from 'lucide-react'
 import { getDriveImageUrl } from '../../lib/grader'
+import { formatScore } from '../../lib/format'
 import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
 import QuestionAudioInput from '../../components/admin/QuestionAudioInput'
@@ -16,6 +17,7 @@ import {
   getLocalDraftBackup,
   clearLocalDraftBackup
 } from '../../lib/questionMakerAutosave'
+import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
 
 const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'MATCHING', 'SEQUENCING', 'AGREE_DISAGREE', 'ESSAY']
 const SURVEY_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'LINEAR_SCALE', 'MCQ_GRID', 'CHECKBOX_GRID', 'MCQ', 'CHECKBOXES', 'DROPDOWN']
@@ -206,6 +208,26 @@ export default function CreateExam() {
   const isSavedRef = useRef(false)
   const [showUnsavedModal, setShowUnsavedModal] = useState(false)
   const [pendingNavPath, setPendingNavPath] = useState(null)
+  const [showUnpublishModal, setShowUnpublishModal] = useState(false)
+  const [isUnpublishing, setIsUnpublishing] = useState(false)
+
+  async function handleConfirmUnpublish() {
+    setIsUnpublishing(true)
+    try {
+      await handleSave(false, null, { stayOnPage: true, unpublish: true })
+      const examIdToUnpublish = currentExamId || examId
+      if (examIdToUnpublish) {
+        await exams.unpublishAndForceSubmit(examIdToUnpublish)
+      }
+      setExamStatus('draft')
+      setShowUnpublishModal(false)
+    } catch (err) {
+      console.error('Error during unpublish in CreateExam:', err)
+      alert('Gagal membatalkan publikasi: ' + (err.message || err))
+    } finally {
+      setIsUnpublishing(false)
+    }
+  }
 
   // ─── Collapsible Sections for Tidy Lv.3 & Lv.4 Controls ───────────────────
   const [collapsedSections, setCollapsedSections] = useState({
@@ -2014,12 +2036,8 @@ export default function CreateExam() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={async () => {
-                    if (window.confirm('Batalkan publikasi ujian ini dan kembalikan ke status Draf? Peserta tidak akan bisa mengakses atau mengerjakan ujian ini sampai dipublikasikan kembali.')) {
-                      await handleSave(false, null, { stayOnPage: true, unpublish: true })
-                    }
-                  }}
-                  disabled={saving || isAutosavingRef.current}
+                  onClick={() => setShowUnpublishModal(true)}
+                  disabled={saving || isAutosavingRef.current || isUnpublishing}
                   style={{ color: '#ef4444', borderColor: '#fca5a5' }}
                   title="Batalkan publikasi ujian (kembalikan ke Draft)"
                 >
@@ -3406,7 +3424,7 @@ export default function CreateExam() {
                       </span>
                       {!isSurvey && (
                         <span className="badge badge-draft" style={{ fontSize: '0.72rem' }}>
-                          {q.points || 1} Poin
+                          {formatScore(q.points || 1)} Poin
                         </span>
                       )}
                       <span style={{ 
@@ -5517,6 +5535,15 @@ export default function CreateExam() {
           </div>
         </div>
       )}
+
+      {/* Unpublish & Force-Submit Warning Modal */}
+      <UnpublishExamModal
+        isOpen={showUnpublishModal}
+        onClose={() => setShowUnpublishModal(false)}
+        exam={{ title: title || 'Ujian Ini', id: currentExamId || examId }}
+        onConfirm={handleConfirmUnpublish}
+        isProcessing={isUnpublishing}
+      />
     </>
   )
 }

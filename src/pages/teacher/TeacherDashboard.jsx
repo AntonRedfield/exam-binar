@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { localDb } from '../../lib/db'
 import { BookOpen, Plus, Activity, BarChart2, Users, ArrowRight, FileText, Zap, School } from 'lucide-react'
+import { formatScore } from '../../lib/format'
 
 const DEFAULT_STATS = {
   totalExams: 0,
@@ -43,10 +44,10 @@ export default function TeacherDashboard() {
         let avgScore = 0
         if (recentResults && recentResults.length) {
           const pcts = recentResults.map(r => {
-            const tot = (r.auto_score || 0) + (r.essay_score || 0)
+            const tot = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
             return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
           })
-          avgScore = (pcts.reduce((a, b) => a + b, 0) / pcts.length).toFixed(1)
+          avgScore = formatScore(pcts.reduce((a, b) => a + b, 0) / pcts.length)
         }
 
         // Fetch class breakdown from profiles
@@ -126,7 +127,7 @@ export default function TeacherDashboard() {
             { label: 'Draft', value: stats.draftExams, color: 'var(--text-muted)', icon: <FileText size={22} />, to: '/teacher/exams' },
             { label: 'Total Sesi', value: stats.totalSessions, color: 'var(--accent)', icon: <Zap size={22} /> },
             { label: 'Hasil Dinilai', value: stats.totalResults, color: 'var(--gold-darker)', icon: <BarChart2 size={22} /> },
-            { label: 'Rata-rata Nilai', value: `${stats.avgScore}%`, color: Number(stats.avgScore) >= 60 ? 'var(--success)' : 'var(--danger)', icon: <BarChart2 size={22} /> },
+            { label: 'Rata-rata Nilai', value: `${formatScore(stats.avgScore)}%`, color: Number(String(stats.avgScore).replace(',', '.')) >= 60 ? 'var(--success)' : 'var(--danger)', icon: <BarChart2 size={22} /> },
           ].map(s => (
             <div
               key={s.label}

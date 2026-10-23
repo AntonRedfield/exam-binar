@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results, questions } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { ChevronLeft, AlertTriangle, CheckCircle, XCircle, TrendingUp, TrendingDown, HelpCircle, ShieldAlert } from 'lucide-react'
+import { formatScore, roundScore } from '../../lib/format'
 
 export default function QuestionAnalytics() {
   const { examId } = useParams()
@@ -109,7 +110,7 @@ export default function QuestionAnalytics() {
 
           return {
             ...s,
-            successRate: Math.round(successRate * 10) / 10,
+            successRate: roundScore(successRate),
             difficulty,
             difficultyColor,
             topWrongAnswer, // [answer, count]
@@ -220,7 +221,7 @@ export default function QuestionAnalytics() {
                 </div>
                 <div>
                   <div className="stat-value" style={{ color: 'var(--danger)', fontSize: '1.3rem' }}>#{hardest?.number}</div>
-                  <div className="stat-label">Soal Tersulit ({hardest?.successRate}% benar)</div>
+                  <div className="stat-label">Soal Tersulit ({formatScore(hardest?.successRate)}% benar)</div>
                 </div>
               </div>
               <div className="stat-card">
@@ -229,7 +230,7 @@ export default function QuestionAnalytics() {
                 </div>
                 <div>
                   <div className="stat-value" style={{ color: 'var(--success)', fontSize: '1.3rem' }}>#{easiest?.number}</div>
-                  <div className="stat-label">Soal Termudah ({easiest?.successRate}% benar)</div>
+                  <div className="stat-label">Soal Termudah ({formatScore(easiest?.successRate)}% benar)</div>
                 </div>
               </div>
               <div className="stat-card">
@@ -367,7 +368,7 @@ export default function QuestionAnalytics() {
                               }} />
                             </div>
                             <span style={{ fontWeight: 700, fontSize: '0.85rem', color: q.difficultyColor }}>
-                              {q.successRate}%
+                              {formatScore(q.successRate)}%
                             </span>
                           </div>
                         </td>

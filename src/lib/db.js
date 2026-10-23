@@ -27,6 +27,8 @@ import {
 } from './returnee.js'
 import { broadcastExamLiveUpdate } from './liveExamSync.js'
 import { getCurrentUser } from './auth.js'
+import { roundScore } from './format.js'
+import { gradeExam } from './grader.js'
 
 // ─── Clean up any conflicting legacy local mock storage ─────────────────────
 try {
@@ -602,6 +604,124 @@ export const exams = {
       return exams._attachRelations({ ...e, profiles: prof })
     })
     return { data: attached, error: null }
+  },
+
+  unpublishAndForceSubmit: async (examId) => {
+    if (!isSupabaseConfigured || !supabase) return { success: false, error: 'Database offline' }
+
+    // 1. Fetch questions for the exam (for grading)
+    const { data: qData } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('exam_id', examId)
+      .order('number', { ascending: true })
+
+    const questionList = qData || []
+
+    // 2. Fetch all exam sessions for this exam
+    const { data: sessionData, error: sessErr } = await supabase
+      .from('exam_sessions')
+      .select('*')
+      .eq('exam_id', examId)
+
+    if (sessErr) {
+      console.error('[DB] Failed to fetch sessions on unpublish:', sessErr)
+      return { success: false, error: sessErr.message }
+    }
+
+    const sessionList = sessionData || []
+    let countSubmitted = 0
+    let countGraded = 0
+
+    // 3. Extract answers, grade, and force submit each session
+    for (const s of sessionList) {
+      const isAlreadySubmitted = s.status === 'submitted' || s.status === 'time_up'
+
+      // Check if result already exists for this student & exam
+      const { data: existingRes } = await supabase
+        .from('results')
+        .select('*')
+        .eq('exam_id', examId)
+        .eq('student_id', s.student_id)
+        .maybeSingle()
+
+      if (!isAlreadySubmitted || !existingRes) {
+        try {
+          const answers = s.answers || {}
+          const { autoScore, maxAutoScore, breakdown } = gradeExam(answers, questionList)
+
+          if (existingRes) {
+            await results.update(existingRes.id, {
+              session_id: s.id,
+              auto_score: autoScore,
+              max_auto_score: maxAutoScore,
+              violation_count: s.violation_count || 0,
+              breakdown: JSON.stringify(breakdown),
+            })
+          } else {
+            await results.create({
+              student_id: s.student_id,
+              exam_id: examId,
+              session_id: s.id,
+              auto_score: autoScore,
+              max_auto_score: maxAutoScore,
+              essay_score: 0,
+              violation_count: s.violation_count || 0,
+              breakdown: JSON.stringify(breakdown),
+            })
+          }
+          countGraded++
+        } catch (gradeErr) {
+          console.warn('[DB] Error grading session during force submit:', s.id, gradeErr)
+        }
+
+        // Force session status to 'submitted'
+        try {
+          await supabase
+            .from('exam_sessions')
+            .update({
+              status: 'submitted',
+              last_sync: new Date().toISOString()
+            })
+            .eq('id', s.id)
+          countSubmitted++
+        } catch (updErr) {
+          console.warn('[DB] Error updating session status to submitted:', s.id, updErr)
+        }
+      }
+    }
+
+    // 4. Update exam status to 'draft'
+    const { data: updatedExam, error: examErr } = await supabase
+      .from('exams')
+      .update({ status: 'draft', updated_at: new Date().toISOString() })
+      .eq('id', examId)
+      .select()
+      .single()
+
+    if (examErr) {
+      console.error('[DB] Failed to update exam status to draft:', examErr)
+      return { success: false, error: examErr.message }
+    }
+
+    // 5. Broadcast live event to open student exam rooms
+    try {
+      await broadcastExamLiveUpdate(examId, {
+        type: 'EXAM_UNPUBLISHED',
+        action: 'force_submitted',
+        message: 'Ujian telah dihentikan oleh guru pengawas. Seluruh jawaban Anda telah dikumpulkan dan dinilai secara otomatis.'
+      })
+    } catch (bcErr) {
+      console.warn('[DB] Broadcast EXAM_UNPUBLISHED error:', bcErr)
+    }
+
+    return {
+      success: true,
+      data: updatedExam,
+      countSubmitted,
+      countGraded,
+      totalSessions: sessionList.length
+    }
   }
 }
 
@@ -1107,8 +1227,15 @@ export const results = {
       classes: { name: kelas }
     }
 
+    const cleanAutoScore = result.auto_score !== undefined && result.auto_score !== null ? roundScore(result.auto_score) : 0
+    const cleanMaxAutoScore = result.max_auto_score !== undefined && result.max_auto_score !== null ? roundScore(result.max_auto_score) : 0
+    const cleanEssayScore = result.essay_score !== undefined && result.essay_score !== null ? roundScore(result.essay_score) : 0
+
     return {
       ...result,
+      auto_score: cleanAutoScore,
+      max_auto_score: cleanMaxAutoScore,
+      essay_score: cleanEssayScore,
       student: userObj,
       users: userObj,
       profiles: p || result.profiles || null
@@ -1143,6 +1270,9 @@ export const results = {
       submitted_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       ...data,
+      auto_score: data.auto_score !== undefined ? roundScore(data.auto_score) : 0,
+      max_auto_score: data.max_auto_score !== undefined ? roundScore(data.max_auto_score) : 0,
+      essay_score: data.essay_score !== undefined ? roundScore(data.essay_score) : 0,
       breakdown: typeof data.breakdown === 'string' ? data.breakdown : JSON.stringify(data.breakdown || [])
     }
 
@@ -1172,6 +1302,9 @@ export const results = {
   update: async (id, data) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
     const updatePayload = { ...data }
+    if (updatePayload.auto_score !== undefined) updatePayload.auto_score = roundScore(updatePayload.auto_score)
+    if (updatePayload.max_auto_score !== undefined) updatePayload.max_auto_score = roundScore(updatePayload.max_auto_score)
+    if (updatePayload.essay_score !== undefined) updatePayload.essay_score = roundScore(updatePayload.essay_score)
     if (updatePayload.breakdown && typeof updatePayload.breakdown !== 'string') {
       updatePayload.breakdown = JSON.stringify(updatePayload.breakdown)
     }
@@ -1261,7 +1394,7 @@ export const results = {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
     const { data: updated, error } = await supabase
       .from('results')
-      .update({ essay_score: Number(essayScore) })
+      .update({ essay_score: roundScore(Number(essayScore) || 0) })
       .eq('id', id)
       .select()
       .single()

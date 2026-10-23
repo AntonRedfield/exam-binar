@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { results, exams, sessions } from '../lib/db'
 import { CheckCircle, XCircle, Clock, ShieldAlert, Printer, ArrowLeft } from 'lucide-react'
+import { formatScore, roundScore } from '../lib/format'
 
 export default function Results() {
   const { resultId } = useParams()
@@ -72,11 +73,11 @@ export default function Results() {
   }
 
   const breakdown = (() => { try { return JSON.parse(result.breakdown || '[]') } catch { return [] } })()
-  const totalScore = (result.auto_score || 0) + (result.essay_score || 0)
-  const breakdownMaxSum = breakdown.reduce((sum, b) => sum + (Number(b.max) || 0), 0)
-  const maxScore = Math.max(result.max_auto_score || 0, breakdownMaxSum)
+  const totalScore = roundScore((Number(result.auto_score) || 0) + (Number(result.essay_score) || 0))
+  const breakdownMaxSum = roundScore(breakdown.reduce((sum, b) => sum + (Number(b.max) || 0), 0))
+  const maxScore = roundScore(Math.max(Number(result.max_auto_score) || 0, breakdownMaxSum))
   const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
-  const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
+  const pctStr = formatScore(pctNum)
   const essayPending = breakdown.some(b => b.status === 'pending')
   const passingGrade = result.exams?.passing_grade ?? 60
   const backPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : (user?.role === 'MODERATOR' ? '/teacher/exams' : '/home')
@@ -191,7 +192,7 @@ export default function Results() {
                         {b.status === 'partial' && <span className="badge badge-pending">~ Parsial</span>}
                         {b.status === 'pending' && <span className="badge badge-draft">⏳ Esai</span>}
                       </td>
-                      <td style={{ fontWeight: 700 }}>{b.status === 'pending' ? '—' : `${b.earned}/${b.max}`}</td>
+                      <td style={{ fontWeight: 700 }}>{b.status === 'pending' ? '—' : `${formatScore(b.earned)}/${formatScore(b.max)}`}</td>
                     </tr>
                   ))}
                 </tbody>

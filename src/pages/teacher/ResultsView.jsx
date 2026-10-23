@@ -5,6 +5,7 @@ import { getCurrentUser } from '../../lib/auth'
 import { gradeExam } from '../../lib/grader'
 import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
 import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText } from 'lucide-react'
+import { formatScore, roundScore } from '../../lib/format'
 
 export default function ResultsView() {
   const { examId } = useParams()
@@ -26,10 +27,10 @@ export default function ResultsView() {
   const questionMap = new Map((questionList || []).map(q => [Number(q.number), q]))
 
   // Total maximum score across all questions configured by the teacher
-  const totalExamMaxScore = (questionList || []).reduce((sum, q) => {
-    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+  const totalExamMaxScore = roundScore((questionList || []).reduce((sum, q) => {
+    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
     return sum + pts
-  }, 0)
+  }, 0))
 
   // List of all questions that require manual essay grading
   const essayQuestionsList = (questionList || []).filter(q =>
@@ -39,10 +40,10 @@ export default function ResultsView() {
   )
 
   // Total possible essay points across the exam
-  const totalMaxEssayScore = essayQuestionsList.reduce((sum, q) => {
-    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+  const totalMaxEssayScore = roundScore(essayQuestionsList.reduce((sum, q) => {
+    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
     return sum + (q.type === 'AGREE_DISAGREE' ? (pts * 0.5) : pts)
-  }, 0)
+  }, 0))
 
   async function load() {
     try {
@@ -247,7 +248,7 @@ export default function ResultsView() {
           : Number(b.max || qObj?.points || 1)
 
         const rawVal = modalScores[b.number]
-        const earned = Math.min(Math.max(0, isNaN(parseFloat(rawVal)) ? 0 : parseFloat(rawVal)), maxPts)
+        const earned = roundScore(Math.min(Math.max(0, isNaN(parseFloat(rawVal)) ? 0 : parseFloat(rawVal)), maxPts))
 
         let status = 'wrong'
         if (earned === maxPts) status = 'correct'
@@ -265,7 +266,7 @@ export default function ResultsView() {
         .filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
         .reduce((sum, b) => sum + (Number(b.earned) || 0), 0)
 
-      const finalEssayScore = Math.round(accumulated * 100) / 100
+      const finalEssayScore = roundScore(accumulated)
       const finalMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (selectedResult.max_auto_score || 0)
 
       const { data, error } = await results.update(selectedResult.id, {
@@ -300,7 +301,7 @@ export default function ResultsView() {
     setSaving(resultId)
     const targetResult = resultList.find(r => r.id === resultId)
     const numScore = parseFloat(essayScore) || 0
-    const clampedScore = totalMaxEssayScore > 0 ? Math.min(Math.max(0, numScore), totalMaxEssayScore) : Math.max(0, numScore)
+    const clampedScore = roundScore(totalMaxEssayScore > 0 ? Math.min(Math.max(0, numScore), totalMaxEssayScore) : Math.max(0, numScore))
     const finalMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (targetResult?.max_auto_score || 0)
 
     let updatedBreakdown = null
@@ -310,7 +311,7 @@ export default function ResultsView() {
         const essays = bd.filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
         if (essays.length === 1) {
           const maxPts = essays[0].max || totalMaxEssayScore || 1
-          const earned = Math.min(clampedScore, maxPts)
+          const earned = roundScore(Math.min(clampedScore, maxPts))
           const status = earned === maxPts ? 'correct' : (earned > 0 ? 'partial' : 'wrong')
           updatedBreakdown = bd.map(b => b.number === essays[0].number ? { ...b, earned, status } : b)
         }
@@ -383,11 +384,11 @@ export default function ResultsView() {
             return b
           })
 
-          const finalEssay = gradedMap.size > 0 ? accumulatedEssay : (r.essay_score || 0)
+          const finalEssay = gradedMap.size > 0 ? roundScore(accumulatedEssay) : roundScore(r.essay_score || 0)
 
           await results.update(r.id, {
-            auto_score: autoScore,
-            max_auto_score: maxAutoScore,
+            auto_score: roundScore(autoScore),
+            max_auto_score: roundScore(maxAutoScore),
             essay_score: finalEssay,
             breakdown: JSON.stringify(mergedBd)
           })
@@ -473,18 +474,18 @@ export default function ResultsView() {
 
   const avgPct = resultList.length
     ? (resultList.reduce((sum, r) => {
-        const total = r.auto_score + (r.essay_score || 0)
-        const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (r.max_auto_score || 0)
+        const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+        const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
         const pct = maxScore > 0 ? (total / maxScore) * 100 : 0
         return sum + pct
       }, 0) / resultList.length)
     : 0
-  const avgStr = avgPct ? avgPct.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '0'
+  const avgStr = avgPct ? formatScore(avgPct) : '0'
 
   // Count students passing/failing
   const passCount = resultList.filter(r => {
-    const total = r.auto_score + (r.essay_score || 0)
-    const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (r.max_auto_score || 0)
+    const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+    const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
     const pct = maxScore > 0 ? (total / maxScore) * 100 : 0
     return pct >= passingGrade
   }).length
@@ -566,10 +567,10 @@ export default function ResultsView() {
                   </th>
                   <th className="no-print">Skor Otomatis</th>
                   <th className="no-print">
-                    Skor Esai {totalMaxEssayScore > 0 && <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(Maks {totalMaxEssayScore})</span>}
+                    Skor Esai {totalMaxEssayScore > 0 && <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(Maks {formatScore(totalMaxEssayScore)})</span>}
                   </th>
                   <th className="no-print">
-                    Total {totalExamMaxScore > 0 && <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(Maks {totalExamMaxScore})</span>}
+                    Total {totalExamMaxScore > 0 && <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(Maks {formatScore(totalExamMaxScore)})</span>}
                   </th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('nilai')}>
                     Nilai {sortConfig.key === 'nilai' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
@@ -589,11 +590,12 @@ export default function ResultsView() {
                   </tr>
                 ) : (
                   sortedResults.map((r, i) => {
-                  const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (r.max_auto_score || 0)
-                  const total = r.auto_score + (r.essay_score || 0)
+                  const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
+                  const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
                   const pctNum = maxPossible > 0 ? (total / maxPossible) * 100 : 0
-                  const pctStr = pctNum.toLocaleString('id-ID', { maximumFractionDigits: 2 })
+                  const pctStr = formatScore(pctNum)
                   const essayVal = essayEdits[r.id] !== undefined ? essayEdits[r.id] : (r.essay_score || 0)
+                  const currentTotal = (Number(r.auto_score) || 0) + (Number(essayVal) || 0)
                   const nilaiColor = pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)'
 
                   const rBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
@@ -613,7 +615,7 @@ export default function ResultsView() {
                         )}
                       </td>
                       <td>{r.users?.classes?.name || r.users?.kelas || r.student?.kelas || '—'}</td>
-                      <td className="no-print">{r.auto_score}</td>
+                      <td className="no-print">{formatScore(r.auto_score)}</td>
                       <td className="no-print">
                         {totalMaxEssayScore > 0 ? (
                           <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -621,30 +623,31 @@ export default function ResultsView() {
                               type="number"
                               className="form-input"
                               style={{ width: 68, padding: '0.3rem 0.4rem', fontSize: '0.85rem', textAlign: 'center' }}
-                              value={essayVal}
+                              value={essayVal !== '' && !isNaN(Number(essayVal)) ? roundScore(essayVal) : essayVal}
+                              step="0.01"
                               min="0"
                               max={totalMaxEssayScore}
-                              title={`Maksimal nilai esai: ${totalMaxEssayScore} poin`}
+                              title={`Maksimal nilai esai: ${formatScore(totalMaxEssayScore)} poin`}
                               onChange={e => {
                                 let val = e.target.value
                                 if (val !== '') {
                                   let num = parseFloat(val)
                                   if (num > totalMaxEssayScore) num = totalMaxEssayScore
                                   if (num < 0) num = 0
-                                  val = num
+                                  val = roundScore(num)
                                 }
                                 setEssayEdits(prev => ({ ...prev, [r.id]: val }))
                               }}
                             />
-                            <span className="text-muted text-xs">/ {totalMaxEssayScore}</span>
+                            <span className="text-muted text-xs">/ {formatScore(totalMaxEssayScore)}</span>
                           </div>
                         ) : (
                           <span className="text-muted">—</span>
                         )}
-                        <span className="print-only">{r.essay_score || 0}</span>
+                        <span className="print-only">{formatScore(r.essay_score || 0)}</span>
                       </td>
                       <td className="no-print" style={{ fontWeight: 700, color: nilaiColor }}>
-                        {r.auto_score + Number(essayVal || 0)} <span className="text-muted text-xs" style={{ fontWeight: 400 }}>/ {maxPossible}</span>
+                        {formatScore(currentTotal)} <span className="text-muted text-xs" style={{ fontWeight: 400 }}>/ {formatScore(maxPossible)}</span>
                       </td>
                       <td style={{ fontWeight: 700, color: nilaiColor }}>{pctStr}%</td>
                       <td>
@@ -740,10 +743,10 @@ export default function ResultsView() {
           const safeVal = isNaN(val) ? 0 : Math.min(Math.max(0, val), maxPts)
           return sum + safeVal
         }, 0)
-        const roundedAccumulated = Math.round(accumulatedEssayScore * 100) / 100
+        const roundedAccumulated = roundScore(accumulatedEssayScore)
 
-        const finalTotalScore = Math.round(((selectedResult.auto_score || 0) + roundedAccumulated) * 100) / 100
-        const examMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (selectedResult.max_auto_score || 0)
+        const finalTotalScore = roundScore((Number(selectedResult.auto_score) || 0) + roundedAccumulated)
+        const examMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(selectedResult.max_auto_score) || 0)
         const finalPct = examMaxScore > 0 ? (finalTotalScore / examMaxScore) * 100 : 0
         const isPass = finalPct >= passingGrade
 
@@ -784,7 +787,7 @@ export default function ResultsView() {
                     Skor Otomatis (PG/Lainnya)
                   </span>
                   <span style={{ fontSize: '1.15rem', fontWeight: 700 }}>
-                    {selectedResult.auto_score || 0}
+                    {formatScore(selectedResult.auto_score || 0)}
                   </span>
                 </div>
 
@@ -793,7 +796,7 @@ export default function ResultsView() {
                     Total Nilai Esai
                   </span>
                   <span style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--accent)' }}>
-                    {roundedAccumulated} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>/ {modalTotalMaxEssay}</span>
+                    {formatScore(roundedAccumulated)} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>/ {formatScore(modalTotalMaxEssay)}</span>
                   </span>
                 </div>
 
@@ -802,8 +805,8 @@ export default function ResultsView() {
                     Nilai Akhir Siswa
                   </span>
                   <span style={{ fontSize: '1.15rem', fontWeight: 700, color: isPass ? 'var(--success)' : 'var(--danger)' }}>
-                    {finalTotalScore} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>/ {examMaxScore}</span>
-                    <span style={{ fontSize: '0.9rem', marginLeft: '0.35rem' }}>({finalPct.toFixed(1)}%)</span>
+                    {formatScore(finalTotalScore)} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>/ {formatScore(examMaxScore)}</span>
+                    <span style={{ fontSize: '0.9rem', marginLeft: '0.35rem' }}>({formatScore(finalPct)}%)</span>
                   </span>
                 </div>
               </div>
@@ -833,13 +836,13 @@ export default function ResultsView() {
                     if (currentScoreVal !== '' && !isNaN(numericScore)) {
                       if (numericScore === maxPts) {
                         statusBadgeClass = 'badge-active'
-                        statusLabel = `✓ Nilai Penuh (${numericScore}/${maxPts})`
+                        statusLabel = `✓ Nilai Penuh (${formatScore(numericScore)}/${formatScore(maxPts)})`
                       } else if (numericScore > 0) {
                         statusBadgeClass = 'badge-pending'
-                        statusLabel = `~ Nilai Sebagian (${numericScore}/${maxPts})`
+                        statusLabel = `~ Nilai Sebagian (${formatScore(numericScore)}/${formatScore(maxPts)})`
                       } else {
                         statusBadgeClass = 'badge-closed'
-                        statusLabel = `✗ Kosong / 0 (${numericScore}/${maxPts})`
+                        statusLabel = `✗ Kosong / 0 (${formatScore(numericScore)}/${formatScore(maxPts)})`
                       }
                     }
 
@@ -851,7 +854,7 @@ export default function ResultsView() {
                           </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent)', background: 'rgba(79,142,247,0.1)', padding: '0.2rem 0.5rem', borderRadius: 4 }}>
-                              Maks {maxPts} Poin
+                              Maks {formatScore(maxPts)} Poin
                             </span>
                             <span className={`badge ${statusBadgeClass}`}>
                               {statusLabel}
@@ -922,7 +925,7 @@ export default function ResultsView() {
                               Beri Skor Soal No. {essay.number}:
                             </span>
                             <span className="text-muted text-xs">
-                              Maksimal <strong>{maxPts}</strong> poin sesuai pengaturan guru
+                              Maksimal <strong>{formatScore(maxPts)}</strong> poin sesuai pengaturan guru
                             </span>
                           </div>
 
@@ -938,7 +941,7 @@ export default function ResultsView() {
                               placeholder="0"
                               onChange={e => handleModalScoreChange(essay.number, e.target.value, maxPts)}
                             />
-                            <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.9rem' }}>/ {maxPts}</span>
+                            <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.9rem' }}>/ {formatScore(maxPts)}</span>
                             
                             <div style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.35rem' }}>
                               <button
@@ -955,7 +958,7 @@ export default function ResultsView() {
                                   type="button"
                                   className="btn btn-ghost btn-sm"
                                   style={{ padding: '0.2rem 0.45rem', fontSize: '0.75rem', height: 26 }}
-                                  onClick={() => handleModalScoreChange(essay.number, Math.round((maxPts / 2) * 100) / 100, maxPts)}
+                                  onClick={() => handleModalScoreChange(essay.number, roundScore(maxPts / 2), maxPts)}
                                   title="Beri Skor 50%"
                                 >
                                   50%
@@ -966,7 +969,7 @@ export default function ResultsView() {
                                 className="btn btn-primary btn-sm"
                                 style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', height: 26 }}
                                 onClick={() => handleModalScoreChange(essay.number, maxPts, maxPts)}
-                                title={`Beri Skor Penuh (${maxPts})`}
+                                title={`Beri Skor Penuh (${formatScore(maxPts)})`}
                               >
                                 Penuh
                               </button>
@@ -983,7 +986,7 @@ export default function ResultsView() {
               {/* Modal Footer */}
               <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div style={{ fontSize: '0.88rem' }}>
-                  Total Esai: <strong>{roundedAccumulated} / {modalTotalMaxEssay} Poin</strong>
+                  Total Esai: <strong>{formatScore(roundedAccumulated)} / {formatScore(modalTotalMaxEssay)} Poin</strong>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button type="button" className="btn btn-ghost" onClick={() => setSelectedResult(null)}>
