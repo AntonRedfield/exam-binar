@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { exams, results, sessions, questions, users, fetchStudentProfilesMap } from '../../lib/db'
+import { exams, results, sessions, questions, users, fetchStudentProfilesMap, isPrivilegedUser } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { gradeExam } from '../../lib/grader'
 import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
@@ -54,7 +54,10 @@ export default function ResultsView() {
 
   async function load() {
     try {
-      // Automatically lock expired sessions and extract & sync their scores into results
+      // 1. Auto-remove teacher & admin try mode entries older than 1 hour
+      await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+
+      // 2. Automatically lock expired sessions and extract & sync their scores into results
       await sessions.autoLockAndSyncExam(examId)
 
       const [{ data: examData }, { data: res }, { data: sess }, { data: qs }] = await Promise.all([
@@ -120,8 +123,8 @@ export default function ResultsView() {
 
       let newRes = Array.from(dedupedResultsMap.values())
 
-      // Auto-score abandoned or completed sessions that do not have a result yet
-      const missingSessions = rawSessions.filter(s => s.student_id && !dedupedResultsMap.has(s.student_id))
+      // Auto-score abandoned or completed student sessions that do not have a result yet (skip teacher try sessions)
+      const missingSessions = rawSessions.filter(s => s.student_id && !dedupedResultsMap.has(s.student_id) && !isPrivilegedUser(profMap[s.student_id]))
       if (missingSessions.length > 0 && qs) {
         for (const s of missingSessions) {
           const isTimeUp = s.end_timestamp && new Date(s.end_timestamp).getTime() < Date.now()
@@ -153,8 +156,11 @@ export default function ResultsView() {
         }
       }
 
+      // Filter out teacher & admin try mode entries so results page displays a clean student roster
+      const studentOnlyResults = newRes.filter(r => !isPrivilegedUser(profMap[r.student_id]))
+
       // Format and cross-reference profiles to guarantee proper student names and classes
-      const formattedResults = newRes.map(r => {
+      const formattedResults = studentOnlyResults.map(r => {
         const s = sessionMap[r.session_id] || sessionMap[r.student_id]
         const p = profMap[r.student_id] || r.profiles || null
         const existingUser = r.users || r.student
@@ -195,10 +201,10 @@ export default function ResultsView() {
         const expectedTargets = targetData || []
         setTargetStudents(expectedTargets)
 
-        // Identify students who have not attempted, attended, or submitted
+        // Identify students who have not attempted, attended, or submitted (excluding teachers)
         const recordedIds = new Set(formattedResults.map(r => r.student_id).filter(Boolean))
         const absentList = expectedTargets
-          .filter(ts => !recordedIds.has(ts.id))
+          .filter(ts => !recordedIds.has(ts.id) && !isPrivilegedUser(ts))
           .map(ts => {
             const sess = sessionMap[ts.id]
             return {

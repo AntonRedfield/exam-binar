@@ -44,6 +44,34 @@ function generateId(prefix = 'id') {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`
 }
 
+/**
+ * Check if a profile or user object belongs to teacher or admin (privileged user)
+ */
+export function isPrivilegedUser(profileOrUser) {
+  if (!profileOrUser) return false
+  const role = String(
+    profileOrUser.role ||
+    profileOrUser.dbRole ||
+    profileOrUser.app_metadata?.role ||
+    profileOrUser.user_metadata?.role ||
+    ''
+  ).toLowerCase().trim()
+  const appRole = String(profileOrUser.appRole || '').toLowerCase().trim()
+  const level = Number(
+    profileOrUser.role_level ??
+    profileOrUser.level ??
+    profileOrUser.app_metadata?.level ??
+    profileOrUser.user_metadata?.level ??
+    0
+  )
+  if (level >= 3) return true
+  if (role === 'admin' || role === 'superadmin' || role === 'teacher' || role === 'moderator' || role === 'secretary') return true
+  if (appRole === 'superadmin' || appRole === 'moderator') return true
+  const username = String(profileOrUser.username || '').toLowerCase().trim()
+  if (username === 'admin' || username === 'super_admin' || username === 'mordlicht') return true
+  return false
+}
+
 // ─── USERS API ────────────────────────────────────────────────────────────────
 
 export const users = {
@@ -1062,8 +1090,94 @@ export const sessions = {
     return { data, error: null }
   },
 
+  /**
+   * Automatically delete teacher & admin try mode sessions and results that are older than 1 hour.
+   * Keeps database clean and ensures student gradebook / roster only contains real students.
+   */
+  cleanExpiredPrivilegedTryEntries: async (examId = null) => {
+    if (!isSupabaseConfigured || !supabase) return { count: 0 }
+    try {
+      const ONE_HOUR_MS = 60 * 60 * 1000
+      const now = Date.now()
+
+      // 1. Fetch sessions
+      let sessQuery = supabase
+        .from('exam_sessions')
+        .select('id, student_id, started_at, created_at, last_sync, status, answers')
+      if (examId) sessQuery = sessQuery.eq('exam_id', examId)
+
+      const { data: sessList, error: sErr } = await sessQuery
+      if (sErr) console.warn('[DB] cleanExpiredPrivilegedTryEntries sessErr:', sErr)
+
+      // 2. Fetch results
+      let resQuery = supabase
+        .from('results')
+        .select('id, student_id, session_id, created_at, submitted_at, updated_at')
+      if (examId) resQuery = resQuery.eq('exam_id', examId)
+
+      const { data: resList, error: rErr } = await resQuery
+      if (rErr) console.warn('[DB] cleanExpiredPrivilegedTryEntries resErr:', rErr)
+
+      const allStudentIds = Array.from(new Set([
+        ...(sessList || []).map(s => s.student_id),
+        ...(resList || []).map(r => r.student_id)
+      ])).filter(Boolean)
+
+      if (allStudentIds.length === 0) return { count: 0 }
+
+      const profMap = await fetchStudentProfilesMap(allStudentIds)
+
+      const expiredSessIds = []
+      const expiredResIds = []
+
+      for (const s of (sessList || [])) {
+        const p = profMap[s.student_id]
+        if (isPrivilegedUser(p) || Boolean(s.answers?._try_mode)) {
+          const ts = new Date(s.last_sync || s.started_at || s.created_at || 0).getTime()
+          if (now - ts >= ONE_HOUR_MS) {
+            expiredSessIds.push(s.id)
+          }
+        }
+      }
+
+      for (const r of (resList || [])) {
+        const p = profMap[r.student_id]
+        if (isPrivilegedUser(p)) {
+          const ts = new Date(r.submitted_at || r.updated_at || r.created_at || 0).getTime()
+          if (now - ts >= ONE_HOUR_MS) {
+            expiredResIds.push(r.id)
+          }
+        }
+      }
+
+      let deletedCount = 0
+      if (expiredResIds.length > 0) {
+        const { error: delResErr } = await supabase.from('results').delete().in('id', expiredResIds)
+        if (!delResErr) deletedCount += expiredResIds.length
+        else console.warn('[DB] Error deleting expired try results:', delResErr)
+      }
+      if (expiredSessIds.length > 0) {
+        const { error: delSessErr } = await supabase.from('exam_sessions').delete().in('id', expiredSessIds)
+        if (!delSessErr) deletedCount += expiredSessIds.length
+        else console.warn('[DB] Error deleting expired try sessions:', delSessErr)
+      }
+
+      if (deletedCount > 0) {
+        console.log(`[DB] Auto-removed ${deletedCount} teacher & admin try mode entries older than 1 hour.`)
+      }
+
+      return { count: deletedCount, expiredResIds, expiredSessIds }
+    } catch (err) {
+      console.warn('[DB] cleanExpiredPrivilegedTryEntries exception:', err)
+      return { count: 0 }
+    }
+  },
+
   listByExam: async (examId) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
+    // Clean up any teacher & admin try mode entries older than 1 hour automatically
+    await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+
     const { data, error } = await supabase
       .from('exam_sessions')
       .select('*')
@@ -1082,6 +1196,7 @@ export const sessions = {
         const name = p.display_name || p.fullname || p.full_name || p.username || 'Siswa'
         const full_name = p.fullname || p.display_name || p.full_name || p.username || name
         const kelas = p.class_section || p.kelas || '—'
+        const isPriv = isPrivilegedUser(p) || Boolean(s.answers?._try_mode)
         const userObj = {
           id: s.student_id,
           name,
@@ -1090,10 +1205,13 @@ export const sessions = {
           username: p.username || '',
           kelas,
           class_section: kelas,
-          classes: { name: kelas }
+          classes: { name: kelas },
+          isPrivileged: isPriv,
+          isTeacher: isPriv
         }
         s.users = userObj
         s.student = userObj
+        s.isPrivileged = isPriv
         validSessions.push(s)
       }
     }
@@ -1263,6 +1381,9 @@ export const sessions = {
     if (!isSupabaseConfigured || !supabase || !examId) return { lockedCount: 0, syncedCount: 0 }
 
     try {
+      // 1. Clean up any expired teacher/admin try mode entries (older than 1 hour)
+      await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+
       const [{ data: qs }, { data: sessionList, error: sessErr }, { data: existingResults, error: resErr }] = await Promise.all([
         questions.listByExam(examId),
         supabase.from('exam_sessions').select('*').eq('exam_id', examId),
@@ -1275,6 +1396,9 @@ export const sessions = {
       }
 
       const rawQuestions = qs || []
+      const studentIds = sessionList.map(s => s.student_id).filter(Boolean)
+      const profMap = await fetchStudentProfilesMap(studentIds)
+
       const resultsMapByStudent = new Map()
       const resultsMapBySession = new Map()
       ;(existingResults || []).forEach(r => {
@@ -1288,6 +1412,9 @@ export const sessions = {
 
       for (const s of sessionList) {
         if (!s.student_id) continue
+
+        // Skip privileged users (teachers & admins in try mode) so they are not auto-locked or auto-scored into student results
+        if (isPrivilegedUser(profMap[s.student_id]) || s.answers?._try_mode) continue
 
         const hasEndTimestamp = Boolean(s.end_timestamp)
         const isExpired = hasEndTimestamp && (new Date(s.end_timestamp).getTime() <= now)
@@ -1548,6 +1675,9 @@ export const results = {
 
   listByExam: async (examId) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
+    // Clean up any teacher & admin try mode entries older than 1 hour automatically
+    await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+
     const { data, error } = await supabase
       .from('results')
       .select('*')
@@ -1564,6 +1694,8 @@ export const results = {
     const validResults = []
     for (const r of data || []) {
       const p = profMap[r.student_id] || null
+      // Exclude teacher and admin test entries from exam results
+      if (isPrivilegedUser(p)) continue
       validResults.push(results._attachRelations({ ...r, profiles: p }))
     }
 

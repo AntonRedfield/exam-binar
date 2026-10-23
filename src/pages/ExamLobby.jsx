@@ -195,11 +195,12 @@ export default function ExamLobby() {
       const endTimestamp = new Date(Date.now() + durationMs).toISOString()
 
       if (!session || session.status === 'reset') {
+        const initialAnswers = isPrivileged ? { _try_mode: true, _try_started_at: new Date().toISOString() } : {}
         if (session) {
           const { error: upErr } = await sessions.update(session.id, {
             status: 'active',
             end_timestamp: endTimestamp,
-            answers: {},
+            answers: initialAnswers,
             violation_count: 0,
             current_question: 1,
             returnee_token_required: false,
@@ -213,7 +214,7 @@ export default function ExamLobby() {
             exam_id: examId,
             variant: 'A',
             end_timestamp: endTimestamp,
-            answers: {},
+            answers: initialAnswers,
             violation_count: 0,
             current_question: 1,
             status: 'active',

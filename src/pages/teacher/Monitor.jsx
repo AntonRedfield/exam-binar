@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { exams, sessions, users } from '../../lib/db'
+import { exams, sessions, users, isPrivilegedUser } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
 import {
@@ -194,7 +194,10 @@ export default function Monitor() {
 
   const load = useCallback(async () => {
     try {
-      // Automatically lock students whose time has expired and extract & sync their scores into results
+      // 1. Auto-remove teacher & admin try mode entries older than 1 hour
+      await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+
+      // 2. Automatically lock students whose time has expired and extract & sync their scores into results
       await sessions.autoLockAndSyncExam(examId)
 
       const [{ data: examData }, { data: sess }, { data: activeList }] = await Promise.all([
@@ -203,7 +206,10 @@ export default function Monitor() {
         exams.listPublished()
       ])
       setExam(examData)
-      setSessionList(sess || [])
+
+      // Filter out teacher & admin try mode sessions so student monitor roster is clean
+      const studentSessions = (sess || []).filter(s => !isPrivilegedUser(s.users || s.student) && !s.isPrivileged)
+      setSessionList(studentSessions)
       setActiveExamsList(activeList || [])
       if (examData?.returnee_token_duration) {
         setTokenDuration(Number(examData.returnee_token_duration))
@@ -218,7 +224,7 @@ export default function Monitor() {
           const targetRoster = targets || []
           setTargetStudents(targetRoster)
 
-          const enteredIds = new Set((sess || []).map(s => s.student_id).filter(Boolean))
+          const enteredIds = new Set(studentSessions.map(s => s.student_id).filter(Boolean))
           const unentered = targetRoster.filter(t => !enteredIds.has(t.id))
           setUnenteredStudents(unentered)
         } catch (scanErr) {

@@ -925,6 +925,11 @@ export default function ExamRoom() {
         await engineRef.current.clear()
       }
 
+      // If privileged user submitted in try mode, trigger cleanup of any expired try entries
+      if (isPrivileged) {
+        sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+      }
+
       if (isAuto) {
         await new Promise(resolve => setTimeout(resolve, 2000))
       }
