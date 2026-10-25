@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { exams, sessions, users, isPrivilegedUser } from '../../lib/db'
+import { exams, sessions, users, results, isPrivilegedUser } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
+import { formatScore, roundScore } from '../../lib/format'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
 import {
   Activity,
@@ -315,7 +316,10 @@ export default function Monitor() {
 
       if (!res.success) throw new Error(res.error)
 
-      setQuickNotice(`✅ Soal No. ${editingQ.number} berhasil diperbarui & langsung diterapkan ke seluruh siswa!`)
+      // Regrade student answers immediately to update point accumulation and student scores
+      await results.regradeAllForExam(examId).catch(err => console.warn('[Monitor] Background regrade error:', err))
+
+      setQuickNotice(`✅ Soal No. ${editingQ.number} berhasil diperbarui & akumulasi nilai siswa disinkronkan!`)
 
       // Refresh local questions list
       const { data: qs } = await questions.listByExam(examId)
@@ -1644,9 +1648,15 @@ export default function Monitor() {
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
               
               {/* Question list sidebar */}
-              <div style={{ width: 180, borderRight: '1px solid var(--border)', background: 'var(--bg-card)', padding: '0.75rem', overflowY: 'auto' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <div style={{ width: 195, borderRight: '1px solid var(--border)', background: 'var(--bg-card)', padding: '0.75rem', overflowY: 'auto' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Daftar Soal ({examQuestions.length})
+                </div>
+                <div style={{ marginBottom: '0.65rem', padding: '0.4rem 0.55rem', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #bbf7d0', fontSize: '0.74rem' }}>
+                  <div style={{ color: '#166534', fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.3px' }}>TOTAL AKUMULASI:</div>
+                  <div style={{ fontWeight: 800, color: '#15803d', fontSize: '0.88rem', marginTop: '0.1rem' }}>
+                    {formatScore((examQuestions || []).reduce((sum, q) => sum + ((q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1), 0))} Poin
+                  </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   {examQuestions.map((q, idx) => {

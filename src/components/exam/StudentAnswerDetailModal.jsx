@@ -51,7 +51,7 @@ export default function StudentAnswerDetailModal({
   // Score metrics
   const autoScore = Number(localResult?.auto_score || 0)
   const essayScore = Number(localResult?.essay_score || 0)
-  const totalScore = roundScore(autoScore + essayScore)
+  const rawTotal = roundScore(autoScore + essayScore)
 
   const computedMaxFromQuestions = useMemo(() => {
     return (questions || []).reduce((sum, q) => {
@@ -64,8 +64,9 @@ export default function StudentAnswerDetailModal({
     ? computedMaxFromQuestions
     : (Number(localResult?.max_auto_score || 0) > 0 ? Number(localResult.max_auto_score) : 100)
 
+  const totalScore = maxPossible > 0 ? Math.min(rawTotal, maxPossible) : rawTotal
   const passingGrade = exam?.passing_grade ?? 60
-  const pct = maxPossible > 0 ? (totalScore / maxPossible) * 100 : 0
+  const pct = maxPossible > 0 ? Math.min(100, Math.max(0, (totalScore / maxPossible) * 100)) : 0
   const isPassed = pct >= passingGrade
   const pctStr = formatScore(pct)
 
@@ -238,8 +239,12 @@ export default function StudentAnswerDetailModal({
         })
         .reduce((sum, b) => sum + (Number(b.earned) || 0), 0)
 
-      const finalEssayScore = roundScore(totalEssay)
+      const rawEssayScore = roundScore(totalEssay)
       const finalMaxScore = computedMaxFromQuestions > 0 ? computedMaxFromQuestions : Number(localResult?.max_auto_score || 0)
+      const autoScoreCurrent = Number(localResult?.auto_score || 0)
+      const finalEssayScore = finalMaxScore > 0 && (autoScoreCurrent + rawEssayScore) > finalMaxScore
+        ? Math.max(0, roundScore(finalMaxScore - autoScoreCurrent))
+        : rawEssayScore
       const cleanBd = updatedBd.map(({ questionObj, ...rest }) => rest)
 
       const { data, error } = await results.update(localResult.id, {

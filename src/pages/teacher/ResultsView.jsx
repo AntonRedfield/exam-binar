@@ -82,13 +82,32 @@ export default function ResultsView() {
       const rawQuestions = qs || []
       setQuestionList(rawQuestions)
 
-      const computedTotalMax = rawQuestions.reduce((sum, q) => {
+      const cleanComputedMax = roundScore(rawQuestions.reduce((sum, q) => {
         const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
         return sum + pts
-      }, 0)
+      }, 0))
 
-      const rawResults = res || []
+      let rawResults = res || []
       const rawSessions = sess || []
+
+      // Automatically sync and re-grade if any result has scores exceeding current question points accumulation
+      if (cleanComputedMax > 0 && rawResults.length > 0) {
+        const hasOutdatedScores = rawResults.some(r => {
+          const tot = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+          return tot > cleanComputedMax || roundScore(Number(r.max_auto_score) || 0) !== cleanComputedMax
+        })
+        if (hasOutdatedScores) {
+          try {
+            await results.regradeAllForExam(examId)
+            const { data: refreshedRes } = await results.listByExam(examId)
+            if (refreshedRes && refreshedRes.length > 0) {
+              rawResults = refreshedRes
+            }
+          } catch (syncErr) {
+            console.warn('[ResultsView] Auto-sync outdated scores error:', syncErr)
+          }
+        }
+      }
 
       // Collect all student IDs to fetch complete profile mapping directly
       const allStudentIds = Array.from(new Set([
@@ -184,10 +203,18 @@ export default function ResultsView() {
           classes: { name: kelas }
         }
 
-        const normalizedMax = computedTotalMax > 0 ? computedTotalMax : (r.max_auto_score || 0)
+        const normalizedMax = cleanComputedMax > 0 ? cleanComputedMax : (Number(r.max_auto_score) || 0)
+        const rawAuto = Number(r.auto_score) || 0
+        const rawEssay = Number(r.essay_score) || 0
+        const cleanAuto = normalizedMax > 0 ? Math.min(rawAuto, normalizedMax) : rawAuto
+        const cleanEssay = normalizedMax > 0 && (cleanAuto + rawEssay) > normalizedMax
+          ? Math.max(0, roundScore(normalizedMax - cleanAuto))
+          : rawEssay
 
         return {
           ...r,
+          auto_score: cleanAuto,
+          essay_score: cleanEssay,
           max_auto_score: normalizedMax,
           users: unifiedUser,
           student: unifiedUser,
@@ -218,7 +245,7 @@ export default function ResultsView() {
               student: ts,
               auto_score: 0,
               essay_score: 0,
-              max_auto_score: computedTotalMax || 100,
+              max_auto_score: cleanComputedMax || 100,
               violation_count: sess?.violation_count || 0,
               sessionStatus: sess?.status || 'none',
               hasSession: Boolean(sess)
@@ -419,10 +446,17 @@ export default function ResultsView() {
         .filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
         .reduce((sum, b) => sum + (Number(b.earned) || 0), 0)
 
-      const finalEssayScore = roundScore(accumulated)
+      let finalEssayScore = roundScore(accumulated)
+      if (totalMaxEssayScore > 0 && finalEssayScore > totalMaxEssayScore) {
+        finalEssayScore = totalMaxEssayScore
+      }
       const finalMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (selectedResult.max_auto_score || 0)
+      const autoScore = Number(selectedResult?.auto_score) || 0
+      if (finalMaxScore > 0 && (autoScore + finalEssayScore) > finalMaxScore) {
+        finalEssayScore = Math.max(0, roundScore(finalMaxScore - autoScore))
+      }
 
-      const { data, error } = await results.update(selectedResult.id, {
+      const { error } = await results.update(selectedResult.id, {
         essay_score: finalEssayScore,
         max_auto_score: finalMaxScore,
         breakdown: JSON.stringify(updatedBd)
@@ -462,8 +496,12 @@ export default function ResultsView() {
     setSaving(resultId)
     const targetResult = resultList.find(r => r.id === resultId)
     const numScore = parseFloat(essayScore) || 0
-    const clampedScore = roundScore(totalMaxEssayScore > 0 ? Math.min(Math.max(0, numScore), totalMaxEssayScore) : Math.max(0, numScore))
+    let clampedScore = roundScore(totalMaxEssayScore > 0 ? Math.min(Math.max(0, numScore), totalMaxEssayScore) : Math.max(0, numScore))
     const finalMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (targetResult?.max_auto_score || 0)
+    const auto = Number(targetResult?.auto_score) || 0
+    if (finalMaxScore > 0 && (auto + clampedScore) > finalMaxScore) {
+      clampedScore = Math.max(0, roundScore(finalMaxScore - auto))
+    }
 
     let updatedBreakdown = null
     try {
@@ -552,94 +590,13 @@ export default function ResultsView() {
   }
 
   async function handleRegrade() {
-    if (!window.confirm('Hitung ulang semua nilai siswa berdasarkan sistem penilaian terbaru?')) return
+    if (!window.confirm('Perbarui akumulasi poin dan hitung ulang semua nilai siswa berdasarkan sistem butir soal terbaru?')) return
     setRegrading(true)
     try {
-      // Sync and lock any completed or expired sessions first
-      await sessions.autoLockAndSyncExam(examId)
-
-      const [{ data: qs }, { data: sess }, { data: currentRes }] = await Promise.all([
-        questions.listByExam(examId),
-        sessions.listByExam(examId),
-        results.listByExam(examId)
-      ])
-      if (!qs || !currentRes) return
-
-      const sessionMap = {}
-      ;(sess || []).forEach(s => {
-        if (s.id) sessionMap[s.id] = s
-        if (s.student_id) sessionMap[s.student_id] = s
-      })
-
-      const essayQuestions = (qs || []).filter(q =>
-        q.type === 'ESSAY' ||
-        q.type === 'PARAGRAPH' ||
-        (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
-      )
-
-      for (const r of currentRes) {
-        const s = sessionMap[r.session_id] || sessionMap[r.student_id]
-        const existingBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
-
-        // Robust answer lookup: prefer session answers, fallback to student answers recorded in existing breakdown
-        let studentAnswers = s?.answers
-        if (!studentAnswers || Object.keys(studentAnswers).length === 0) {
-          studentAnswers = {}
-          existingBd.forEach(b => {
-            if (b.number !== undefined && b.given !== undefined && b.given !== null) {
-              studentAnswers[String(b.number)] = b.given
-            }
-          })
-        }
-
-        if (studentAnswers && Object.keys(studentAnswers).length > 0) {
-          const gradedMap = new Map()
-          existingBd.forEach(b => {
-            if ((b.type === 'ESSAY' || b.type === 'PARAGRAPH' || b.reason_type === 'essay') && b.status !== 'pending' && b.earned !== undefined) {
-              gradedMap.set(Number(b.number), b)
-            }
-          })
-
-          const { autoScore, maxAutoScore, breakdown: newBd } = gradeExam(studentAnswers, qs)
-
-          let accumulatedEssay = 0
-          const mergedBd = newBd.map(b => {
-            const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')
-            if (!isEssay) return b
-
-            const existing = gradedMap.get(Number(b.number))
-            if (existing) {
-              const clampedEarned = roundScore(Math.min(Math.max(0, Number(existing.earned) || 0), b.max))
-              accumulatedEssay += clampedEarned
-              const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
-              return { ...b, earned: clampedEarned, max: b.max, status }
-            }
-
-            // If only 1 essay exists and r.essay_score was already awarded
-            if (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0 && gradedMap.size === 0) {
-              const clampedEarned = roundScore(Math.min(Math.max(0, Number(r.essay_score) || 0), b.max))
-              accumulatedEssay += clampedEarned
-              const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
-              return { ...b, earned: clampedEarned, max: b.max, status }
-            }
-
-            return b
-          })
-
-          const finalEssay = (gradedMap.size > 0 || (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0))
-            ? roundScore(accumulatedEssay)
-            : roundScore(r.essay_score || 0)
-
-          await results.update(r.id, {
-            auto_score: roundScore(autoScore),
-            max_auto_score: roundScore(maxAutoScore),
-            essay_score: finalEssay,
-            breakdown: JSON.stringify(mergedBd)
-          })
-        }
-      }
+      const res = await results.regradeAllForExam(examId)
+      if (!res.success) throw new Error(res.error)
       await load()
-      alert('Berhasil menghitung ulang seluruh nilai siswa!')
+      alert(`Berhasil memperbarui akumulasi poin dan menghitung ulang nilai ${res.updatedCount || 0} siswa!`)
     } catch (err) {
       console.error(err)
       alert('Gagal menghitung ulang: ' + (err.message || 'Terjadi kesalahan'))
@@ -825,8 +782,9 @@ export default function ResultsView() {
 
         const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
         const essayVal = essayEdits[r.id] !== undefined ? Number(essayEdits[r.id]) : (Number(r.essay_score) || 0)
-        const currentTotal = (Number(r.auto_score) || 0) + essayVal
-        const pctNum = maxPossible > 0 ? (currentTotal / maxPossible) * 100 : 0
+        const rawTotal = (Number(r.auto_score) || 0) + essayVal
+        const currentTotal = maxPossible > 0 ? Math.min(rawTotal, maxPossible) : rawTotal
+        const pctNum = maxPossible > 0 ? Math.min(100, Math.max(0, (currentTotal / maxPossible) * 100)) : 0
         const pctStr = `${formatScore(pctNum)}%`
         const isPassed = pctNum >= passingGrade
 
@@ -938,15 +896,17 @@ export default function ResultsView() {
   } else if (attendanceFilter === 'passed') {
     displayList = resultList.filter(r => {
       const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
-      const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
-      const pct = maxPossible > 0 ? (total / maxPossible) * 100 : 0
+      const rawTotal = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+      const total = maxPossible > 0 ? Math.min(rawTotal, maxPossible) : rawTotal
+      const pct = maxPossible > 0 ? Math.min(100, Math.max(0, (total / maxPossible) * 100)) : 0
       return pct >= passingGrade
     })
   } else if (attendanceFilter === 'failed') {
     displayList = resultList.filter(r => {
       const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
-      const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
-      const pct = maxPossible > 0 ? (total / maxPossible) * 100 : 0
+      const rawTotal = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+      const total = maxPossible > 0 ? Math.min(rawTotal, maxPossible) : rawTotal
+      const pct = maxPossible > 0 ? Math.min(100, Math.max(0, (total / maxPossible) * 100)) : 0
       return pct < passingGrade
     })
   } else {
@@ -965,12 +925,14 @@ export default function ResultsView() {
     if (key === 'nilai') {
       const aEssay = essayEdits[a.id] !== undefined ? Number(essayEdits[a.id]) : (Number(a.essay_score) || 0)
       const bEssay = essayEdits[b.id] !== undefined ? Number(essayEdits[b.id]) : (Number(b.essay_score) || 0)
-      const aTotal = (Number(a.auto_score) || 0) + aEssay
-      const bTotal = (Number(b.auto_score) || 0) + bEssay
+      const aRaw = (Number(a.auto_score) || 0) + aEssay
+      const bRaw = (Number(b.auto_score) || 0) + bEssay
       const aMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(a.max_auto_score) || 0)
       const bMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(b.max_auto_score) || 0)
-      aVal = aMax > 0 ? (aTotal / aMax) * 100 : 0
-      bVal = bMax > 0 ? (bTotal / bMax) * 100 : 0
+      const aTotal = aMax > 0 ? Math.min(aRaw, aMax) : aRaw
+      const bTotal = bMax > 0 ? Math.min(bRaw, bMax) : bRaw
+      aVal = aMax > 0 ? Math.min(100, Math.max(0, (aTotal / aMax) * 100)) : 0
+      bVal = bMax > 0 ? Math.min(100, Math.max(0, (bTotal / bMax) * 100)) : 0
     } else if (key === 'pelanggaran') {
       aVal = a.violation_count || 0
       bVal = b.violation_count || 0
@@ -1027,9 +989,10 @@ export default function ResultsView() {
   const avgPct = resultList.length
     ? (resultList.reduce((sum, r) => {
         const essayVal = essayEdits[r.id] !== undefined ? Number(essayEdits[r.id]) : (Number(r.essay_score) || 0)
-        const total = (Number(r.auto_score) || 0) + essayVal
+        const rawTotal = (Number(r.auto_score) || 0) + essayVal
         const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
-        const pct = maxScore > 0 ? (total / maxScore) * 100 : 0
+        const total = maxScore > 0 ? Math.min(rawTotal, maxScore) : rawTotal
+        const pct = maxScore > 0 ? Math.min(100, Math.max(0, (total / maxScore) * 100)) : 0
         return sum + pct
       }, 0) / resultList.length)
     : 0
@@ -1038,9 +1001,10 @@ export default function ResultsView() {
   // Count students passing/failing
   const passCount = resultList.filter(r => {
     const essayVal = essayEdits[r.id] !== undefined ? Number(essayEdits[r.id]) : (Number(r.essay_score) || 0)
-    const total = (Number(r.auto_score) || 0) + essayVal
+    const rawTotal = (Number(r.auto_score) || 0) + essayVal
     const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
-    const pct = maxScore > 0 ? (total / maxScore) * 100 : 0
+    const total = maxScore > 0 ? Math.min(rawTotal, maxScore) : rawTotal
+    const pct = maxScore > 0 ? Math.min(100, Math.max(0, (total / maxScore) * 100)) : 0
     return pct >= passingGrade
   }).length
   const failCount = resultList.length - passCount
@@ -1083,10 +1047,11 @@ export default function ResultsView() {
               className="btn btn-ghost btn-sm"
               onClick={handleRegrade}
               disabled={regrading || resultList.length === 0}
-              title="Hitung ulang semua nilai siswa berdasarkan sistem penilaian terbaru"
+              title="Perbarui akumulasi poin dan hitung ulang seluruh nilai siswa berdasarkan butir soal terbaru"
+              style={{ fontWeight: 600, color: 'var(--accent)' }}
             >
               <RefreshCw size={15} style={{ animation: regrading ? 'spin 0.8s linear infinite' : 'none' }} />
-              {regrading ? 'Menghitung...' : 'Hitung Ulang Nilai'}
+              {regrading ? 'Menyinkronkan...' : 'Perbarui Akumulasi & Nilai'}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/analytics/${examId}`)}>
               <BarChart2 size={15} /> Analisis Soal
@@ -1429,8 +1394,9 @@ export default function ResultsView() {
 
                     const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
                     const essayVal = essayEdits[r.id] !== undefined ? essayEdits[r.id] : (r.essay_score || 0)
-                    const currentTotal = roundScore((Number(r.auto_score) || 0) + (Number(essayVal) || 0))
-                    const pctNum = maxPossible > 0 ? (currentTotal / maxPossible) * 100 : 0
+                    const rawTotal = roundScore((Number(r.auto_score) || 0) + (Number(essayVal) || 0))
+                    const currentTotal = maxPossible > 0 ? Math.min(rawTotal, maxPossible) : rawTotal
+                    const pctNum = maxPossible > 0 ? Math.min(100, Math.max(0, (currentTotal / maxPossible) * 100)) : 0
                     const pctStr = formatScore(pctNum)
                     const nilaiColor = pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)'
 
@@ -1470,6 +1436,10 @@ export default function ResultsView() {
                                     let num = parseFloat(val)
                                     if (num > totalMaxEssayScore) num = totalMaxEssayScore
                                     if (num < 0) num = 0
+                                    const auto = Number(r.auto_score) || 0
+                                    if (maxPossible > 0 && (auto + num) > maxPossible) {
+                                      num = Math.max(0, roundScore(maxPossible - auto))
+                                    }
                                     val = roundScore(num)
                                   }
                                   setEssayEdits(prev => ({ ...prev, [r.id]: val }))
@@ -1619,9 +1589,10 @@ export default function ResultsView() {
         }, 0)
         const roundedAccumulated = roundScore(accumulatedEssayScore)
 
-        const finalTotalScore = roundScore((Number(selectedResult.auto_score) || 0) + roundedAccumulated)
+        const rawTotalScore = roundScore((Number(selectedResult.auto_score) || 0) + roundedAccumulated)
         const examMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(selectedResult.max_auto_score) || 0)
-        const finalPct = examMaxScore > 0 ? (finalTotalScore / examMaxScore) * 100 : 0
+        const finalTotalScore = examMaxScore > 0 ? Math.min(rawTotalScore, examMaxScore) : rawTotalScore
+        const finalPct = examMaxScore > 0 ? Math.min(100, Math.max(0, (finalTotalScore / examMaxScore) * 100)) : 0
         const isPass = finalPct >= passingGrade
 
         return (

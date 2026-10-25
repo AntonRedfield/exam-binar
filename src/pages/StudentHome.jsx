@@ -210,11 +210,12 @@ export default function StudentHome() {
 
               let scoreNode = null
               if (isDone && result && !isSurvey) {
-                const totalScore = roundScore((Number(result.auto_score) || 0) + (Number(result.essay_score) || 0))
+                const rawTotal = roundScore((Number(result.auto_score) || 0) + (Number(result.essay_score) || 0))
                 const bd = (() => { try { return JSON.parse(result.breakdown || '[]') } catch { return [] } })()
                 const bdMax = roundScore(bd.reduce((sum, b) => sum + (Number(b.max) || 0), 0))
                 const maxScore = roundScore(Math.max(Number(result.max_auto_score) || 0, bdMax))
-                const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
+                const totalScore = maxScore > 0 ? Math.min(rawTotal, maxScore) : rawTotal
+                const pctNum = maxScore > 0 ? Math.min(100, Math.max(0, (totalScore / maxScore) * 100)) : 0
                 const pctStr = formatScore(pctNum)
                 const isEssayPending = bd.some(b => (b.type === 'ESSAY' || b.type === 'PARAGRAPH' || b.reason_type === 'essay') && b.status === 'pending') && (Number(result.essay_score) || 0) === 0
                 scoreNode = isEssayPending ? (

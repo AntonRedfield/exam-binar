@@ -136,10 +136,11 @@ export default function Results() {
     }
   })
 
-  const totalScore = roundScore((Number(result.auto_score) || 0) + essayScore)
+  const rawTotal = roundScore((Number(result.auto_score) || 0) + essayScore)
   const breakdownMaxSum = roundScore(breakdown.reduce((sum, b) => sum + (Number(b.max) || 0), 0))
   const maxScore = roundScore(computedMaxFromQs > 0 ? computedMaxFromQs : Math.max(Number(result.max_auto_score) || 0, breakdownMaxSum))
-  const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
+  const totalScore = maxScore > 0 ? Math.min(rawTotal, maxScore) : rawTotal
+  const pctNum = maxScore > 0 ? Math.min(100, Math.max(0, (totalScore / maxScore) * 100)) : 0
   const pctStr = formatScore(pctNum)
   const essayPending = breakdown.some(b => (b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')) && b.status === 'pending') && essayScore === 0
   const passingGrade = result.exams?.passing_grade ?? 60

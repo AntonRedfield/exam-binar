@@ -1671,6 +1671,133 @@ export const results = {
     return { data: null, error }
   },
 
+  regradeAllForExam: async (examId) => {
+    if (!isSupabaseConfigured || !supabase || !examId) return { success: false, error: 'Database offline / invalid examId' }
+
+    try {
+      // 1. Sync and lock any completed or expired sessions first
+      await sessions.autoLockAndSyncExam(examId).catch(() => {})
+
+      // 2. Fetch current questions, sessions, and existing results for this exam
+      const [{ data: qs }, { data: sess }, { data: currentRes }] = await Promise.all([
+        supabase.from('questions').select('*').eq('exam_id', examId).order('number'),
+        supabase.from('exam_sessions').select('*').eq('exam_id', examId),
+        supabase.from('results').select('*').eq('exam_id', examId)
+      ])
+
+      if (!qs || qs.length === 0 || !currentRes || currentRes.length === 0) {
+        return { success: true, updatedCount: 0 }
+      }
+
+      // Compute total exam maximum points across questions
+      const totalExamMax = roundScore(qs.reduce((sum, q) => {
+        const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
+        return sum + pts
+      }, 0))
+
+      const essayQuestions = qs.filter(q =>
+        q.type === 'ESSAY' ||
+        q.type === 'PARAGRAPH' ||
+        (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+      )
+      const totalEssayMax = roundScore(essayQuestions.reduce((sum, q) => {
+        const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
+        return sum + (q.type === 'AGREE_DISAGREE' ? (pts * 0.5) : pts)
+      }, 0))
+
+      const sessionMap = {}
+      ;(sess || []).forEach(s => {
+        if (s.id) sessionMap[s.id] = s
+        if (s.student_id) sessionMap[s.student_id] = s
+      })
+
+      let updatedCount = 0
+
+      for (const r of currentRes) {
+        const s = sessionMap[r.session_id] || sessionMap[r.student_id]
+        const existingBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
+
+        let studentAnswers = s?.answers
+        if (!studentAnswers || Object.keys(studentAnswers).length === 0) {
+          studentAnswers = {}
+          existingBd.forEach(b => {
+            if (b.number !== undefined && b.given !== undefined && b.given !== null) {
+              studentAnswers[String(b.number)] = b.given
+            }
+          })
+        }
+
+        const gradedMap = new Map()
+        existingBd.forEach(b => {
+          if ((b.type === 'ESSAY' || b.type === 'PARAGRAPH' || b.reason_type === 'essay') && b.status !== 'pending' && b.earned !== undefined) {
+            gradedMap.set(Number(b.number), b)
+          }
+        })
+
+        const { autoScore, maxAutoScore, breakdown: newBd } = gradeExam(studentAnswers || {}, qs)
+
+        let accumulatedEssay = 0
+        const mergedBd = newBd.map(b => {
+          const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')
+          if (!isEssay) return b
+
+          const existing = gradedMap.get(Number(b.number))
+          if (existing) {
+            const clampedEarned = roundScore(Math.min(Math.max(0, Number(existing.earned) || 0), b.max))
+            accumulatedEssay += clampedEarned
+            const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
+            return { ...b, earned: clampedEarned, max: b.max, status }
+          }
+
+          if (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0 && gradedMap.size === 0) {
+            const clampedEarned = roundScore(Math.min(Math.max(0, Number(r.essay_score) || 0), b.max))
+            accumulatedEssay += clampedEarned
+            const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
+            return { ...b, earned: clampedEarned, max: b.max, status }
+          }
+
+          return b
+        })
+
+        let finalEssay = (gradedMap.size > 0 || (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0))
+          ? roundScore(accumulatedEssay)
+          : roundScore(r.essay_score || 0)
+
+        // Essay score cannot exceed total essay max
+        if (totalEssayMax > 0 && finalEssay > totalEssayMax) {
+          finalEssay = totalEssayMax
+        }
+
+        const cleanAuto = roundScore(autoScore)
+        const cleanMax = totalExamMax > 0 ? totalExamMax : roundScore(maxAutoScore)
+
+        // Ensure total earned points cannot exceed max possible
+        const rawTotal = cleanAuto + finalEssay
+        if (cleanMax > 0 && rawTotal > cleanMax) {
+          finalEssay = roundScore(Math.max(0, cleanMax - cleanAuto))
+        }
+
+        await supabase
+          .from('results')
+          .update({
+            auto_score: cleanAuto,
+            max_auto_score: cleanMax,
+            essay_score: finalEssay,
+            breakdown: JSON.stringify(mergedBd),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', r.id)
+
+        updatedCount++
+      }
+
+      return { success: true, updatedCount, totalMaxScore: totalExamMax }
+    } catch (err) {
+      console.error('[DB] regradeAllForExam error:', err)
+      return { success: false, error: err.message || err }
+    }
+  },
+
   _fetchStudentProfilesMap: fetchStudentProfilesMap,
 
   listByExam: async (examId) => {

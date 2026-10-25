@@ -358,7 +358,10 @@ export function gradeExam(answers, questions) {
     }
   }
 
-  return { autoScore: roundScore(autoScore), maxAutoScore: roundScore(maxAutoScore), essayPending, breakdown }
+  const cleanMaxAuto = roundScore(maxAutoScore)
+  const cleanAuto = roundScore(Math.min(autoScore, cleanMaxAuto))
+
+  return { autoScore: cleanAuto, maxAutoScore: cleanMaxAuto, essayPending, breakdown }
 }
 
 /**

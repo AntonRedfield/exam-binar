@@ -56,14 +56,18 @@ export default function AdminDashboard() {
         const distrib = [0, 0, 0, 0, 0]
         if (recentResults?.length) {
           const pcts = recentResults.map(r => {
-            const tot = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
-            return r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
+            const rawTot = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+            const maxS = Number(r.max_auto_score) || 0
+            const tot = maxS > 0 ? Math.min(rawTot, maxS) : rawTot
+            return maxS > 0 ? Math.min(100, Math.max(0, (tot / maxS) * 100)) : 0
           })
           avgScore = formatScore(pcts.reduce((a, b) => a + b, 0) / pcts.length)
           totalViolations = recentResults.reduce((sum, r) => sum + (r.violation_count || 0), 0)
           recentResults.forEach(r => {
-            const tot = (r.auto_score || 0) + (r.essay_score || 0)
-            const pct = r.max_auto_score > 0 ? (tot / r.max_auto_score) * 100 : 0
+            const rawTot = (r.auto_score || 0) + (r.essay_score || 0)
+            const maxS = Number(r.max_auto_score) || 0
+            const tot = maxS > 0 ? Math.min(rawTot, maxS) : rawTot
+            const pct = maxS > 0 ? Math.min(100, Math.max(0, (tot / maxS) * 100)) : 0
             const idx = Math.min(4, Math.floor(pct / 20))
             distrib[idx]++
           })

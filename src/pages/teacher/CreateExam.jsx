@@ -1,10 +1,10 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
-import { exams, questions, users } from '../../lib/db'
+import { exams, questions, users, results } from '../../lib/db'
 import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, Video, FileText, Layers, Copy, Paperclip, Headphones, X, RefreshCw, Lock } from 'lucide-react'
 import { getDriveImageUrl } from '../../lib/grader'
-import { formatScore } from '../../lib/format'
+import { formatScore, roundScore } from '../../lib/format'
 import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
 import { MonitoringIcon } from '../../lib/monitoringUI'
 import QuestionAudioInput from '../../components/admin/QuestionAudioInput'
@@ -210,6 +210,118 @@ export default function CreateExam() {
   const [pendingNavPath, setPendingNavPath] = useState(null)
   const [showUnpublishModal, setShowUnpublishModal] = useState(false)
   const [isUnpublishing, setIsUnpublishing] = useState(false)
+
+  // Point Accumulation & Distribution State
+  const [showPointDistributionModal, setShowPointDistributionModal] = useState(false)
+  const [distributionMode, setDistributionMode] = useState('even_100') // 'even_100' | 'prop_100' | 'uniform'
+  const [autoTargetPct, setAutoTargetPct] = useState(70)
+  const [essayTargetPct, setEssayTargetPct] = useState(30)
+  const [uniformPointsVal, setUniformPointsVal] = useState(2)
+
+  // Real-time point accumulation metrics across all questions
+  const totalAccumulatedPoints = useMemo(() => {
+    return roundScore((questionItems || []).reduce((acc, q) => {
+      const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+      return acc + pts
+    }, 0))
+  }, [questionItems])
+
+  const totalAutoAccumulatedPoints = useMemo(() => {
+    return roundScore((questionItems || []).filter(q => {
+      const isEssay = q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+      return !isEssay
+    }).reduce((acc, q) => {
+      const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+      return acc + pts
+    }, 0))
+  }, [questionItems])
+
+  const totalEssayAccumulatedPoints = useMemo(() => {
+    return roundScore((questionItems || []).filter(q => {
+      const isEssay = q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+      return isEssay
+    }).reduce((acc, q) => {
+      const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+      return acc + pts
+    }, 0))
+  }, [questionItems])
+
+  const essayCount = useMemo(() => {
+    return (questionItems || []).filter(q =>
+      q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+    ).length
+  }, [questionItems])
+
+  const autoCount = Math.max(0, (questionItems || []).length - essayCount)
+
+  function distributeEvenlyTo100(targetTotal = 100) {
+    if (!questionItems || questionItems.length === 0) return
+    const n = questionItems.length
+    const base = Math.floor((targetTotal / n) * 100) / 100
+    const remainder = roundScore(targetTotal - (base * n))
+
+    setQuestionItems(prev => prev.map((q, idx) => {
+      const bonus = idx === 0 ? remainder : 0
+      return {
+        ...q,
+        points: roundScore(base + bonus)
+      }
+    }))
+  }
+
+  function applyPointDistribution() {
+    if (!questionItems || questionItems.length === 0) return
+
+    if (distributionMode === 'even_100') {
+      distributeEvenlyTo100(100)
+    } else if (distributionMode === 'prop_100') {
+      const autoQs = questionItems.filter(q => !(q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))))
+      const essayQs = questionItems.filter(q => q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay')))
+
+      let autoTarget = Number(autoTargetPct) || 0
+      let essayTarget = Number(essayTargetPct) || 0
+
+      if (autoQs.length === 0) {
+        essayTarget = 100
+        autoTarget = 0
+      } else if (essayQs.length === 0) {
+        autoTarget = 100
+        essayTarget = 0
+      }
+
+      setQuestionItems(prev => {
+        const autoBase = autoQs.length > 0 ? Math.floor((autoTarget / autoQs.length) * 100) / 100 : 0
+        const essayBase = essayQs.length > 0 ? Math.floor((essayTarget / essayQs.length) * 100) / 100 : 0
+
+        const autoRemainder = roundScore(autoTarget - (autoBase * autoQs.length))
+        const essayRemainder = roundScore(essayTarget - (essayBase * essayQs.length))
+
+        let autoAssignedCount = 0
+        let essayAssignedCount = 0
+
+        return prev.map(q => {
+          const isEssay = q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+          if (isEssay) {
+            const bonus = essayAssignedCount === 0 ? essayRemainder : 0
+            essayAssignedCount++
+            return { ...q, points: roundScore(essayBase + bonus) }
+          } else {
+            const bonus = autoAssignedCount === 0 ? autoRemainder : 0
+            autoAssignedCount++
+            return { ...q, points: roundScore(autoBase + bonus) }
+          }
+        })
+      })
+    } else if (distributionMode === 'uniform') {
+      const val = Math.max(0.01, roundScore(Number(uniformPointsVal) || 1))
+      setQuestionItems(prev => prev.map(q => ({
+        ...q,
+        points: val
+      })))
+    }
+
+    setShowPointDistributionModal(false)
+  }
 
   async function handleConfirmUnpublish(targetStatus = 'draft') {
     setIsUnpublishing(true)
@@ -1744,6 +1856,11 @@ export default function CreateExam() {
       setLastAutosavedAt(result.savedAt)
       setAutosaveStatus('saved')
       setAutosaveCountdown(autosaveInterval)
+
+      // Synchronize results for existing exam in background so student scores stay in sync with updated point accumulation
+      if (savedExamId) {
+        results.regradeAllForExam(savedExamId).catch(err => console.warn('[CreateExam] Background regrade error:', err))
+      }
 
       // If user chose to stay on page (e.g. clicking "Simpan Draft" or "Terapkan Langsung")
       if (stayOnPage) {
@@ -3383,6 +3500,98 @@ export default function CreateExam() {
             </button>
           </div>
         </div>
+
+        {/* Exam Point Accumulation Bar (Only for Exams/Quizzes) */}
+        {!isSurvey && questionItems.length > 0 && (
+          <div style={{
+            background: totalAccumulatedPoints === 100 
+              ? 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)' 
+              : (totalAccumulatedPoints > 100 ? 'linear-gradient(135deg, #fef2f2 0%, #ffffff 100%)' : 'linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)'),
+            border: totalAccumulatedPoints === 100 
+              ? '1.5px solid #86efac' 
+              : (totalAccumulatedPoints > 100 ? '1.5px solid #fca5a5' : '1.5px solid #fde68a'),
+            borderRadius: 10,
+            padding: '0.85rem 1.25rem',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <div style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: totalAccumulatedPoints === 100 ? '#dcfce7' : (totalAccumulatedPoints > 100 ? '#fee2e2' : '#fef3c7'),
+                  color: totalAccumulatedPoints === 100 ? '#15803d' : (totalAccumulatedPoints > 100 ? '#b91c1c' : '#b45309'),
+                  fontWeight: 800,
+                  fontSize: '1rem',
+                  flexShrink: 0
+                }}>
+                  {totalAccumulatedPoints === 100 ? '✓' : (totalAccumulatedPoints > 100 ? '!' : '∑')}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>
+                      Akumulasi Poin: {formatScore(totalAccumulatedPoints)} Poin
+                    </span>
+                    {totalAccumulatedPoints === 100 ? (
+                      <span className="badge badge-success" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                        🟢 Tepat 100 Poin (Skala Penuh 100%)
+                      </span>
+                    ) : totalAccumulatedPoints > 100 ? (
+                      <span className="badge badge-danger" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                        🔴 Melebihi 100 Poin (+{formatScore(totalAccumulatedPoints - 100)})
+                      </span>
+                    ) : (
+                      <span className="badge badge-warning" style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                        🟡 Di Bawah 100 Poin (Kurang {formatScore(100 - totalAccumulatedPoints)})
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.2rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <span>Soal Otomatis: <strong>{autoCount} butir</strong> ({formatScore(totalAutoAccumulatedPoints)} poin)</span>
+                    <span>·</span>
+                    <span>Soal Esai: <strong>{essayCount} butir</strong> ({formatScore(totalEssayAccumulatedPoints)} poin)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons to Update Point Accumulation */}
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() => distributeEvenlyTo100(100)}
+                  title="Bagi rata bobot poin ke seluruh soal agar total akumulasi menjadi tepat 100 poin"
+                  style={{ fontWeight: 700, fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <Zap size={14} /> ⚡ Ratakan ke 100 Poin
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => setShowPointDistributionModal(true)}
+                  title="Buka pengaturan distribusi bobot poin otomatis dan esai"
+                  style={{ fontWeight: 600, fontSize: '0.8rem', padding: '0.35rem 0.75rem', border: '1px solid var(--border)' }}
+                >
+                  <Sliders size={14} style={{ marginRight: '0.3rem' }} /> Atur Bobot...
+                </button>
+              </div>
+            </div>
+
+            {/* Visual Progress Bar */}
+            <div style={{ marginTop: '0.65rem', height: 6, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, (totalAccumulatedPoints / 100) * 100)}%`,
+                background: totalAccumulatedPoints === 100 ? '#16a34a' : (totalAccumulatedPoints > 100 ? '#dc2626' : '#f59e0b'),
+                transition: 'width 0.3s ease, background 0.3s ease'
+              }} />
+            </div>
+          </div>
+        )}
 
         {/* Questions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -5531,6 +5740,197 @@ export default function CreateExam() {
                   Tinggalkan Halaman
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Point Accumulation Distribution Modal */}
+      {showPointDistributionModal && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }} onClick={() => setShowPointDistributionModal(false)}>
+          <div className="modal" style={{ maxWidth: 520, padding: '1.75rem' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '8px', background: '#ecfdf5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Sliders size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>Distribusi & Akumulasi Poin</h3>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Sesuaikan akumulasi bobot butir soal agar tidak melebihi skala 100%
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPointDistributionModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Current State Info */}
+            <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.82rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Jumlah Soal:</span>
+                <strong>{questionItems.length} Soal ({autoCount} Otomatis, {essayCount} Esai)</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Akumulasi Saat Ini:</span>
+                <strong style={{ color: totalAccumulatedPoints === 100 ? '#16a34a' : (totalAccumulatedPoints > 100 ? '#dc2626' : '#d97706') }}>
+                  {formatScore(totalAccumulatedPoints)} Poin {totalAccumulatedPoints === 100 ? '✓ (Pas 100%)' : ''}
+                </strong>
+              </div>
+            </div>
+
+            {/* Distribution Mode Options */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              <label style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                borderRadius: 8,
+                border: distributionMode === 'even_100' ? '2px solid var(--accent)' : '1px solid var(--border)',
+                background: distributionMode === 'even_100' ? 'rgba(37, 99, 235, 0.04)' : 'transparent',
+                cursor: 'pointer'
+              }}>
+                <input
+                  type="radio"
+                  name="distributionMode"
+                  checked={distributionMode === 'even_100'}
+                  onChange={() => setDistributionMode('even_100')}
+                  style={{ marginTop: 3 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Ratakan Seluruh Soal ke Total 100 Poin (Rekomendasi)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    Setiap soal mendapat rata-rata {formatScore(questionItems.length ? 100 / questionItems.length : 0)} poin. Total akhir akumulasi dijamin tepat 100.00 poin.
+                  </div>
+                </div>
+              </label>
+
+              {essayCount > 0 && autoCount > 0 && (
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem',
+                  padding: '0.85rem 1rem',
+                  borderRadius: 8,
+                  border: distributionMode === 'prop_100' ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  background: distributionMode === 'prop_100' ? 'rgba(37, 99, 235, 0.04)' : 'transparent',
+                  cursor: 'pointer'
+                }}>
+                  <input
+                    type="radio"
+                    name="distributionMode"
+                    checked={distributionMode === 'prop_100'}
+                    onChange={() => setDistributionMode('prop_100')}
+                    style={{ marginTop: 3 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Bagi Proporsional: Soal Otomatis & Esai</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      Atur porsi bobot antara pilihan ganda ({autoCount} soal) dan esai ({essayCount} soal).
+                    </div>
+                    {distributionMode === 'prop_100' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.75rem' }}>
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Target Poin Otomatis:</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={autoTargetPct}
+                            onChange={e => {
+                              const v = Math.max(0, Math.min(100, Number(e.target.value) || 0))
+                              setAutoTargetPct(v)
+                              setEssayTargetPct(100 - v)
+                            }}
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                          />
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
+                            ~{formatScore(autoCount ? autoTargetPct / autoCount : 0)} poin / soal
+                          </div>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Target Poin Esai:</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={essayTargetPct}
+                            onChange={e => {
+                              const v = Math.max(0, Math.min(100, Number(e.target.value) || 0))
+                              setEssayTargetPct(v)
+                              setAutoTargetPct(100 - v)
+                            }}
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                          />
+                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.2rem' }}>
+                            ~{formatScore(essayCount ? essayTargetPct / essayCount : 0)} poin / soal
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              )}
+
+              <label style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                borderRadius: 8,
+                border: distributionMode === 'uniform' ? '2px solid var(--accent)' : '1px solid var(--border)',
+                background: distributionMode === 'uniform' ? 'rgba(37, 99, 235, 0.04)' : 'transparent',
+                cursor: 'pointer'
+              }}>
+                <input
+                  type="radio"
+                  name="distributionMode"
+                  checked={distributionMode === 'uniform'}
+                  onChange={() => setDistributionMode('uniform')}
+                  style={{ marginTop: 3 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Set Bobot Seragam (Sama untuk Setiap Soal)</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    Tentukan poin yang sama untuk semua butir soal.
+                  </div>
+                  {distributionMode === 'uniform' && (
+                    <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.1"
+                        className="form-control"
+                        value={uniformPointsVal}
+                        onChange={e => setUniformPointsVal(parseFloat(e.target.value) || 1)}
+                        style={{ width: 80, padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                      />
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        poin per soal = Total <strong>{formatScore(roundScore((parseFloat(uniformPointsVal) || 1) * questionItems.length))}</strong> Poin
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowPointDistributionModal(false)}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={applyPointDistribution}
+                style={{ fontWeight: 700 }}
+              >
+                <Zap size={15} style={{ marginRight: '0.3rem' }} /> Terapkan Distribusi Bobot
+              </button>
             </div>
           </div>
         </div>
