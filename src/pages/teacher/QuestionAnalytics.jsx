@@ -99,7 +99,7 @@ export default function QuestionAnalytics() {
 
       // Calculate success rate and difficulty
       const questionsAnalysis = Object.values(qStats)
-        .filter(s => s.type !== 'ESSAY')
+        .filter(s => s.type !== 'ESSAY' && s.type !== 'PARAGRAPH')
         .map(s => {
           const successRate = s.total > 0 ? ((s.correct / s.total) * 100) : 0
           let difficulty = 'Sedang'

@@ -327,7 +327,15 @@ export default function ResultsView() {
     const essays = bd.filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
 
     const initialScores = {}
-    if (essays.length === 1 && (essays[0].earned === undefined || essays[0].earned === 0) && (r.essay_score || 0) > 0) {
+    if (essays.length === 0 && essayQuestionsList.length > 0) {
+      if (essayQuestionsList.length === 1 && (r.essay_score || 0) > 0) {
+        initialScores[essayQuestionsList[0].number] = r.essay_score
+      } else {
+        essayQuestionsList.forEach(q => {
+          initialScores[q.number] = 0
+        })
+      }
+    } else if (essays.length === 1 && (r.essay_score || 0) > 0) {
       initialScores[essays[0].number] = r.essay_score
     } else {
       essays.forEach(e => {
@@ -357,14 +365,40 @@ export default function ResultsView() {
     try {
       const bd = (() => { try { return JSON.parse(selectedResult.breakdown || '[]') } catch { return [] } })()
 
-      const updatedBd = bd.map(b => {
+      // Ensure all essay questions from essayQuestionsList are present in fullBd
+      const existingNumbers = new Set(bd.map(b => Number(b.number)))
+      const fullBd = [...bd]
+      essayQuestionsList.forEach(q => {
+        if (!existingNumbers.has(Number(q.number))) {
+          const isAD = q.type === 'AGREE_DISAGREE'
+          const pts = Number(q.points || 1)
+          const maxPts = isAD ? roundScore(pts * 0.5) : roundScore(pts)
+          fullBd.push({
+            number: q.number,
+            type: q.type,
+            reason_type: q.options?.reason_type || q.correct_answer?.reason_type || 'essay',
+            status: 'pending',
+            earned: 0,
+            max: maxPts,
+            correct: q.correct_answer,
+            given: null
+          })
+          existingNumbers.add(Number(q.number))
+        }
+      })
+
+      const updatedBd = fullBd.map(b => {
         const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')
         if (!isEssay) return b
 
         const qObj = questionMap.get(Number(b.number))
-        const maxPts = b.type === 'AGREE_DISAGREE'
-          ? (Number(b.max || qObj?.points || 1) * 0.5)
-          : Number(b.max || qObj?.points || 1)
+        const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+          ? Number(qObj.points)
+          : (Number(b.max) || 1)
+        const isAgreeDisagree = b.type === 'AGREE_DISAGREE'
+        const maxPts = isAgreeDisagree
+          ? roundScore(configuredPts * 0.5)
+          : roundScore(configuredPts)
 
         const rawVal = modalScores[b.number]
         const earned = roundScore(Math.min(Math.max(0, isNaN(parseFloat(rawVal)) ? 0 : parseFloat(rawVal)), maxPts))
@@ -407,6 +441,14 @@ export default function ResultsView() {
       } : r))
 
       setEssayEdits(prev => ({ ...prev, [selectedResult.id]: finalEssayScore }))
+      if (selectedDetailResult && selectedDetailResult.id === selectedResult.id) {
+        setSelectedDetailResult(prev => ({
+          ...prev,
+          essay_score: finalEssayScore,
+          max_auto_score: finalMaxScore,
+          breakdown: JSON.stringify(updatedBd)
+        }))
+      }
       setSelectedResult(null)
     } catch (err) {
       console.error('Error saving essay scores:', err)
@@ -424,17 +466,55 @@ export default function ResultsView() {
     const finalMaxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (targetResult?.max_auto_score || 0)
 
     let updatedBreakdown = null
-    if (targetResult?.breakdown) {
-      try {
-        const bd = JSON.parse(targetResult.breakdown || '[]')
-        const essays = bd.filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
-        if (essays.length === 1) {
-          const maxPts = essays[0].max || totalMaxEssayScore || 1
-          const earned = roundScore(Math.min(clampedScore, maxPts))
-          const status = earned === maxPts ? 'correct' : (earned > 0 ? 'partial' : 'wrong')
-          updatedBreakdown = bd.map(b => b.number === essays[0].number ? { ...b, earned, status } : b)
+    try {
+      const bd = JSON.parse(targetResult?.breakdown || '[]')
+      const existingNumbers = new Set(bd.map(b => Number(b.number)))
+      const fullBd = [...bd]
+      essayQuestionsList.forEach(q => {
+        if (!existingNumbers.has(Number(q.number))) {
+          const isAD = q.type === 'AGREE_DISAGREE'
+          const pts = Number(q.points || 1)
+          const maxPts = isAD ? roundScore(pts * 0.5) : roundScore(pts)
+          fullBd.push({
+            number: q.number,
+            type: q.type,
+            reason_type: q.options?.reason_type || q.correct_answer?.reason_type || 'essay',
+            status: 'pending',
+            earned: 0,
+            max: maxPts,
+            correct: q.correct_answer,
+            given: null
+          })
+          existingNumbers.add(Number(q.number))
         }
-      } catch {}
+      })
+
+      const essays = fullBd.filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay'))
+      if (essays.length === 1) {
+        const qObj = questionMap.get(Number(essays[0].number))
+        const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+          ? Number(qObj.points)
+          : (Number(essays[0].max) || totalMaxEssayScore || 1)
+        const isAD = essays[0].type === 'AGREE_DISAGREE'
+        const maxPts = isAD ? roundScore(configuredPts * 0.5) : roundScore(configuredPts)
+        const earned = roundScore(Math.min(clampedScore, maxPts))
+        const status = earned === maxPts ? 'correct' : (earned > 0 ? 'partial' : 'wrong')
+        updatedBreakdown = fullBd.map(b => Number(b.number) === Number(essays[0].number) ? { ...b, earned, max: maxPts, status } : b)
+      } else if (essays.length > 1) {
+        updatedBreakdown = fullBd.map(b => {
+          const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')
+          if (!isEssay) return b
+          const qObj = questionMap.get(Number(b.number))
+          const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+            ? Number(qObj.points)
+            : (Number(b.max) || 1)
+          const isAD = b.type === 'AGREE_DISAGREE'
+          const maxPts = isAD ? roundScore(configuredPts * 0.5) : roundScore(configuredPts)
+          return { ...b, max: maxPts }
+        })
+      }
+    } catch (e) {
+      console.warn('Error updating breakdown in saveEssay:', e)
     }
 
     const updatePayload = {
@@ -457,6 +537,14 @@ export default function ResultsView() {
         : r
       ))
       setEssayEdits(prev => ({ ...prev, [resultId]: data.essay_score }))
+      if (selectedDetailResult && selectedDetailResult.id === resultId) {
+        setSelectedDetailResult(prev => ({
+          ...prev,
+          essay_score: data.essay_score,
+          max_auto_score: data.max_auto_score,
+          ...(updatedBreakdown ? { breakdown: JSON.stringify(updatedBreakdown) } : {})
+        }))
+      }
     } else if (error) {
       alert('Gagal menyimpan: ' + (error.message || 'Error'))
     }
@@ -483,10 +571,28 @@ export default function ResultsView() {
         if (s.student_id) sessionMap[s.student_id] = s
       })
 
+      const essayQuestions = (qs || []).filter(q =>
+        q.type === 'ESSAY' ||
+        q.type === 'PARAGRAPH' ||
+        (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+      )
+
       for (const r of currentRes) {
         const s = sessionMap[r.session_id] || sessionMap[r.student_id]
-        if (s && s.answers) {
-          const existingBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
+        const existingBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
+
+        // Robust answer lookup: prefer session answers, fallback to student answers recorded in existing breakdown
+        let studentAnswers = s?.answers
+        if (!studentAnswers || Object.keys(studentAnswers).length === 0) {
+          studentAnswers = {}
+          existingBd.forEach(b => {
+            if (b.number !== undefined && b.given !== undefined && b.given !== null) {
+              studentAnswers[String(b.number)] = b.given
+            }
+          })
+        }
+
+        if (studentAnswers && Object.keys(studentAnswers).length > 0) {
           const gradedMap = new Map()
           existingBd.forEach(b => {
             if ((b.type === 'ESSAY' || b.type === 'PARAGRAPH' || b.reason_type === 'essay') && b.status !== 'pending' && b.earned !== undefined) {
@@ -494,19 +600,35 @@ export default function ResultsView() {
             }
           })
 
-          const { autoScore, maxAutoScore, breakdown: newBd } = gradeExam(s.answers, qs)
+          const { autoScore, maxAutoScore, breakdown: newBd } = gradeExam(studentAnswers, qs)
 
           let accumulatedEssay = 0
           const mergedBd = newBd.map(b => {
+            const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')
+            if (!isEssay) return b
+
             const existing = gradedMap.get(Number(b.number))
             if (existing) {
-              accumulatedEssay += Number(existing.earned) || 0
-              return { ...b, earned: existing.earned, status: existing.status }
+              const clampedEarned = roundScore(Math.min(Math.max(0, Number(existing.earned) || 0), b.max))
+              accumulatedEssay += clampedEarned
+              const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
+              return { ...b, earned: clampedEarned, max: b.max, status }
             }
+
+            // If only 1 essay exists and r.essay_score was already awarded
+            if (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0 && gradedMap.size === 0) {
+              const clampedEarned = roundScore(Math.min(Math.max(0, Number(r.essay_score) || 0), b.max))
+              accumulatedEssay += clampedEarned
+              const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
+              return { ...b, earned: clampedEarned, max: b.max, status }
+            }
+
             return b
           })
 
-          const finalEssay = gradedMap.size > 0 ? roundScore(accumulatedEssay) : roundScore(r.essay_score || 0)
+          const finalEssay = (gradedMap.size > 0 || (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0))
+            ? roundScore(accumulatedEssay)
+            : roundScore(r.essay_score || 0)
 
           await results.update(r.id, {
             auto_score: roundScore(autoScore),
@@ -841,10 +963,14 @@ export default function ResultsView() {
     let aVal, bVal
 
     if (key === 'nilai') {
-      const aTotal = (a.auto_score || 0) + (a.essay_score || 0)
-      const bTotal = (b.auto_score || 0) + (b.essay_score || 0)
-      aVal = a.max_auto_score > 0 ? (aTotal / a.max_auto_score) * 100 : 0
-      bVal = b.max_auto_score > 0 ? (bTotal / b.max_auto_score) * 100 : 0
+      const aEssay = essayEdits[a.id] !== undefined ? Number(essayEdits[a.id]) : (Number(a.essay_score) || 0)
+      const bEssay = essayEdits[b.id] !== undefined ? Number(essayEdits[b.id]) : (Number(b.essay_score) || 0)
+      const aTotal = (Number(a.auto_score) || 0) + aEssay
+      const bTotal = (Number(b.auto_score) || 0) + bEssay
+      const aMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(a.max_auto_score) || 0)
+      const bMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(b.max_auto_score) || 0)
+      aVal = aMax > 0 ? (aTotal / aMax) * 100 : 0
+      bVal = bMax > 0 ? (bTotal / bMax) * 100 : 0
     } else if (key === 'pelanggaran') {
       aVal = a.violation_count || 0
       bVal = b.violation_count || 0
@@ -900,7 +1026,8 @@ export default function ResultsView() {
 
   const avgPct = resultList.length
     ? (resultList.reduce((sum, r) => {
-        const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+        const essayVal = essayEdits[r.id] !== undefined ? Number(essayEdits[r.id]) : (Number(r.essay_score) || 0)
+        const total = (Number(r.auto_score) || 0) + essayVal
         const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
         const pct = maxScore > 0 ? (total / maxScore) * 100 : 0
         return sum + pct
@@ -910,7 +1037,8 @@ export default function ResultsView() {
 
   // Count students passing/failing
   const passCount = resultList.filter(r => {
-    const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
+    const essayVal = essayEdits[r.id] !== undefined ? Number(essayEdits[r.id]) : (Number(r.essay_score) || 0)
+    const total = (Number(r.auto_score) || 0) + essayVal
     const maxScore = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
     const pct = maxScore > 0 ? (total / maxScore) * 100 : 0
     return pct >= passingGrade
@@ -1300,11 +1428,10 @@ export default function ResultsView() {
                     }
 
                     const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
-                    const total = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
-                    const pctNum = maxPossible > 0 ? (total / maxPossible) * 100 : 0
-                    const pctStr = formatScore(pctNum)
                     const essayVal = essayEdits[r.id] !== undefined ? essayEdits[r.id] : (r.essay_score || 0)
-                    const currentTotal = (Number(r.auto_score) || 0) + (Number(essayVal) || 0)
+                    const currentTotal = roundScore((Number(r.auto_score) || 0) + (Number(essayVal) || 0))
+                    const pctNum = maxPossible > 0 ? (currentTotal / maxPossible) * 100 : 0
+                    const pctStr = formatScore(pctNum)
                     const nilaiColor = pctNum >= passingGrade ? 'var(--success)' : 'var(--danger)'
 
                     const rBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
@@ -1353,7 +1480,7 @@ export default function ResultsView() {
                           ) : (
                             <span className="text-muted">—</span>
                           )}
-                          <span className="print-only">{formatScore(r.essay_score || 0)}</span>
+                          <span className="print-only">{formatScore(essayVal)}</span>
                         </td>
                         <td className="no-print" style={{ fontWeight: 700, color: nilaiColor }}>
                           {formatScore(currentTotal)} <span className="text-muted text-xs" style={{ fontWeight: 400 }}>/ {formatScore(maxPossible)}</span>
@@ -1469,17 +1596,23 @@ export default function ResultsView() {
 
         const modalTotalMaxEssay = essays.reduce((sum, e) => {
           const qObj = questionMap.get(Number(e.number))
+          const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+            ? Number(qObj.points)
+            : (Number(e.max) || 1)
           const maxPts = e.type === 'AGREE_DISAGREE'
-            ? (Number(e.max || qObj?.points || 1) * 0.5)
-            : Number(e.max || qObj?.points || 1)
+            ? roundScore(configuredPts * 0.5)
+            : roundScore(configuredPts)
           return sum + maxPts
         }, 0)
 
         const accumulatedEssayScore = essays.reduce((sum, e) => {
           const qObj = questionMap.get(Number(e.number))
+          const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+            ? Number(qObj.points)
+            : (Number(e.max) || 1)
           const maxPts = e.type === 'AGREE_DISAGREE'
-            ? (Number(e.max || qObj?.points || 1) * 0.5)
-            : Number(e.max || qObj?.points || 1)
+            ? roundScore(configuredPts * 0.5)
+            : roundScore(configuredPts)
           const val = parseFloat(modalScores[e.number])
           const safeVal = isNaN(val) ? 0 : Math.min(Math.max(0, val), maxPts)
           return sum + safeVal
@@ -1560,9 +1693,12 @@ export default function ResultsView() {
                   essays.map(essay => {
                     const isAgreeDisagree = essay.type === 'AGREE_DISAGREE'
                     const qObj = questionMap.get(Number(essay.number))
+                    const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+                      ? Number(qObj.points)
+                      : (Number(essay.max) || 1)
                     const maxPts = isAgreeDisagree
-                      ? (Number(essay.max || qObj?.points || 1) * 0.5)
-                      : Number(essay.max || qObj?.points || 1)
+                      ? roundScore(configuredPts * 0.5)
+                      : roundScore(configuredPts)
                     
                     const studentStance = essay.given?.stance || (typeof essay.given === 'string' ? essay.given : null)
                     const studentEssayText = essay.given?.essay || essay.given?.reason_text || (typeof essay.given === 'string' ? essay.given : null)
@@ -1752,11 +1888,16 @@ export default function ResultsView() {
       {/* Student Detailed Answers Review Modal */}
       {selectedDetailResult && (
         <StudentAnswerDetailModal
-          result={selectedDetailResult}
+          result={resultList.find(r => r.id === selectedDetailResult.id) || selectedDetailResult}
           exam={exam}
           questions={questionList}
           onClose={() => setSelectedDetailResult(null)}
           onOpenEssayGrading={(res) => openEssayModal(res)}
+          onUpdateResult={(updatedRes) => {
+            setResultList(prev => prev.map(r => r.id === updatedRes.id ? { ...r, ...updatedRes } : r))
+            setEssayEdits(prev => ({ ...prev, [updatedRes.id]: updatedRes.essay_score }))
+            setSelectedDetailResult(prev => prev ? { ...prev, ...updatedRes } : null)
+          }}
         />
       )}
     </>

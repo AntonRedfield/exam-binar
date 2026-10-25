@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   X,
   Printer,
@@ -16,30 +16,41 @@ import {
   ExternalLink,
   Edit3,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  Save
 } from 'lucide-react'
 import FormattedText from '../common/FormattedText'
 import AdaptiveExamImage from './AdaptiveExamImage'
 import { formatScore, roundScore } from '../../lib/format'
+import { results } from '../../lib/db'
 
 export default function StudentAnswerDetailModal({
   result,
   exam,
   questions = [],
   onClose,
-  onOpenEssayGrading
+  onOpenEssayGrading,
+  onUpdateResult
 }) {
+  const [localResult, setLocalResult] = useState(result)
   const [filterType, setFilterType] = useState('all') // 'all' | 'correct' | 'wrong' | 'partial' | 'pending'
+  const [inlineScores, setInlineScores] = useState({})
+  const [inlineSaving, setInlineSaving] = useState(null)
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState(null)
+
+  useEffect(() => {
+    setLocalResult(result)
+  }, [result])
 
   // Student Profile Data
-  const student = result?.users || result?.student || result?.profiles || {}
+  const student = localResult?.users || localResult?.student || localResult?.profiles || {}
   const studentName = student.full_name || student.display_name || student.name || 'Siswa'
   const studentClass = student.kelas || student.class_section || student.classes?.name || '—'
   const studentUsername = student.username || ''
 
   // Score metrics
-  const autoScore = Number(result?.auto_score || 0)
-  const essayScore = Number(result?.essay_score || 0)
+  const autoScore = Number(localResult?.auto_score || 0)
+  const essayScore = Number(localResult?.essay_score || 0)
   const totalScore = roundScore(autoScore + essayScore)
 
   const computedMaxFromQuestions = useMemo(() => {
@@ -49,9 +60,9 @@ export default function StudentAnswerDetailModal({
     }, 0)
   }, [questions])
 
-  const maxPossible = Number(result?.max_auto_score || 0) > 0
-    ? Number(result.max_auto_score)
-    : (computedMaxFromQuestions > 0 ? computedMaxFromQuestions : 100)
+  const maxPossible = computedMaxFromQuestions > 0
+    ? computedMaxFromQuestions
+    : (Number(localResult?.max_auto_score || 0) > 0 ? Number(localResult.max_auto_score) : 100)
 
   const passingGrade = exam?.passing_grade ?? 60
   const pct = maxPossible > 0 ? (totalScore / maxPossible) * 100 : 0
@@ -70,11 +81,11 @@ export default function StudentAnswerDetailModal({
   // Parse breakdown safely (handles arrays, JSON strings, and double-encoded JSON strings)
   const breakdownList = useMemo(() => {
     let bd = []
-    if (Array.isArray(result?.breakdown)) {
-      bd = result.breakdown
-    } else if (typeof result?.breakdown === 'string') {
+    if (Array.isArray(localResult?.breakdown)) {
+      bd = localResult.breakdown
+    } else if (typeof localResult?.breakdown === 'string') {
       try {
-        const parsed = JSON.parse(result.breakdown)
+        const parsed = JSON.parse(localResult.breakdown)
         if (Array.isArray(parsed)) {
           bd = parsed
         } else if (typeof parsed === 'string') {
@@ -90,22 +101,45 @@ export default function StudentAnswerDetailModal({
 
     // If questions prop is provided, merge with questions list
     if (questions && questions.length > 0) {
+      const essayCountInExam = questions.filter(x =>
+        x.type === 'ESSAY' ||
+        x.type === 'PARAGRAPH' ||
+        (x.type === 'AGREE_DISAGREE' && (x.options?.reason_type === 'essay' || x.correct_answer?.reason_type === 'essay'))
+      ).length
+
       return questions.map(q => {
         const qNum = Number(q.number)
+        const isAD = q.type === 'AGREE_DISAGREE'
+        const isEssay = q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (isAD && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+        const configuredPts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+        const maxPts = (isAD && isEssay) ? roundScore(configuredPts * 0.5) : roundScore(configuredPts)
+
         const existing = bd.find(b => Number(b.number) === qNum || b.id === q.id)
         if (existing) {
+          let earned = existing.earned !== undefined ? Number(existing.earned) : 0
+          let status = existing.status || (isEssay ? 'pending' : 'wrong')
+
+          // If there's 1 essay and essay_score > 0, reflect the score
+          if (isEssay && (existing.earned === undefined || existing.earned === 0) && essayScore > 0 && essayCountInExam === 1) {
+            earned = essayScore
+            status = earned === maxPts ? 'correct' : (earned > 0 ? 'partial' : 'wrong')
+          }
+
           return {
             ...existing,
             number: q.number,
+            max: maxPts,
+            earned,
+            status,
             questionObj: q,
           }
         }
         return {
           number: q.number,
           type: q.type,
-          status: (q.type === 'ESSAY' || q.type === 'PARAGRAPH') ? 'pending' : 'wrong',
+          status: isEssay ? 'pending' : 'wrong',
           earned: 0,
-          max: q.points || 1,
+          max: maxPts,
           correct: q.correct_answer,
           given: null,
           questionObj: q,
@@ -114,11 +148,22 @@ export default function StudentAnswerDetailModal({
     }
 
     // If questions array is empty, use the breakdown items directly
-    return bd.map(b => ({
-      ...b,
-      questionObj: questionMap.get(Number(b.number)) || b.questionObj || {}
-    }))
-  }, [result?.breakdown, questions, questionMap])
+    return bd.map(b => {
+      const qObj = questionMap.get(Number(b.number)) || b.questionObj || {}
+      const isAD = b.type === 'AGREE_DISAGREE'
+      const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (isAD && (b.reason_type === 'essay' || qObj.options?.reason_type === 'essay'))
+      const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+        ? Number(qObj.points)
+        : (Number(b.max) || 1)
+      const maxPts = (isAD && isEssay) ? roundScore(configuredPts * 0.5) : roundScore(configuredPts)
+
+      return {
+        ...b,
+        max: maxPts,
+        questionObj: qObj
+      }
+    })
+  }, [localResult?.breakdown, localResult?.essay_score, questions, questionMap, essayScore])
 
   // Breakdown statistics
   const stats = useMemo(() => {
@@ -136,6 +181,95 @@ export default function StudentAnswerDetailModal({
 
     return { total: breakdownList.length, correct, wrong, partial, pending }
   }, [breakdownList])
+
+  // Whether this exam has essay questions
+  const hasEssays = useMemo(() => {
+    return (questions || []).some(q =>
+      q.type === 'ESSAY' ||
+      q.type === 'PARAGRAPH' ||
+      (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+    ) || breakdownList.some(b => {
+      const qObj = b.questionObj || questionMap.get(Number(b.number)) || {}
+      const qType = b.type || qObj.type || 'MCQ'
+      return qType === 'ESSAY' || qType === 'PARAGRAPH' || (qType === 'AGREE_DISAGREE' && (b.reason_type === 'essay' || qObj.options?.reason_type === 'essay'))
+    })
+  }, [questions, breakdownList, questionMap])
+
+  function handleInlineScoreChange(qNum, valueStr, maxPts) {
+    if (valueStr === '') {
+      setInlineScores(prev => ({ ...prev, [qNum]: '' }))
+      return
+    }
+    let val = parseFloat(valueStr)
+    if (isNaN(val)) val = 0
+    if (val < 0) val = 0
+    if (val > maxPts) val = maxPts
+    setInlineScores(prev => ({ ...prev, [qNum]: val }))
+  }
+
+  async function handleSaveInlineScore(qNum, maxPts) {
+    if (!localResult?.id) return
+    setInlineSaving(qNum)
+    try {
+      const rawVal = inlineScores[qNum]
+      const earned = roundScore(Math.min(Math.max(0, isNaN(parseFloat(rawVal)) ? 0 : parseFloat(rawVal)), maxPts))
+      let status = 'wrong'
+      if (earned === maxPts) status = 'correct'
+      else if (earned > 0) status = 'partial'
+
+      const updatedBd = breakdownList.map(b => {
+        if (Number(b.number) === Number(qNum)) {
+          return {
+            ...b,
+            earned,
+            max: maxPts,
+            status
+          }
+        }
+        return b
+      })
+
+      // Calculate new total essay score
+      const totalEssay = updatedBd
+        .filter(b => {
+          const qObj = b.questionObj || questionMap.get(Number(b.number)) || {}
+          const qType = b.type || qObj.type || 'MCQ'
+          return qType === 'ESSAY' || qType === 'PARAGRAPH' || (qType === 'AGREE_DISAGREE' && (b.reason_type === 'essay' || qObj.options?.reason_type === 'essay' || qObj.correct_answer?.reason_type === 'essay'))
+        })
+        .reduce((sum, b) => sum + (Number(b.earned) || 0), 0)
+
+      const finalEssayScore = roundScore(totalEssay)
+      const finalMaxScore = computedMaxFromQuestions > 0 ? computedMaxFromQuestions : Number(localResult?.max_auto_score || 0)
+      const cleanBd = updatedBd.map(({ questionObj, ...rest }) => rest)
+
+      const { data, error } = await results.update(localResult.id, {
+        essay_score: finalEssayScore,
+        max_auto_score: finalMaxScore,
+        breakdown: JSON.stringify(cleanBd)
+      })
+
+      if (error) {
+        alert('Gagal menyimpan nilai: ' + (error.message || 'Terjadi kesalahan'))
+        return
+      }
+
+      const updatedRes = {
+        ...localResult,
+        essay_score: finalEssayScore,
+        max_auto_score: finalMaxScore,
+        breakdown: JSON.stringify(cleanBd)
+      }
+      setLocalResult(updatedRes)
+      onUpdateResult?.(updatedRes)
+      setSaveSuccessMsg(`Skor soal #${qNum} berhasil disimpan: ${formatScore(earned)} poin!`)
+      setTimeout(() => setSaveSuccessMsg(null), 3000)
+    } catch (err) {
+      console.error('Error saving inline score:', err)
+      alert('Terjadi kesalahan saat menyimpan nilai')
+    } finally {
+      setInlineSaving(null)
+    }
+  }
 
   // Filtered questions
   const displayedItems = useMemo(() => {
@@ -529,7 +663,7 @@ export default function StudentAnswerDetailModal({
               </button>
             )}
 
-            {onOpenEssayGrading && stats.pending > 0 && (
+            {onOpenEssayGrading && hasEssays && (
               <button
                 type="button"
                 className="btn btn-gold btn-xs"
@@ -543,14 +677,20 @@ export default function StudentAnswerDetailModal({
                 }}
                 onClick={() => {
                   onClose()
-                  onOpenEssayGrading(result)
+                  onOpenEssayGrading(localResult)
                 }}
               >
-                <Edit3 size={13} /> Nilai Esai Siswa Ini
+                <Edit3 size={13} /> {stats.pending > 0 ? 'Nilai Esai Siswa Ini' : 'Ubah Nilai Esai'}
               </button>
             )}
           </div>
         </div>
+
+        {saveSuccessMsg && (
+          <div style={{ margin: '0 1.5rem 0.5rem', padding: '0.45rem 0.85rem', background: '#dcfce7', border: '1px solid #86efac', color: '#15803d', borderRadius: 8, fontSize: '0.8rem', fontWeight: 600 }}>
+            ✓ {saveSuccessMsg}
+          </div>
+        )}
 
         {/* ─── Question Breakdown List (Scrollable) ──────────────────── */}
         <div
@@ -585,8 +725,13 @@ export default function StudentAnswerDetailModal({
               const qType = b.type || qObj.type || 'MCQ'
               const studentGiven = b.given
               const correctKey = b.correct ?? qObj.correct_answer
+              const isAD = qType === 'AGREE_DISAGREE'
+              const isEssay = qType === 'ESSAY' || qType === 'PARAGRAPH' || (isAD && (b.reason_type === 'essay' || qObj.options?.reason_type === 'essay' || qObj.correct_answer?.reason_type === 'essay'))
+              const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+                ? Number(qObj.points)
+                : (Number(b.max) || 1)
+              const maxPts = (isAD && isEssay) ? roundScore(configuredPts * 0.5) : roundScore(configuredPts)
               const earnedPts = b.earned !== undefined ? Number(b.earned) : 0
-              const maxPts = Number(b.max || qObj.points || 1)
 
               const borderAccentColor =
                 b.status === 'correct'
@@ -720,6 +865,107 @@ export default function StudentAnswerDetailModal({
                         max={maxPts}
                       />
                     </div>
+
+                    {/* Inline Essay Grading Control directly inside Detailed Function */}
+                    {isEssay && (
+                      <div
+                        style={{
+                          marginTop: '0.85rem',
+                          padding: '0.75rem 1rem',
+                          borderRadius: 10,
+                          background: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '0.75rem',
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', display: 'block' }}>
+                            Penilaian Soal Esai No. {qNum}:
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            Maksimal <strong>{formatScore(maxPts)}</strong> poin sesuai pengaturan ujian
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max={maxPts}
+                            step="any"
+                            style={{
+                              width: 75,
+                              padding: '0.35rem 0.5rem',
+                              fontSize: '0.88rem',
+                              fontWeight: 700,
+                              textAlign: 'center',
+                              borderRadius: 6,
+                              border: '1px solid #94a3b8',
+                              background: '#ffffff',
+                              color: '#0f172a',
+                            }}
+                            value={inlineScores[qNum] !== undefined ? inlineScores[qNum] : (b.status !== 'pending' ? earnedPts : '')}
+                            placeholder="0"
+                            onChange={e => handleInlineScoreChange(qNum, e.target.value, maxPts)}
+                          />
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>/ {formatScore(maxPts)}</span>
+
+                          <div style={{ display: 'flex', gap: '0.25rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '0.2rem 0.45rem', fontSize: '0.75rem', height: 28, background: '#e2e8f0' }}
+                              onClick={() => handleInlineScoreChange(qNum, 0, maxPts)}
+                              title="Beri Skor 0"
+                            >
+                              0
+                            </button>
+                            {maxPts > 1 && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                style={{ padding: '0.2rem 0.45rem', fontSize: '0.75rem', height: 28, background: '#e2e8f0' }}
+                                onClick={() => handleInlineScoreChange(qNum, roundScore(maxPts / 2), maxPts)}
+                                title="Beri Skor 50%"
+                              >
+                                50%
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', height: 28 }}
+                              onClick={() => handleInlineScoreChange(qNum, maxPts, maxPts)}
+                              title={`Beri Skor Penuh (${formatScore(maxPts)})`}
+                            >
+                              Penuh
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="btn btn-gold btn-sm"
+                            style={{
+                              padding: '0.25rem 0.75rem',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              height: 28,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                            }}
+                            disabled={inlineSaving === qNum}
+                            onClick={() => handleSaveInlineScore(qNum, maxPts)}
+                          >
+                            <Save size={13} /> {inlineSaving === qNum ? 'Menyimpan...' : 'Simpan Nilai'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )

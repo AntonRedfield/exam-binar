@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
-import { results, exams, sessions } from '../lib/db'
+import { results, exams, sessions, questions } from '../lib/db'
 import { CheckCircle, XCircle, Clock, ShieldAlert, Printer, ArrowLeft } from 'lucide-react'
 import { formatScore, roundScore } from '../lib/format'
 
@@ -10,14 +10,30 @@ export default function Results() {
   const navigate = useNavigate()
   const user = getCurrentUser()
   const [result, setResult] = useState(null)
+  const [examQuestions, setExamQuestions] = useState([])
   const [activeSession, setActiveSession] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    results.getById(resultId).then(({ data }) => {
-      setResult(data)
-      setLoading(false)
-    })
+    let isMounted = true
+    const loadResult = async () => {
+      try {
+        const { data } = await results.getById(resultId)
+        if (isMounted && data) {
+          setResult(data)
+          setLoading(false)
+        }
+      } catch {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadResult()
+    const pollTimer = setInterval(loadResult, 3500)
+    return () => {
+      isMounted = false
+      clearInterval(pollTimer)
+    }
   }, [resultId])
 
   useEffect(() => {
@@ -47,6 +63,15 @@ export default function Results() {
     }
   }, [result?.exam_id, user?.id])
 
+  useEffect(() => {
+    if (!result?.exam_id) return
+    let isMounted = true
+    questions.listByExam(result.exam_id).then(({ data }) => {
+      if (isMounted && data) setExamQuestions(data)
+    }).catch(() => {})
+    return () => { isMounted = false }
+  }, [result?.exam_id])
+
   if (loading) return <div className="loading-screen"><div className="spinner" style={{ width: 40, height: 40 }} /></div>
   if (!result) return <div className="loading-screen"><p className="text-muted">Hasil tidak ditemukan.</p></div>
 
@@ -72,13 +97,51 @@ export default function Results() {
     )
   }
 
-  const breakdown = (() => { try { return JSON.parse(result.breakdown || '[]') } catch { return [] } })()
-  const totalScore = roundScore((Number(result.auto_score) || 0) + (Number(result.essay_score) || 0))
+  const questionMap = new Map()
+  examQuestions.forEach(q => questionMap.set(Number(q.number), q))
+
+  const computedMaxFromQs = roundScore(examQuestions.reduce((sum, q) => {
+    const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+    return sum + pts
+  }, 0))
+
+  const rawBreakdown = (() => { try { return JSON.parse(result.breakdown || '[]') } catch { return [] } })()
+  const essayScore = Number(result.essay_score) || 0
+  const essayCount = rawBreakdown.filter(b => b.type === 'ESSAY' || b.type === 'PARAGRAPH' || b.reason_type === 'essay').length
+
+  const breakdown = rawBreakdown.map(b => {
+    const isAD = b.type === 'AGREE_DISAGREE'
+    const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (isAD && b.reason_type === 'essay')
+    const qObj = questionMap.get(Number(b.number))
+    const configuredPts = (qObj?.points !== undefined && qObj?.points !== null && !isNaN(Number(qObj.points)))
+      ? Number(qObj.points)
+      : (Number(b.max) || 1)
+    const maxPts = (isAD && isEssay) ? roundScore(configuredPts * 0.5) : roundScore(configuredPts)
+
+    let earned = b.earned !== undefined ? Number(b.earned) : 0
+    let status = b.status || (isEssay ? 'pending' : 'wrong')
+
+    if (isEssay && essayScore > 0 && (b.status === 'pending' || b.earned === undefined || b.earned === 0)) {
+      if (essayCount === 1) {
+        earned = essayScore
+        status = earned >= maxPts ? 'correct' : (earned > 0 ? 'partial' : 'wrong')
+      }
+    }
+
+    return {
+      ...b,
+      earned,
+      max: maxPts,
+      status
+    }
+  })
+
+  const totalScore = roundScore((Number(result.auto_score) || 0) + essayScore)
   const breakdownMaxSum = roundScore(breakdown.reduce((sum, b) => sum + (Number(b.max) || 0), 0))
-  const maxScore = roundScore(Math.max(Number(result.max_auto_score) || 0, breakdownMaxSum))
+  const maxScore = roundScore(computedMaxFromQs > 0 ? computedMaxFromQs : Math.max(Number(result.max_auto_score) || 0, breakdownMaxSum))
   const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
   const pctStr = formatScore(pctNum)
-  const essayPending = breakdown.some(b => b.status === 'pending')
+  const essayPending = breakdown.some(b => (b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')) && b.status === 'pending') && essayScore === 0
   const passingGrade = result.exams?.passing_grade ?? 60
   const backPath = user?.role === 'SUPERADMIN' ? '/admin/exams' : (user?.role === 'MODERATOR' ? '/teacher/exams' : '/home')
   const canViewBreakdown = isAdmin || isAuthorizedTeacher || result.exams?.status !== 'published'

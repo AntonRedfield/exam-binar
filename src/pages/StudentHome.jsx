@@ -216,7 +216,12 @@ export default function StudentHome() {
                 const maxScore = roundScore(Math.max(Number(result.max_auto_score) || 0, bdMax))
                 const pctNum = maxScore > 0 ? (totalScore / maxScore) * 100 : 0
                 const pctStr = formatScore(pctNum)
-                scoreNode = <span className="text-success">Nilai: {pctStr}%</span>
+                const isEssayPending = bd.some(b => (b.type === 'ESSAY' || b.type === 'PARAGRAPH' || b.reason_type === 'essay') && b.status === 'pending') && (Number(result.essay_score) || 0) === 0
+                scoreNode = isEssayPending ? (
+                  <span className="text-warning" title="Menunggu penilaian esai oleh guru">Nilai: {pctStr}% (Esai Menunggu Review)</span>
+                ) : (
+                  <span className="text-success">Nilai: {pctStr}%</span>
+                )
               }
 
               const accentColor = isSurvey ? 'rgba(20,184,166,0.2)' : isDone ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(245,158,11,0.25)' : 'var(--border)'
