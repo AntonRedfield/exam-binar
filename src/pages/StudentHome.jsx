@@ -33,8 +33,22 @@ export default function StudentHome() {
 
       setLoading(true)
       try {
-        const { data: allExams } = await exams.list()
+        const [{ data: allExams }, { data: allSessions }, { data: allResults }] = await Promise.all([
+          exams.list(),
+          sessions.listByStudent(user.id),
+          results.listByStudent(user.id)
+        ])
         if (!allExams) return
+
+        // Build session & result maps in memory
+        const sMap = {}
+        for (const s of (allSessions || [])) {
+          if (s.exam_id) sMap[s.exam_id] = s
+        }
+        const rMap = {}
+        for (const r of (allResults || [])) {
+          if (r.exam_id) rMap[r.exam_id] = r
+        }
 
         // Filter exams: show if no target_kelas, target_kelas is 'all', officer (Level 2), or student's class starts with one of the target strings
         const isOfficer = user.level === 2 || user.role === 'officer' || user.dbRole === 'officer'
@@ -46,28 +60,19 @@ export default function StudentHome() {
           return targets.some(t => user.kelas.startsWith(t) || user.kelas === t)
         })
 
-        // Load sessions and results for each exam
-        const sMap = {}
-        const rMap = {}
         const visibleExams = []
-        
         for (const exam of relevant) {
-          let isVisible = exam.status === 'published'
-          const { data: sess } = await sessions.get(user.id, exam.id)
-          if (sess) {
-            const isExpired = sess.end_timestamp && new Date(sess.end_timestamp).getTime() <= Date.now()
-            if (isExpired && sess.status === 'active') {
-              sess.status = 'time_up'
-              await sessions.autoLockAndSyncExam(exam.id)
-            }
-            sMap[exam.id] = sess
-            isVisible = true // Always show if they have a session/result
-          }
-          
+          const sess = sMap[exam.id]
+          const isVisible = exam.status === 'published' || Boolean(sess) || Boolean(rMap[exam.id])
           if (isVisible) {
+            if (sess) {
+              const isExpired = sess.end_timestamp && new Date(sess.end_timestamp).getTime() <= Date.now()
+              if (isExpired && sess.status === 'active') {
+                sess.status = 'time_up'
+                sessions.syncMinimal(sess.id, { status: 'time_up' }).catch(() => {})
+              }
+            }
             visibleExams.push(exam)
-            const { data: result } = await results.get(user.id, exam.id)
-            if (result) rMap[exam.id] = result
           }
         }
         // Auto-sort: Ongoing / unfinished active exams first, then published, then completed; newest date first

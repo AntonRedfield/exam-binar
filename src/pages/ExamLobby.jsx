@@ -53,9 +53,9 @@ export default function ExamLobby() {
   useEffect(() => {
     if (!user) return
     async function load() {
-      const [{ data: examData }, { data: qs }, { data: sess }] = await Promise.all([
+      const [{ data: examData }, { count: qCount }, { data: sess }] = await Promise.all([
         exams.getById(examId),
-        questions.listByExam(examId),
+        questions.countByExam(examId),
         sessions.get(user.id, examId),
       ])
 
@@ -87,8 +87,8 @@ export default function ExamLobby() {
       if (!isPrivileged && sess) {
         const isExpired = sess.end_timestamp && new Date(sess.end_timestamp).getTime() <= Date.now()
         if (isExpired && sess.status === 'active') {
-          await sessions.autoLockAndSyncExam(examId)
           currentSess = { ...sess, status: 'time_up' }
+          sessions.syncMinimal(sess.id, { status: 'time_up' }).catch(() => {})
         }
       }
 
@@ -113,7 +113,7 @@ export default function ExamLobby() {
       }
 
       setExam(examData)
-      setQuestionCount(qs?.length || 0)
+      setQuestionCount(qCount || 0)
       setSession(currentSess)
       setLoading(false)
     }

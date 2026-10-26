@@ -57,8 +57,8 @@ export default function ResultsView() {
 
   async function load() {
     try {
-      // 1. Auto-remove teacher & admin try mode entries older than 1 hour
-      await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+      // 1. Auto-remove teacher & admin try mode entries in background (throttled)
+      sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
 
       // 2. Automatically lock expired sessions and extract & sync their scores into results
       await sessions.autoLockAndSyncExam(examId)

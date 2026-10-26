@@ -176,13 +176,15 @@ export default function Monitor() {
     return () => clearInterval(timer)
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isPolling = false) => {
     try {
-      // 1. Auto-remove teacher & admin try mode entries older than 1 hour
-      await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+      // 1. Auto-remove teacher & admin try mode entries in background (throttled)
+      sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
 
-      // 2. Automatically lock students whose time has expired and extract & sync their scores into results
-      await sessions.autoLockAndSyncExam(examId)
+      // 2. Only run autoLockAndSyncExam on initial load or manual actions, not on every background 10s tick
+      if (!isPolling) {
+        await sessions.autoLockAndSyncExam(examId)
+      }
 
       const [{ data: examData }, { data: sess }, { data: activeList }] = await Promise.all([
         exams.getById(examId),
@@ -339,7 +341,7 @@ export default function Monitor() {
 
   // Refresh every 10s for student session states
   useEffect(() => {
-    const id = setInterval(() => { load(); forceUpdate(v => v + 1) }, 10000)
+    const id = setInterval(() => { load(true); forceUpdate(v => v + 1) }, 10000)
     return () => clearInterval(id)
   }, [load])
 

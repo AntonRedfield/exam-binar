@@ -74,6 +74,8 @@ export function isPrivilegedUser(profileOrUser) {
 
 // ─── USERS API ────────────────────────────────────────────────────────────────
 
+const _targetStudentsCache = new Map()
+
 export const users = {
   _mapProfile: (p) => {
     if (!p) return null
@@ -118,20 +120,20 @@ export const users = {
   },
 
   listByRole: async (role) => {
-    const { data, error } = await users.list()
-    if (error) return { data: [], error }
-
-    let filtered
-    if (role === 'USER') {
-      filtered = (data || []).filter(u => u.role === 'student' || u.role === 'officer' || u.role === 'parent')
-    } else if (role === 'MODERATOR') {
-      filtered = (data || []).filter(u => u.role === 'teacher')
-    } else if (role === 'SUPERADMIN') {
-      filtered = (data || []).filter(u => u.role === 'admin')
-    } else {
-      filtered = data || []
+    if (!isSupabaseConfigured || !supabase) {
+      return { data: [], error: { message: 'Supabase backend belum terkonfigurasi' } }
     }
-    return { data: filtered, error: null }
+    let query = supabase.from('profiles').select('*').order('fullname', { ascending: true })
+    if (role === 'USER') {
+      query = query.in('role_level', [1, 2])
+    } else if (role === 'MODERATOR') {
+      query = query.eq('role_level', 3)
+    } else if (role === 'SUPERADMIN') {
+      query = query.eq('role_level', 4)
+    }
+    const { data, error } = await query
+    if (error) return { data: [], error }
+    return { data: (data || []).map(users._mapProfile), error: null }
   },
 
   getById: async (id) => {
@@ -330,10 +332,17 @@ export const users = {
    */
   listTargetStudents: async (targetKelasStr) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
+    const cacheKey = targetKelasStr || 'all'
+    const cached = _targetStudentsCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < 60000) {
+      return { data: cached.data, error: null }
+    }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
+        .in('role_level', [1, 2])
         .order('fullname', { ascending: true })
 
       if (error) {
@@ -341,12 +350,10 @@ export const users = {
         return { data: [], error }
       }
 
-      // Filter out admins and teachers so only students / officers remain
-      const allStudents = (data || [])
-        .map(users._mapProfile)
-        .filter(u => u && u.role !== 'admin' && u.role !== 'teacher')
+      const allStudents = (data || []).map(users._mapProfile)
 
       if (!targetKelasStr || targetKelasStr === 'all') {
+        _targetStudentsCache.set(cacheKey, { data: allStudents, timestamp: Date.now() })
         return { data: allStudents, error: null }
       }
 
@@ -358,6 +365,7 @@ export const users = {
         .filter(Boolean)
 
       if (targets.length === 0) {
+        _targetStudentsCache.set(cacheKey, { data: allStudents, timestamp: Date.now() })
         return { data: allStudents, error: null }
       }
 
@@ -370,6 +378,7 @@ export const users = {
         })
       })
 
+      _targetStudentsCache.set(cacheKey, { data: matched, timestamp: Date.now() })
       return { data: matched, error: null }
     } catch (err) {
       console.error('[DB] listTargetStudents fatal error:', err)
@@ -838,6 +847,17 @@ export const questions = {
     return { data: data || [], error: null }
   },
 
+  countByExam: async (examId) => {
+    if (!isSupabaseConfigured || !supabase || !examId) return { count: 0, error: null }
+    const { count, error } = await supabase
+      .from('questions')
+      .select('id', { count: 'exact', head: true })
+      .eq('exam_id', examId)
+
+    if (error) return { count: 0, error }
+    return { count: count || 0, error: null }
+  },
+
   listByExamAndVariant: async (examId, variant) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
     let q = supabase
@@ -913,24 +933,27 @@ export const questions = {
 
 // ─── SHARED STUDENT PROFILES MAP HELPER ───────────────────────────────────────
 
+const _profileCache = new Map()
+const PROFILE_CACHE_TTL = 45 * 1000
+
 export async function fetchStudentProfilesMap(studentIds) {
   if (!isSupabaseConfigured || !supabase) return {}
   const rawIds = Array.from(new Set(studentIds)).filter(Boolean)
   if (rawIds.length === 0) return {}
   try {
-    const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str).trim())
-    const uuidIds = rawIds.filter(isUuid).map(id => String(id).trim().toLowerCase())
-
     const map = {}
     const addProfileToMap = (p) => {
       if (!p) return
+      const now = Date.now()
       if (p.id) {
         map[p.id] = p
         map[String(p.id).toLowerCase()] = p
+        _profileCache.set(String(p.id).toLowerCase(), { p, ts: now })
       }
       if (p.username) {
         map[p.username] = p
         map[String(p.username).toLowerCase()] = p
+        _profileCache.set(String(p.username).toLowerCase(), { p, ts: now })
       }
       if (p.email) {
         map[p.email] = p
@@ -938,29 +961,47 @@ export async function fetchStudentProfilesMap(studentIds) {
       }
     }
 
-    if (uuidIds.length > 0) {
-      const { data: uuidMatches, error: uuidErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', uuidIds)
-
-      if (!uuidErr && uuidMatches) {
-        for (const p of uuidMatches) {
-          addProfileToMap(p)
-        }
+    // Check memory cache first
+    const now = Date.now()
+    const uncachedIds = []
+    for (const id of rawIds) {
+      const clean = String(id).trim().toLowerCase()
+      const cached = _profileCache.get(clean)
+      if (cached && (now - cached.ts < PROFILE_CACHE_TTL)) {
+        addProfileToMap(cached.p)
+      } else {
+        uncachedIds.push(id)
       }
     }
 
-    const missing = rawIds.filter(id => !map[id] && !map[String(id).toLowerCase()])
-    if (missing.length > 0) {
-      const { data: userMatches, error: userErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('username', missing.map(m => String(m).trim().toLowerCase()))
+    if (uncachedIds.length > 0) {
+      const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str).trim())
+      const uuidIds = uncachedIds.filter(isUuid).map(id => String(id).trim().toLowerCase())
 
-      if (!userErr && userMatches) {
-        for (const p of userMatches) {
-          addProfileToMap(p)
+      if (uuidIds.length > 0) {
+        const { data: uuidMatches, error: uuidErr } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', uuidIds)
+
+        if (!uuidErr && uuidMatches) {
+          for (const p of uuidMatches) {
+            addProfileToMap(p)
+          }
+        }
+      }
+
+      const missing = uncachedIds.filter(id => !map[id] && !map[String(id).toLowerCase()])
+      if (missing.length > 0) {
+        const { data: userMatches, error: userErr } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('username', missing.map(m => String(m).trim().toLowerCase()))
+
+        if (!userErr && userMatches) {
+          for (const p of userMatches) {
+            addProfileToMap(p)
+          }
         }
       }
     }
@@ -980,6 +1021,8 @@ export async function fetchStudentProfilesMap(studentIds) {
 }
 
 // ─── SESSIONS API ─────────────────────────────────────────────────────────────
+
+const _lastCleanTimeMap = new Map()
 
 export const sessions = {
   create: async (data) => {
@@ -1093,12 +1136,20 @@ export const sessions = {
   /**
    * Automatically delete teacher & admin try mode sessions and results that are older than 1 hour.
    * Keeps database clean and ensures student gradebook / roster only contains real students.
+   * Throttled to 5 minutes to prevent redundant full scans.
    */
   cleanExpiredPrivilegedTryEntries: async (examId = null) => {
     if (!isSupabaseConfigured || !supabase) return { count: 0 }
+    const key = examId || '_global_'
+    const last = _lastCleanTimeMap.get(key) || 0
+    const now = Date.now()
+    if (now - last < 5 * 60 * 1000) {
+      return { count: 0 }
+    }
+    _lastCleanTimeMap.set(key, now)
+
     try {
       const ONE_HOUR_MS = 60 * 60 * 1000
-      const now = Date.now()
 
       // 1. Fetch sessions
       let sessQuery = supabase
@@ -1175,8 +1226,8 @@ export const sessions = {
 
   listByExam: async (examId) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
-    // Clean up any teacher & admin try mode entries older than 1 hour automatically
-    await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+    // Clean up any teacher & admin try mode entries older than 1 hour in background (non-blocking)
+    sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
 
     const { data, error } = await supabase
       .from('exam_sessions')
@@ -1229,6 +1280,16 @@ export const sessions = {
       .maybeSingle()
     if (error) return { data: null, error }
     return { data: data || null, error: null }
+  },
+
+  listByStudent: async (studentId) => {
+    if (!isSupabaseConfigured || !supabase || !studentId) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('exam_sessions')
+      .select('*')
+      .eq('student_id', studentId)
+    if (error) return { data: [], error }
+    return { data: data || [], error: null }
   },
 
   create: async (data) => {
@@ -1381,24 +1442,84 @@ export const sessions = {
     if (!isSupabaseConfigured || !supabase || !examId) return { lockedCount: 0, syncedCount: 0 }
 
     try {
-      // 1. Clean up any expired teacher/admin try mode entries (older than 1 hour)
-      await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+      // 1. Throttled cleanup of teacher & admin try mode entries in background
+      sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
 
-      const [{ data: qs }, { data: sessionList, error: sessErr }, { data: existingResults, error: resErr }] = await Promise.all([
-        questions.listByExam(examId),
-        supabase.from('exam_sessions').select('*').eq('exam_id', examId),
-        supabase.from('results').select('*').eq('exam_id', examId)
-      ])
+      // 2. Fetch sessions for this exam
+      const { data: sessionList, error: sessErr } = await supabase
+        .from('exam_sessions')
+        .select('*')
+        .eq('exam_id', examId)
 
-      if (sessErr || !sessionList) {
-        console.warn('[DB] autoLockAndSyncExam fetch sessions error:', sessErr)
+      if (sessErr || !sessionList || sessionList.length === 0) {
         return { lockedCount: 0, syncedCount: 0, error: sessErr }
       }
 
-      const rawQuestions = qs || []
-      const studentIds = sessionList.map(s => s.student_id).filter(Boolean)
+      const now = Date.now()
+      const nowIso = new Date(now).toISOString()
+      const expiredActives = []
+      const completedSessions = []
+
+      for (const s of sessionList) {
+        if (!s.student_id) continue
+        const hasEndTimestamp = Boolean(s.end_timestamp)
+        const isExpired = hasEndTimestamp && (new Date(s.end_timestamp).getTime() <= now)
+        const isDone = s.status === 'time_up' || s.status === 'submitted'
+
+        if (isExpired && s.status === 'active') {
+          expiredActives.push(s)
+        }
+        if (isExpired || isDone) {
+          completedSessions.push(s)
+        }
+      }
+
+      let lockedCount = 0
+      if (expiredActives.length > 0) {
+        const expiredIds = expiredActives.map(s => s.id)
+        const { error: lockErr } = await supabase
+          .from('exam_sessions')
+          .update({
+            status: 'time_up',
+            last_sync: nowIso
+          })
+          .in('id', expiredIds)
+
+        if (!lockErr) {
+          lockedCount = expiredActives.length
+          expiredActives.forEach(s => { s.status = 'time_up' })
+        }
+      }
+
+      // If no sessions are completed or expired, exit early
+      if (completedSessions.length === 0) {
+        return { lockedCount, syncedCount: 0, error: null }
+      }
+
+      // Fetch student profiles to skip teacher/admin try mode
+      const studentIds = completedSessions.map(s => s.student_id).filter(Boolean)
       const profMap = await fetchStudentProfilesMap(studentIds)
 
+      const candidateSessions = completedSessions.filter(s => {
+        if (isPrivilegedUser(profMap[s.student_id]) || s.answers?._try_mode) return false
+        return true
+      })
+
+      if (candidateSessions.length === 0) {
+        return { lockedCount, syncedCount: 0, error: null }
+      }
+
+      // Fetch questions and existing results in parallel only when candidates exist
+      const [{ data: qs }, { data: existingResults, error: resErr }] = await Promise.all([
+        questions.listByExam(examId),
+        supabase.from('results').select('*').eq('exam_id', examId)
+      ])
+
+      if (resErr) {
+        return { lockedCount, syncedCount: 0, error: resErr }
+      }
+
+      const rawQuestions = qs || []
       const resultsMapByStudent = new Map()
       const resultsMapBySession = new Map()
       ;(existingResults || []).forEach(r => {
@@ -1406,98 +1527,67 @@ export const sessions = {
         if (r.session_id) resultsMapBySession.set(r.session_id, r)
       })
 
-      const now = Date.now()
-      let lockedCount = 0
       let syncedCount = 0
 
-      for (const s of sessionList) {
-        if (!s.student_id) continue
+      for (const s of candidateSessions) {
+        const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers || {}, rawQuestions)
+        const cleanAuto = roundScore(autoScore)
+        const cleanMax = roundScore(maxAutoScore)
+        const existingRes = resultsMapByStudent.get(s.student_id) || resultsMapBySession.get(s.id)
 
-        // Skip privileged users (teachers & admins in try mode) so they are not auto-locked or auto-scored into student results
-        if (isPrivilegedUser(profMap[s.student_id]) || s.answers?._try_mode) continue
+        if (existingRes) {
+          const existingAuto = roundScore(existingRes.auto_score || 0)
+          const needsSync = existingAuto !== cleanAuto ||
+            existingRes.session_id !== s.id ||
+            !existingRes.breakdown ||
+            existingRes.breakdown === '[]'
 
-        const hasEndTimestamp = Boolean(s.end_timestamp)
-        const isExpired = hasEndTimestamp && (new Date(s.end_timestamp).getTime() <= now)
-        const isDone = s.status === 'time_up' || s.status === 'submitted'
-
-        // 1. If time expired and session is still active, automatically lock the student
-        if (isExpired && s.status === 'active') {
-          try {
-            await supabase
-              .from('exam_sessions')
-              .update({
-                status: 'time_up',
-                last_sync: new Date().toISOString()
-              })
-              .eq('id', s.id)
-            s.status = 'time_up'
-            lockedCount++
-          } catch (lockErr) {
-            console.warn(`[DB] autoLockAndSyncExam failed locking session ${s.id}:`, lockErr)
-          }
-        }
-
-        // 2. If session is completed or time is up, extract and sync latest score into results
-        if (isExpired || isDone) {
-          const { autoScore, maxAutoScore, breakdown } = gradeExam(s.answers || {}, rawQuestions)
-          const cleanAuto = roundScore(autoScore)
-          const cleanMax = roundScore(maxAutoScore)
-          const existingRes = resultsMapByStudent.get(s.student_id) || resultsMapBySession.get(s.id)
-
-          if (existingRes) {
-            const existingAuto = roundScore(existingRes.auto_score || 0)
-            const needsSync = existingAuto !== cleanAuto ||
-              existingRes.session_id !== s.id ||
-              !existingRes.breakdown ||
-              existingRes.breakdown === '[]'
-
-            if (needsSync) {
-              try {
-                await supabase
-                  .from('results')
-                  .update({
-                    session_id: s.id,
-                    auto_score: cleanAuto,
-                    max_auto_score: cleanMax,
-                    violation_count: s.violation_count || 0,
-                    breakdown: JSON.stringify(breakdown),
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', existingRes.id)
-                syncedCount++
-              } catch (upErr) {
-                console.warn(`[DB] autoLockAndSyncExam update result error for ${s.student_id}:`, upErr)
-              }
-            }
-          } else {
+          if (needsSync) {
             try {
-              const newRes = {
-                id: generateId('res'),
-                student_id: s.student_id,
-                exam_id: examId,
-                session_id: s.id,
-                auto_score: cleanAuto,
-                max_auto_score: cleanMax,
-                essay_score: 0,
-                violation_count: s.violation_count || 0,
-                breakdown: JSON.stringify(breakdown),
-                submitted_at: new Date().toISOString(),
-                created_at: new Date().toISOString()
-              }
-              const { data: created, error: createErr } = await supabase
+              await supabase
                 .from('results')
-                .insert([newRes])
-                .select()
-                .maybeSingle()
-
-              if (!createErr && created) {
-                resultsMapByStudent.set(s.student_id, created)
-                resultsMapBySession.set(s.id, created)
-                syncedCount++
-              }
-            } catch (insErr) {
-              console.warn(`[DB] autoLockAndSyncExam insert result error for ${s.student_id}:`, insErr)
+                .update({
+                  session_id: s.id,
+                  auto_score: cleanAuto,
+                  max_auto_score: cleanMax,
+                  violation_count: s.violation_count || 0,
+                  breakdown: JSON.stringify(breakdown),
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingRes.id)
+              syncedCount++
+            } catch (upErr) {
+              console.warn(`[DB] autoLockAndSyncExam update result error for ${s.student_id}:`, upErr)
             }
+          }
+        } else {
+          try {
+            const newRes = {
+              id: generateId('res'),
+              student_id: s.student_id,
+              exam_id: examId,
+              session_id: s.id,
+              auto_score: cleanAuto,
+              max_auto_score: cleanMax,
+              essay_score: 0,
+              violation_count: s.violation_count || 0,
+              breakdown: JSON.stringify(breakdown),
+              submitted_at: new Date().toISOString(),
+              created_at: new Date().toISOString()
+            }
+            const { data: created, error: createErr } = await supabase
+              .from('results')
+              .insert([newRes])
+              .select()
+              .maybeSingle()
+
+            if (!createErr && created) {
+              resultsMapByStudent.set(s.student_id, created)
+              resultsMapBySession.set(s.id, created)
+              syncedCount++
+            }
+          } catch (insErr) {
+            console.warn(`[DB] autoLockAndSyncExam insert result error for ${s.student_id}:`, insErr)
           }
         }
       }
@@ -1659,6 +1749,16 @@ export const results = {
     return { data: data || null, error }
   },
 
+  listByStudent: async (studentId) => {
+    if (!isSupabaseConfigured || !supabase || !studentId) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('results')
+      .select('*')
+      .eq('student_id', studentId)
+    if (error) return { data: [], error }
+    return { data: data || [], error: null }
+  },
+
   delete: async (id) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
     const { error } = await supabase.from('results').delete().eq('id', id)
@@ -1802,8 +1902,8 @@ export const results = {
 
   listByExam: async (examId) => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
-    // Clean up any teacher & admin try mode entries older than 1 hour automatically
-    await sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
+    // Clean up any teacher & admin try mode entries in background (non-blocking)
+    sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
 
     const { data, error } = await supabase
       .from('results')
@@ -1969,7 +2069,11 @@ export const localDb = {
         }
       }
 
-      const { data: userList } = await users.list()
+      let profs = []
+      if (isSupabaseConfigured && supabase) {
+        const { data: pData } = await supabase.from('profiles').select('class_section, username')
+        profs = pData || []
+      }
 
       return {
         examList: teacherExams,
@@ -1980,7 +2084,7 @@ export const localDb = {
         allActiveExamsSchool,
         totalSessions: relevantSessions.length,
         recentResults: relevantResults,
-        profiles: (userList || []).map(u => ({ class_section: u.class_section || u.kelas, username: u.username }))
+        profiles: profs
       }
     } catch (err) {
       console.error('[DB] getTeacherStats error:', err)
@@ -2000,14 +2104,16 @@ export const localDb = {
 
   getAdminStats: async () => {
     try {
-      const { data: userList } = await users.list()
-      const { data: allExams } = await exams.list()
+      const [{ data: profsData }, { data: allExams }] = await Promise.all([
+        supabase.from('profiles').select('class_section, username, display_name, fullname, role_level'),
+        exams.list()
+      ])
 
-      const allProfiles = (userList || []).map(u => ({
-        class_section: u.class_section || u.kelas,
-        username: u.username,
-        display_name: u.display_name,
-        role: u.role
+      const allProfiles = (profsData || []).map(p => ({
+        class_section: p.class_section,
+        username: p.username,
+        display_name: p.display_name || p.fullname || p.username,
+        role: p.role_level === 4 ? 'admin' : (p.role_level === 3 ? 'teacher' : (p.role_level === 2 ? 'officer' : 'student'))
       }))
 
       const examItems = allExams || []
