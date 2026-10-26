@@ -190,6 +190,7 @@ export default function ExamRoom() {
   const engineRef = useRef(null)
   const submitLock = useRef(false)
   const answerScrollRef = useRef(null)
+  const faceDetectionRef = useRef(null)
   const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
 
   // Scroll answer pane to top when navigating questions
@@ -405,6 +406,56 @@ export default function ExamRoom() {
     }
   }, [examId])
 
+  // ─── Force Submitted (Teacher Unpublish/Close) handler ─────────────
+  const handleForceSubmitted = useCallback(async (msg) => {
+    if (submitLock.current) return
+    submitLock.current = true
+    setForceSubmitted(true)
+    if (msg) setForceSubmitMessage(msg)
+
+    try {
+      sessionStorage.removeItem('binar_exam_active_room')
+    } catch (e) {}
+
+    try {
+      if (faceDetectionRef.current?.stopCamera) faceDetectionRef.current.stopCamera()
+    } catch (e) {}
+
+    // 1. Immediately flush pending local disk writes and sync dirty answers to server
+    if (sessionRef.current?.id) {
+      try {
+        if (engineRef.current) {
+          engineRef.current.flushPendingDiskWrites()
+          await engineRef.current.syncDirty()
+        } else {
+          await sessions.syncMinimal(sessionRef.current.id, {
+            answers: answersRef.current,
+            current_question: currentQRef.current || 1,
+          })
+        }
+      } catch (e) {
+        console.warn('Auto-save answers on force submit error:', e)
+      }
+    }
+
+    try {
+      if (engineRef.current?.clear) await engineRef.current.clear()
+    } catch (e) {}
+
+    setTimeout(async () => {
+      try {
+        const { data: res } = await results.get(user?.id, examId)
+        if (res?.id) {
+          navigate(`/results/${res.id}`, { replace: true })
+        } else {
+          navigate('/home', { replace: true })
+        }
+      } catch (err) {
+        navigate('/home', { replace: true })
+      }
+    }, 2800)
+  }, [examId, user?.id, navigate])
+
   // ─── Live Exam Sync: Listen to live question edits by teacher ──────
   const refreshQuestionsLive = useCallback(async () => {
     try {
@@ -475,56 +526,7 @@ export default function ExamRoom() {
     } catch (err) {
       console.warn('[ExamRoom] Failed to refresh live questions:', err)
     }
-  }, [examId])
-
-  const handleForceSubmitted = useCallback(async (msg) => {
-    if (submitLock.current) return
-    submitLock.current = true
-    setForceSubmitted(true)
-    if (msg) setForceSubmitMessage(msg)
-
-    try {
-      sessionStorage.removeItem('binar_exam_active_room')
-    } catch (e) {}
-
-    try {
-      if (faceDetection?.stopCamera) faceDetection.stopCamera()
-    } catch (e) {}
-
-    // 1. Immediately flush pending local disk writes and sync dirty answers to server
-    if (sessionRef.current?.id) {
-      try {
-        if (engineRef.current) {
-          engineRef.current.flushPendingDiskWrites()
-          await engineRef.current.syncDirty()
-        } else {
-          await sessions.syncMinimal(sessionRef.current.id, {
-            answers: answersRef.current,
-            current_question: currentQRef.current || 1,
-          })
-        }
-      } catch (e) {
-        console.warn('Auto-save answers on force submit error:', e)
-      }
-    }
-
-    try {
-      if (engineRef.current?.clear) await engineRef.current.clear()
-    } catch (e) {}
-
-    setTimeout(async () => {
-      try {
-        const { data: res } = await results.get(user?.id, examId)
-        if (res?.id) {
-          navigate(`/results/${res.id}`, { replace: true })
-        } else {
-          navigate('/home', { replace: true })
-        }
-      } catch (err) {
-        navigate('/home', { replace: true })
-      }
-    }, 2800)
-  }, [examId, user?.id, navigate, faceDetection])
+  }, [examId, handleForceSubmitted])
 
   useEffect(() => {
     if (!examId || loading) return
@@ -756,33 +758,35 @@ export default function ExamRoom() {
     enabled: !isPrivileged && !loading && !submitting && !freezeActive && monitorLevel === 4,
     onViolation: handleViolation,
   })
+  faceDetectionRef.current = faceDetection
 
   // Initialize camera for Level 4
   useEffect(() => {
     if (monitorLevel === 4 && !loading && !faceDetection.cameraReady && !faceDetection.cameraError) {
       faceDetection.requestCamera()
     }
-  }, [monitorLevel, loading])
+  }, [monitorLevel, loading, faceDetection.cameraReady, faceDetection.cameraError])
 
   // Cleanup face detection on unmount
   useEffect(() => {
     return () => {
-      if (monitorLevel === 4) faceDetection.stopCamera()
+      if (monitorLevel === 4 && faceDetectionRef.current?.stopCamera) {
+        faceDetectionRef.current.stopCamera()
+      }
     }
-  }, [])
+  }, [monitorLevel])
 
   function handleAnswer(qNum, value, isEssay = false) {
     if (isTranslated) return
     if (lockedQuestions[String(qNum)]) return
+    let updatedAnswers
     if (!engineRef.current) {
-      const updated = { ...answersRef.current, [String(qNum)]: value }
-      answersRef.current = updated
-      setAnswers(updated)
-      return
+      updatedAnswers = { ...answersRef.current, [String(qNum)]: value }
+    } else {
+      updatedAnswers = engineRef.current.saveAnswer(qNum, value, isEssay)
     }
-    const updated = engineRef.current.saveAnswer(qNum, value, isEssay)
-    answersRef.current = updated
-    setAnswers(updated)
+    answersRef.current = updatedAnswers
+    setAnswers(updatedAnswers)
 
     // Passive autosave notice
     const now = new Date()
@@ -827,44 +831,6 @@ export default function ExamRoom() {
     })
   }
 
-  // Quiz per-question timer expired
-  const handleQuestionTimerExpire = useCallback(() => {
-    const totalQ = questionList.length
-    setLockedQuestions(prev => ({ ...prev, [String(currentQ)]: true }))
-    setQuestionTimeWarning(false)
-    
-    const currQ = questionList[currentQ - 1]
-    if (currQ) {
-      const { breakdown } = gradeExam(answersRef.current, [currQ])
-      const res = breakdown[0]
-      setQuizFeedback({
-        status: res?.status || 'pending',
-        message: 'Waktu habis untuk soal ini!',
-        correct: res?.correct,
-        qType: currQ.type,
-        question: currQ,
-        isSubmit: currentQ >= totalQ,
-        isTimeUp: true
-      })
-    } else {
-      if (currentQ < totalQ) {
-        setCurrentQ(prev => prev + 1)
-      } else {
-        handleTimerExpire()
-      }
-    }
-  }, [currentQ, questionList])
-
-  const handleQuestionTimeWarning = useCallback(() => {
-    setQuestionTimeWarning(true)
-    setTimeout(() => setQuestionTimeWarning(false), 3000)
-  }, [])
-
-  async function handleTimerExpire() {
-    setTimeUp(true)
-    await submitExam(true)
-  }
-
   async function submitExam(isAuto = false) {
     if (submitLock.current) return
     submitLock.current = true
@@ -880,7 +846,9 @@ export default function ExamRoom() {
     } catch (e) {}
 
     // Stop face detection
-    if (monitorLevel === 4) faceDetection.stopCamera()
+    if (monitorLevel === 4 && faceDetectionRef.current?.stopCamera) {
+      faceDetectionRef.current.stopCamera()
+    }
 
     try {
       const currentSessionId = sessionRef.current?.id || session?.id
@@ -960,6 +928,44 @@ export default function ExamRoom() {
       }
     }
   }
+
+  async function handleTimerExpire() {
+    setTimeUp(true)
+    await submitExam(true)
+  }
+
+  // Quiz per-question timer expired
+  const handleQuestionTimerExpire = useCallback(() => {
+    const totalQ = questionList.length
+    setLockedQuestions(prev => ({ ...prev, [String(currentQ)]: true }))
+    setQuestionTimeWarning(false)
+    
+    const currQ = questionList[currentQ - 1]
+    if (currQ) {
+      const { breakdown } = gradeExam(answersRef.current, [currQ])
+      const res = breakdown[0]
+      setQuizFeedback({
+        status: res?.status || 'pending',
+        message: 'Waktu habis untuk soal ini!',
+        correct: res?.correct,
+        qType: currQ.type,
+        question: currQ,
+        isSubmit: currentQ >= totalQ,
+        isTimeUp: true
+      })
+    } else {
+      if (currentQ < totalQ) {
+        setCurrentQ(prev => prev + 1)
+      } else {
+        handleTimerExpire()
+      }
+    }
+  }, [currentQ, questionList])
+
+  const handleQuestionTimeWarning = useCallback(() => {
+    setQuestionTimeWarning(true)
+    setTimeout(() => setQuestionTimeWarning(false), 3000)
+  }, [])
 
   if (loading) return (
     <div className="loading-screen">

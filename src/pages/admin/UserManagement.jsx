@@ -199,6 +199,33 @@ export default function UserManagement() {
     setSortConfig({ key, direction })
   }
 
+  const filtered = userList.filter(u => {
+    const matchesSearch = u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+                          u.username?.toLowerCase().includes(search.toLowerCase())
+    const matchesClass = !selectedClass || u.kelas === selectedClass
+    const matchesRole = !selectedRole || u.role === selectedRole
+
+    return matchesSearch && matchesClass && matchesRole
+  }).sort((a, b) => {
+    let aVal, bVal
+    if (sortConfig.key === 'name') {
+      aVal = (a.full_name || '').toLowerCase()
+      bVal = (b.full_name || '').toLowerCase()
+    } else if (sortConfig.key === 'username') {
+      aVal = (a.username || '').toLowerCase()
+      bVal = (b.username || '').toLowerCase()
+    } else if (sortConfig.key === 'kelas') {
+      aVal = (a.classes?.name || a.kelas || '').toLowerCase()
+      bVal = (b.classes?.name || b.kelas || '').toLowerCase()
+    } else {
+      aVal = String(a[sortConfig.key] || '').toLowerCase()
+      bVal = String(b[sortConfig.key] || '').toLowerCase()
+    }
+    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
+    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
+    return 0
+  })
+
   function toggleSelectAll(e) {
     if (e.target.checked) {
       const allIds = filtered.map(u => u.id)
@@ -268,33 +295,6 @@ export default function UserManagement() {
       await load()
     }
   }
-
-  const filtered = userList.filter(u => {
-    const matchesSearch = u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-                          u.username?.toLowerCase().includes(search.toLowerCase())
-    const matchesClass = !selectedClass || u.kelas === selectedClass
-    const matchesRole = !selectedRole || u.role === selectedRole
-
-    return matchesSearch && matchesClass && matchesRole
-  }).sort((a, b) => {
-    let aVal, bVal
-    if (sortConfig.key === 'name') {
-      aVal = (a.full_name || '').toLowerCase()
-      bVal = (b.full_name || '').toLowerCase()
-    } else if (sortConfig.key === 'username') {
-      aVal = (a.username || '').toLowerCase()
-      bVal = (b.username || '').toLowerCase()
-    } else if (sortConfig.key === 'kelas') {
-      aVal = (a.classes?.name || a.kelas || '').toLowerCase()
-      bVal = (b.classes?.name || b.kelas || '').toLowerCase()
-    } else {
-      aVal = String(a[sortConfig.key] || '').toLowerCase()
-      bVal = String(b[sortConfig.key] || '').toLowerCase()
-    }
-    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
-    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
-    return 0
-  })
 
   return (
     <>

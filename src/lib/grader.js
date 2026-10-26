@@ -1,3 +1,5 @@
+import { roundScore } from './format.js'
+
 /**
  * Safely parse an option set into an array of lowercase strings.
  * Handles arrays, JSON-encoded strings, comma-separated strings, or single values.
@@ -68,8 +70,6 @@ function parseArray(val) {
   }
   return []
 }
-
-import { roundScore } from './format'
 
 /**
  * Grade an exam session against the correct answers.

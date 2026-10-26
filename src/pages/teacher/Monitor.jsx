@@ -155,23 +155,6 @@ export default function Monitor() {
   const [unpublishModalOpen, setUnpublishModalOpen] = useState(false)
   const [isUnpublishing, setIsUnpublishing] = useState(false)
 
-  async function handleConfirmUnpublish(targetStatus = 'closed') {
-    setIsUnpublishing(true)
-    try {
-      const res = await exams.unpublishAndForceSubmit(examId, targetStatus)
-      setUnpublishModalOpen(false)
-      await load()
-      const statusLabel = targetStatus === 'closed' ? 'ditutup' : 'di-unpublish ke draft'
-      alert(`Ujian berhasil ${statusLabel}. Sebanyak ${res.countSubmitted || 0} siswa aktif dikumpulkan & dinilai otomatis.`)
-      navigate(isUnderAdmin ? `/admin/results/${examId}` : `/teacher/results/${examId}`)
-    } catch (err) {
-      console.error('Error during unpublish in Monitor:', err)
-      alert('Gagal menutup ujian: ' + (err.message || err))
-    } finally {
-      setIsUnpublishing(false)
-    }
-  }
-
   // Bulk Extra Time Management State
   const [bulkExtraTimeOpen, setBulkExtraTimeOpen] = useState(false)
   const [bulkTargetFilter, setBulkTargetFilter] = useState('time_up') // 'time_up' | 'active' | 'all'
@@ -245,6 +228,23 @@ export default function Monitor() {
   useEffect(() => {
     load()
   }, [load])
+
+  async function handleConfirmUnpublish(targetStatus = 'closed') {
+    setIsUnpublishing(true)
+    try {
+      const res = await exams.unpublishAndForceSubmit(examId, targetStatus)
+      setUnpublishModalOpen(false)
+      await load()
+      const statusLabel = targetStatus === 'closed' ? 'ditutup' : 'di-unpublish ke draft'
+      alert(`Ujian berhasil ${statusLabel}. Sebanyak ${res.countSubmitted || 0} siswa aktif dikumpulkan & dinilai otomatis.`)
+      navigate(isUnderAdmin ? `/admin/results/${examId}` : `/teacher/results/${examId}`)
+    } catch (err) {
+      console.error('Error during unpublish in Monitor:', err)
+      alert('Gagal menutup ujian: ' + (err.message || err))
+    } finally {
+      setIsUnpublishing(false)
+    }
+  }
 
   const handleCopyAbsentList = () => {
     if (!unenteredStudents.length) return
@@ -468,8 +468,9 @@ export default function Monitor() {
   }
 
   async function handleDirectUnlockAll() {
-    if (returnees === 0) return
-    if (!confirm(`Buka kunci paksa untuk SEMUA (${returnees} siswa) yang terkunci tanpa memerlukan token?\n\nGunakan ini jika terjadi kendala teknis tak terduga (jaringan terputus, pemadaman, dll) agar seluruh siswa langsung dapat kembali ujian.`)) return
+    const returneeCount = sessionList.filter(s => s.returnee_token_required).length
+    if (returneeCount === 0) return
+    if (!confirm(`Buka kunci paksa untuk SEMUA (${returneeCount} siswa) yang terkunci tanpa memerlukan token?\n\nGunakan ini jika terjadi kendala teknis tak terduga (jaringan terputus, pemadaman, dll) agar seluruh siswa langsung dapat kembali ujian.`)) return
     setLoading(true)
     await unlockAllExamReturnees(examId)
     await load()

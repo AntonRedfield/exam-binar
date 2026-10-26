@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
-import { exams, questions, sessions } from '../lib/db'
+import { exams, questions, sessions, results } from '../lib/db'
 import {
   BookOpen,
   Clock,
@@ -32,6 +32,7 @@ export default function ExamLobby() {
   const { examId } = useParams()
   const navigate = useNavigate()
   const user = getCurrentUser()
+  const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
 
   const [exam, setExam] = useState(null)
   const [questionCount, setQuestionCount] = useState(0)
@@ -65,7 +66,6 @@ export default function ExamLobby() {
       }
 
       let currentSess = sess
-      const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
 
       // Guard: if exam is not published (closed or draft), redirect student
       if (!isPrivileged && examData && examData.status !== 'published') {
@@ -294,7 +294,6 @@ export default function ExamLobby() {
     </div>
   )
 
-  const isPrivileged = user?.role === 'SUPERADMIN' || user?.role === 'MODERATOR' || user?.level >= 3
   const isDone = session?.status === 'submitted' || session?.status === 'time_up'
   const isActive = session?.status === 'active'
   const isReturneeRequired = !isPrivileged && Boolean(isActive && session?.returnee_token_required)
