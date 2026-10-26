@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { exams, results, sessions, questions, users, fetchStudentProfilesMap, isPrivilegedUser } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
@@ -22,6 +22,7 @@ export default function ResultsView() {
   const [modalScores, setModalScores] = useState({})
   const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' })
   const [regrading, setRegrading] = useState(false)
+  const [regradingSingleId, setRegradingSingleId] = useState(null)
   const [selectedDetailResult, setSelectedDetailResult] = useState(null)
   const [unauthorized, setUnauthorized] = useState(false)
 
@@ -54,6 +55,23 @@ export default function ResultsView() {
     const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
     return sum + (q.type === 'AGREE_DISAGREE' ? (pts * 0.5) : pts)
   }, 0))
+
+  // Detect if any student results have outdated scores compared to current question points configuration
+  const hasOutdatedScores = useMemo(() => {
+    if (totalExamMaxScore <= 0 || resultList.length === 0) return false
+    const maxAutoAllowed = roundScore(totalExamMaxScore - totalMaxEssayScore)
+    return resultList.some(r => {
+      const auto = Number(r.auto_score) || 0
+      const essay = Number(r.essay_score) || 0
+      const tot = auto + essay
+      const rMax = roundScore(Number(r.max_auto_score) || 0)
+      return (
+        rMax !== totalExamMaxScore ||
+        tot > totalExamMaxScore ||
+        (maxAutoAllowed > 0 && auto > maxAutoAllowed)
+      )
+    })
+  }, [totalExamMaxScore, totalMaxEssayScore, resultList])
 
   async function load() {
     try {
@@ -92,11 +110,26 @@ export default function ResultsView() {
 
       // Automatically sync and re-grade if any result has scores exceeding current question points accumulation
       if (cleanComputedMax > 0 && rawResults.length > 0) {
-        const hasOutdatedScores = rawResults.some(r => {
-          const tot = (Number(r.auto_score) || 0) + (Number(r.essay_score) || 0)
-          return tot > cleanComputedMax || roundScore(Number(r.max_auto_score) || 0) !== cleanComputedMax
+        const computedEssayMax = roundScore(rawQuestions.reduce((sum, q) => {
+          const isEssay = q.type === 'ESSAY' || q.type === 'PARAGRAPH' || (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+          if (!isEssay) return sum
+          const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? Number(q.points) : 1
+          return sum + (q.type === 'AGREE_DISAGREE' ? (pts * 0.5) : pts)
+        }, 0))
+        const maxAutoAllowed = roundScore(cleanComputedMax - computedEssayMax)
+
+        const needsRegrade = rawResults.some(r => {
+          const auto = Number(r.auto_score) || 0
+          const essay = Number(r.essay_score) || 0
+          const tot = auto + essay
+          const rMax = roundScore(Number(r.max_auto_score) || 0)
+          return (
+            rMax !== cleanComputedMax ||
+            tot > cleanComputedMax ||
+            (maxAutoAllowed > 0 && auto > maxAutoAllowed)
+          )
         })
-        if (hasOutdatedScores) {
+        if (needsRegrade) {
           try {
             await results.regradeAllForExam(examId)
             const { data: refreshedRes } = await results.listByExam(examId)
@@ -590,18 +623,41 @@ export default function ResultsView() {
   }
 
   async function handleRegrade() {
-    if (!window.confirm('Perbarui akumulasi poin dan hitung ulang semua nilai siswa berdasarkan sistem butir soal terbaru?')) return
+    if (!window.confirm(`Perbarui akumulasi poin dan hitung ulang seluruh nilai siswa berdasarkan butir soal terbaru?\n\nNilai otomatis dan batas nilai esai (maks ${totalMaxEssayScore} poin) akan diselaraskan kembali sehingga persentase nilai akurat.`)) return
     setRegrading(true)
     try {
       const res = await results.regradeAllForExam(examId)
       if (!res.success) throw new Error(res.error)
       await load()
-      alert(`Berhasil memperbarui akumulasi poin dan menghitung ulang nilai ${res.updatedCount || 0} siswa!`)
+      alert(`Berhasil memperbarui akumulasi poin dan menghitung ulang nilai ${res.updatedCount || 0} siswa!\n\nSkor otomatis, batas esai, dan persentase nilai kini telah sinkron 100%.`)
     } catch (err) {
       console.error(err)
       alert('Gagal menghitung ulang: ' + (err.message || 'Terjadi kesalahan'))
     } finally {
       setRegrading(false)
+    }
+  }
+
+  async function handleRegradeSingle(r) {
+    const studentName = r.users?.full_name || r.student?.full_name || 'Siswa'
+    if (!window.confirm(`Hitung ulang skor otomatis dan sesuaikan batas nilai esai untuk ${studentName} berdasarkan butir soal saat ini?`)) return
+
+    setRegradingSingleId(r.id)
+    try {
+      const res = await results.regradeSingleResult(r.id)
+      if (!res.success) throw new Error(res.error)
+
+      setResultList(prev => prev.map(item => item.id === r.id ? { ...item, ...res.data } : item))
+      setEssayEdits(prev => ({ ...prev, [r.id]: res.essayScore }))
+      if (selectedDetailResult && selectedDetailResult.id === r.id) {
+        setSelectedDetailResult(prev => ({ ...prev, ...res.data }))
+      }
+      alert(`Berhasil menghitung ulang nilai untuk ${studentName}!\n\n• Skor Otomatis: ${formatScore(res.autoScore)}\n• Skor Esai: ${formatScore(res.essayScore)} (Maks: ${formatScore(totalMaxEssayScore)})\n• Total Skor: ${formatScore(res.autoScore + res.essayScore)} / ${formatScore(totalExamMaxScore)} (${formatScore(((res.autoScore + res.essayScore) / (totalExamMaxScore || 1)) * 100)}%)`)
+    } catch (err) {
+      console.error(err)
+      alert('Gagal menghitung ulang nilai: ' + (err.message || 'Terjadi kesalahan'))
+    } finally {
+      setRegradingSingleId(null)
     }
   }
 
@@ -1044,14 +1100,22 @@ export default function ResultsView() {
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button
-              className="btn btn-ghost btn-sm"
+              className="btn btn-sm btn-outline"
               onClick={handleRegrade}
               disabled={regrading || resultList.length === 0}
-              title="Perbarui akumulasi poin dan hitung ulang seluruh nilai siswa berdasarkan butir soal terbaru"
-              style={{ fontWeight: 600, color: 'var(--accent)' }}
+              title="Hitung ulang nilai otomatis & sesuaikan batas skor esai untuk seluruh siswa berdasarkan butir soal terbaru"
+              style={{
+                fontWeight: 600,
+                color: '#2563eb',
+                borderColor: 'rgba(37, 99, 235, 0.4)',
+                background: 'rgba(37, 99, 235, 0.06)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
             >
               <RefreshCw size={15} style={{ animation: regrading ? 'spin 0.8s linear infinite' : 'none' }} />
-              {regrading ? 'Menyinkronkan...' : 'Perbarui Akumulasi & Nilai'}
+              {regrading ? 'Menyinkronkan...' : 'Hitung Ulang & Sinkronkan Poin'}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/teacher/analytics/${examId}`)}>
               <BarChart2 size={15} /> Analisis Soal
@@ -1232,6 +1296,71 @@ export default function ResultsView() {
             </button>
           </div>
         </div>
+
+        {/* Outdated Scores Warning Banner */}
+        {hasOutdatedScores && (
+          <div
+            className="no-print"
+            style={{
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              border: '1px solid #fde68a',
+              borderRadius: '12px',
+              padding: '1rem 1.25rem',
+              marginBottom: '1rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              flexWrap: 'wrap',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div
+                style={{
+                  background: '#f59e0b',
+                  color: '#ffffff',
+                  borderRadius: '50%',
+                  width: 36,
+                  height: 36,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, color: '#92400e', fontSize: '0.95rem' }}>
+                  Perhatian: Bobot Butir Soal Telah Berubah
+                </div>
+                <div style={{ fontSize: '0.82rem', color: '#b45309', marginTop: '0.15rem' }}>
+                  Ditemukan nilai siswa yang belum sinkron dengan bobot butir soal saat ini. Sinkronkan nilai agar skor otomatis dan batas nilai esai (maks {formatScore(totalMaxEssayScore)} poin) sesuai 100%.
+                </div>
+              </div>
+            </div>
+            <button
+              className="btn btn-sm"
+              onClick={handleRegrade}
+              disabled={regrading}
+              style={{
+                fontWeight: 700,
+                background: '#d97706',
+                color: '#ffffff',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.45rem 1rem',
+                borderRadius: '8px'
+              }}
+            >
+              <RefreshCw size={14} style={{ animation: regrading ? 'spin 0.8s linear infinite' : 'none' }} />
+              {regrading ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}
+            </button>
+          </div>
+        )}
 
         <div className="card" style={{ padding: 0 }}>
           <div className="table-wrap">
@@ -1475,6 +1604,21 @@ export default function ResultsView() {
                               }}
                             >
                               <FileText size={15} /> Detail Jawaban
+                            </button>
+                            <button
+                              className="action-btn action-btn-preview"
+                              onClick={() => handleRegradeSingle(r)}
+                              disabled={regradingSingleId === r.id}
+                              title="Hitung ulang nilai otomatis & sesuaikan batas skor esai siswa ini berdasarkan butir soal terbaru"
+                              style={{
+                                background: 'rgba(14, 165, 233, 0.08)',
+                                color: '#0284c7',
+                                borderColor: 'rgba(14, 165, 233, 0.3)',
+                                fontWeight: 600,
+                              }}
+                            >
+                              <RefreshCw size={14} style={{ animation: regradingSingleId === r.id ? 'spin 0.8s linear infinite' : 'none' }} />
+                              {regradingSingleId === r.id ? '...' : 'Hitung Ulang'}
                             </button>
                             {hasEssays && (
                               <button

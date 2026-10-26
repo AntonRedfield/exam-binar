@@ -751,8 +751,7 @@ export const exams = {
             auto_score: cleanAuto,
             max_auto_score: cleanMax,
             violation_count: s.violation_count || 0,
-            breakdown: JSON.stringify(breakdown),
-            updated_at: new Date().toISOString()
+            breakdown: JSON.stringify(breakdown)
           })
         } else {
           await results.create({
@@ -1163,7 +1162,7 @@ export const sessions = {
       // 2. Fetch results
       let resQuery = supabase
         .from('results')
-        .select('id, student_id, session_id, created_at, submitted_at, updated_at')
+        .select('id, student_id, session_id, created_at, submitted_at')
       if (examId) resQuery = resQuery.eq('exam_id', examId)
 
       const { data: resList, error: rErr } = await resQuery
@@ -1194,7 +1193,7 @@ export const sessions = {
       for (const r of (resList || [])) {
         const p = profMap[r.student_id]
         if (isPrivilegedUser(p)) {
-          const ts = new Date(r.submitted_at || r.updated_at || r.created_at || 0).getTime()
+          const ts = new Date(r.submitted_at || r.created_at || 0).getTime()
           if (now - ts >= ONE_HOUR_MS) {
             expiredResIds.push(r.id)
           }
@@ -1551,8 +1550,7 @@ export const sessions = {
                   auto_score: cleanAuto,
                   max_auto_score: cleanMax,
                   violation_count: s.violation_count || 0,
-                  breakdown: JSON.stringify(breakdown),
-                  updated_at: new Date().toISOString()
+                  breakdown: JSON.stringify(breakdown)
                 })
                 .eq('id', existingRes.id)
               syncedCount++
@@ -1719,6 +1717,7 @@ export const results = {
   update: async (id, data) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
     const updatePayload = { ...data }
+    delete updatePayload.updated_at
     if (updatePayload.auto_score !== undefined) updatePayload.auto_score = roundScore(updatePayload.auto_score)
     if (updatePayload.max_auto_score !== undefined) updatePayload.max_auto_score = roundScore(updatePayload.max_auto_score)
     if (updatePayload.essay_score !== undefined) updatePayload.essay_score = roundScore(updatePayload.essay_score)
@@ -1883,8 +1882,7 @@ export const results = {
             auto_score: cleanAuto,
             max_auto_score: cleanMax,
             essay_score: finalEssay,
-            breakdown: JSON.stringify(mergedBd),
-            updated_at: new Date().toISOString()
+            breakdown: JSON.stringify(mergedBd)
           })
           .eq('id', r.id)
 
@@ -1894,6 +1892,120 @@ export const results = {
       return { success: true, updatedCount, totalMaxScore: totalExamMax }
     } catch (err) {
       console.error('[DB] regradeAllForExam error:', err)
+      return { success: false, error: err.message || err }
+    }
+  },
+
+  regradeSingleResult: async (resultId) => {
+    if (!isSupabaseConfigured || !supabase || !resultId) return { success: false, error: 'Database offline / invalid resultId' }
+    try {
+      const { data: r, error: rErr } = await supabase.from('results').select('*').eq('id', resultId).maybeSingle()
+      if (rErr || !r) return { success: false, error: rErr?.message || 'Result not found' }
+
+      const [{ data: qs }, { data: sess }] = await Promise.all([
+        supabase.from('questions').select('*').eq('exam_id', r.exam_id).order('number'),
+        supabase.from('exam_sessions').select('*').eq('id', r.session_id).maybeSingle()
+      ])
+
+      let s = sess
+      if (!s && r.student_id) {
+        const { data: sFallback } = await supabase.from('exam_sessions').select('*').eq('exam_id', r.exam_id).eq('student_id', r.student_id).maybeSingle()
+        s = sFallback
+      }
+
+      if (!qs || qs.length === 0) return { success: false, error: 'No questions found for exam' }
+
+      const totalExamMax = roundScore(qs.reduce((sum, q) => {
+        const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
+        return sum + pts
+      }, 0))
+
+      const essayQuestions = qs.filter(q =>
+        q.type === 'ESSAY' ||
+        q.type === 'PARAGRAPH' ||
+        (q.type === 'AGREE_DISAGREE' && (q.options?.reason_type === 'essay' || q.correct_answer?.reason_type === 'essay'))
+      )
+      const totalEssayMax = roundScore(essayQuestions.reduce((sum, q) => {
+        const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
+        return sum + (q.type === 'AGREE_DISAGREE' ? (pts * 0.5) : pts)
+      }, 0))
+
+      const existingBd = (() => { try { return JSON.parse(r.breakdown || '[]') } catch { return [] } })()
+
+      let studentAnswers = s?.answers
+      if (!studentAnswers || Object.keys(studentAnswers).length === 0) {
+        studentAnswers = {}
+        existingBd.forEach(b => {
+          if (b.number !== undefined && b.given !== undefined && b.given !== null) {
+            studentAnswers[String(b.number)] = b.given
+          }
+        })
+      }
+
+      const gradedMap = new Map()
+      existingBd.forEach(b => {
+        if ((b.type === 'ESSAY' || b.type === 'PARAGRAPH' || b.reason_type === 'essay') && b.status !== 'pending' && b.earned !== undefined) {
+          gradedMap.set(Number(b.number), b)
+        }
+      })
+
+      const { autoScore, maxAutoScore, breakdown: newBd } = gradeExam(studentAnswers || {}, qs)
+
+      let accumulatedEssay = 0
+      const mergedBd = newBd.map(b => {
+        const isEssay = b.type === 'ESSAY' || b.type === 'PARAGRAPH' || (b.type === 'AGREE_DISAGREE' && b.reason_type === 'essay')
+        if (!isEssay) return b
+
+        const existing = gradedMap.get(Number(b.number))
+        if (existing) {
+          const clampedEarned = roundScore(Math.min(Math.max(0, Number(existing.earned) || 0), b.max))
+          accumulatedEssay += clampedEarned
+          const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
+          return { ...b, earned: clampedEarned, max: b.max, status }
+        }
+
+        if (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0 && gradedMap.size === 0) {
+          const clampedEarned = roundScore(Math.min(Math.max(0, Number(r.essay_score) || 0), b.max))
+          accumulatedEssay += clampedEarned
+          const status = clampedEarned === b.max ? 'correct' : (clampedEarned > 0 ? 'partial' : 'wrong')
+          return { ...b, earned: clampedEarned, max: b.max, status }
+        }
+
+        return b
+      })
+
+      let finalEssay = (gradedMap.size > 0 || (essayQuestions.length === 1 && (Number(r.essay_score) || 0) > 0))
+        ? roundScore(accumulatedEssay)
+        : roundScore(r.essay_score || 0)
+
+      if (totalEssayMax > 0 && finalEssay > totalEssayMax) {
+        finalEssay = totalEssayMax
+      }
+
+      const cleanAuto = roundScore(autoScore)
+      const cleanMax = totalExamMax > 0 ? totalExamMax : roundScore(maxAutoScore)
+
+      const rawTotal = cleanAuto + finalEssay
+      if (cleanMax > 0 && rawTotal > cleanMax) {
+        finalEssay = roundScore(Math.max(0, cleanMax - cleanAuto))
+      }
+
+      const { data: updated, error: upErr } = await supabase
+        .from('results')
+        .update({
+          auto_score: cleanAuto,
+          max_auto_score: cleanMax,
+          essay_score: finalEssay,
+          breakdown: JSON.stringify(mergedBd)
+        })
+        .eq('id', r.id)
+        .select()
+        .single()
+
+      if (upErr) return { success: false, error: upErr.message }
+      return { success: true, data: updated, autoScore: cleanAuto, essayScore: finalEssay, maxScore: cleanMax }
+    } catch (err) {
+      console.error('[DB] regradeSingleResult error:', err)
       return { success: false, error: err.message || err }
     }
   },

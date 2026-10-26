@@ -17,7 +17,8 @@ import {
   Edit3,
   HelpCircle,
   Sparkles,
-  Save
+  Save,
+  RefreshCw
 } from 'lucide-react'
 import FormattedText from '../common/FormattedText'
 import AdaptiveExamImage from './AdaptiveExamImage'
@@ -37,10 +38,34 @@ export default function StudentAnswerDetailModal({
   const [inlineScores, setInlineScores] = useState({})
   const [inlineSaving, setInlineSaving] = useState(null)
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(null)
+  const [regradingSingle, setRegradingSingle] = useState(false)
 
   useEffect(() => {
     setLocalResult(result)
   }, [result])
+
+  async function handleRegradeSingle() {
+    if (!localResult?.id) return
+    if (!window.confirm(`Hitung ulang skor otomatis dan sesuaikan batas nilai esai untuk ${studentName} berdasarkan butir soal saat ini?`)) return
+
+    setRegradingSingle(true)
+    try {
+      const res = await results.regradeSingleResult(localResult.id)
+      if (!res.success) throw new Error(res.error)
+
+      setLocalResult(prev => ({ ...prev, ...res.data }))
+      if (onUpdateResult) {
+        onUpdateResult(res.data)
+      }
+      setSaveSuccessMsg(`Skor otomatis: ${formatScore(res.autoScore)}, Skor esai: ${formatScore(res.essayScore)} (Maks: ${formatScore(maxPossible)})`)
+      setTimeout(() => setSaveSuccessMsg(null), 4000)
+    } catch (err) {
+      console.error('Error regrading single result:', err)
+      alert('Gagal menghitung ulang nilai: ' + (err.message || 'Terjadi kesalahan'))
+    } finally {
+      setRegradingSingle(false)
+    }
+  }
 
   // Student Profile Data
   const student = localResult?.users || localResult?.student || localResult?.profiles || {}
@@ -374,6 +399,27 @@ export default function StudentAnswerDetailModal({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{
+                color: '#60a5fa',
+                border: '1px solid rgba(96, 165, 250, 0.4)',
+                background: 'rgba(96, 165, 250, 0.12)',
+                fontSize: '0.8rem',
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontWeight: 600
+              }}
+              onClick={handleRegradeSingle}
+              disabled={regradingSingle}
+              title="Hitung ulang nilai otomatis & sesuaikan batas skor esai siswa ini berdasarkan butir soal terbaru"
+            >
+              <RefreshCw size={14} style={{ animation: regradingSingle ? 'spin 0.8s linear infinite' : 'none' }} />
+              {regradingSingle ? 'Menyinkronkan...' : 'Hitung Ulang Nilai'}
+            </button>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
