@@ -699,7 +699,6 @@ select.form-input { cursor: pointer; }
   border-radius: var(--radius-sm);
   border: 1px solid #cbd5e1;
   background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 table {
   width: 100%;
@@ -707,7 +706,7 @@ table {
   border-spacing: 0;
 }
 thead {
-  background: #f1f5f9;
+  background: #1b3361;
   position: sticky;
   top: 0;
   z-index: 2;
@@ -715,18 +714,29 @@ thead {
 th {
   padding: 0.85rem 1rem;
   text-align: left;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #1e293b;
-  background: #f1f5f9;
-  border-bottom: 2px solid #94a3b8;
-  border-right: 1px solid #cbd5e1;
+  color: #ffffff;
+  background: #1b3361;
+  border-bottom: 2px solid #0f172a;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
   white-space: nowrap;
 }
 th:last-child {
   border-right: none;
+}
+th a, th span, th svg {
+  color: inherit;
+}
+th[onClick], th[style*="cursor: pointer"], th[style*="cursor:pointer"] {
+  cursor: pointer;
+  user-select: none;
+}
+th[onClick]:hover, th[style*="cursor: pointer"]:hover, th[style*="cursor:pointer"]:hover {
+  background: #14274b;
+  color: #f8fafc;
 }
 td {
   padding: 0.85rem 1rem;
@@ -740,19 +750,15 @@ td:last-child {
   border-right: none;
 }
 
-/* ── Alternating Zebra Striping (High Contrast & Comfortable to Read) ── */
+/* ── Simple, Lightweight & High-Contrast Alternating Rows (Odds & Evens) ── */
 tbody tr:nth-child(odd) {
   background-color: #ffffff;
 }
 tbody tr:nth-child(even) {
   background-color: #f1f5f9;
 }
-tbody tr {
-  transition: background-color 0.12s ease, box-shadow 0.12s ease;
-}
 tbody tr:hover {
-  background-color: #dbeafe !important;
-  box-shadow: inset 4px 0 0 #2563eb;
+  background-color: #e0f2fe !important;
 }
 tbody tr.row-published:nth-child(odd) {
   background-color: #ffffff;
@@ -2884,10 +2890,11 @@ tbody tr.row-published:nth-child(even) {
 }
 .grid-table thead th {
   font-weight: 700;
-  color: #1e293b;
+  color: #ffffff;
   font-size: 0.82rem;
-  background: #f1f5f9;
-  border-bottom: 2px solid #94a3b8;
+  background: #1b3361;
+  border-bottom: 2px solid #0f172a;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
 .grid-table tbody tr:nth-child(odd) {
   background-color: #ffffff;
