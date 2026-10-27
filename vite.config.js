@@ -74,4 +74,22 @@ export default defineConfig({
     })
   ],
   base,
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Core React runtime — cached long-term, rarely changes
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // Supabase client — separate so auth/data layer is its own chunk
+          'vendor-supabase': ['@supabase/supabase-js'],
+          // Icons library — large but static, excellent cache candidate
+          'vendor-icons': ['lucide-react'],
+          // PDF generation — only needed for export, lazy-loaded naturally
+          'vendor-pdf': ['jspdf', 'jspdf-autotable'],
+        }
+      }
+    }
+  }
 })
+

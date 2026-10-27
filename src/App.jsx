@@ -1,36 +1,51 @@
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { getSession, getUserRole, getUserLevel, onAuthStateChange, _syncCurrentUser, getCurrentUser, logout } from './lib/auth'
 import { startSessionGuard } from './lib/sessionGuard'
 
-// ─── Page Imports ───────────────────────────────────────────────────────────
-import Login from './pages/Login'
-import StudentHome from './pages/StudentHome'
-import ExamLobby from './pages/ExamLobby'
-import ExamRoom from './pages/ExamRoom'
-import Results from './pages/Results'
-import SurveyRoom from './pages/SurveyRoom'
+// ─── Lazy Page Imports (code-split per route) ───────────────────────────────
+const Login = lazy(() => import('./pages/Login'))
+const StudentHome = lazy(() => import('./pages/StudentHome'))
+const ExamLobby = lazy(() => import('./pages/ExamLobby'))
+const ExamRoom = lazy(() => import('./pages/ExamRoom'))
+const Results = lazy(() => import('./pages/Results'))
+const SurveyRoom = lazy(() => import('./pages/SurveyRoom'))
 
-import TeacherLayout from './pages/teacher/TeacherLayout'
-import TeacherDashboard from './pages/teacher/TeacherDashboard'
-import ExamList from './pages/teacher/ExamList'
-import CreateExam from './pages/teacher/CreateExam'
-import Monitor from './pages/teacher/Monitor'
-import ActiveMonitorHub from './pages/teacher/ActiveMonitorHub'
-import ResultsView from './pages/teacher/ResultsView'
-import QuestionAnalytics from './pages/teacher/QuestionAnalytics'
-import SurveyResponses from './pages/teacher/SurveyResponses'
+const TeacherLayout = lazy(() => import('./pages/teacher/TeacherLayout'))
+const TeacherDashboard = lazy(() => import('./pages/teacher/TeacherDashboard'))
+const ExamList = lazy(() => import('./pages/teacher/ExamList'))
+const CreateExam = lazy(() => import('./pages/teacher/CreateExam'))
+const Monitor = lazy(() => import('./pages/teacher/Monitor'))
+const ActiveMonitorHub = lazy(() => import('./pages/teacher/ActiveMonitorHub'))
+const ResultsView = lazy(() => import('./pages/teacher/ResultsView'))
+const QuestionAnalytics = lazy(() => import('./pages/teacher/QuestionAnalytics'))
+const SurveyResponses = lazy(() => import('./pages/teacher/SurveyResponses'))
 
-import AdminLayout from './pages/admin/AdminLayout'
-import AdminDashboard from './pages/admin/AdminDashboard'
-import UserManagement from './pages/admin/UserManagement'
-import ExamOversight from './pages/admin/ExamOversight'
-import Analytics from './pages/admin/Analytics'
-import ClassManagement from './pages/admin/ClassManagement'
-import LoginLogs from './pages/admin/LoginLogs'
+const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'))
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
+const UserManagement = lazy(() => import('./pages/admin/UserManagement'))
+const ExamOversight = lazy(() => import('./pages/admin/ExamOversight'))
+const Analytics = lazy(() => import('./pages/admin/Analytics'))
+const ClassManagement = lazy(() => import('./pages/admin/ClassManagement'))
+const LoginLogs = lazy(() => import('./pages/admin/LoginLogs'))
 
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
+
+// ─── Route Loading Fallback ─────────────────────────────────────────────────
+function PageLoader() {
+  return (
+    <div className="loading-screen" style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#ffffff',
+    }}>
+      <div className="spinner" style={{ width: 40, height: 40, borderColor: '#e2e8f0', borderTopColor: '#1b3361' }} />
+    </div>
+  )
+}
 
 // ─── Auth Context ───────────────────────────────────────────────────────────
 
@@ -142,6 +157,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ErrorBoundary>
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<RoleRedirect />} />
@@ -218,6 +234,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </ErrorBoundary>
       </AuthProvider>
     </BrowserRouter>

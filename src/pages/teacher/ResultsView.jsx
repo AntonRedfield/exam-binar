@@ -6,8 +6,7 @@ import { gradeExam } from '../../lib/grader'
 import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
 import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText, Copy, Plus, Users, UserX, AlertTriangle, FileDown } from 'lucide-react'
 import { formatScore, roundScore } from '../../lib/format'
-import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
+// jsPDF & autoTable are dynamically imported in handleDownloadPdf to avoid loading 418KB upfront
 
 export default function ResultsView() {
   const { examId } = useParams()
@@ -692,6 +691,12 @@ export default function ResultsView() {
     setDownloadingPdf(true)
 
     try {
+      // Dynamic import: only load jsPDF when user clicks download
+      const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable')
+      ])
+
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
