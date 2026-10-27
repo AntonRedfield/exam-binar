@@ -62,8 +62,17 @@ export default function QuestionMatching({ question, value, onChange }) {
               key={lKey}
               className="card"
               style={{
-                padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                gap: '1rem', flexWrap: 'wrap', background: 'var(--surface)'
+                padding: '0.85rem 1.1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                flexWrap: 'wrap',
+                background: i % 2 === 0 ? '#ffffff' : '#f8fafc',
+                border: '1.5px solid #cbd5e1',
+                borderLeft: '4px solid var(--accent)',
+                borderRadius: 10,
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', flex: 1, minWidth: 200 }}>

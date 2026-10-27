@@ -4762,11 +4762,22 @@ export default function CreateExam() {
                     })()}
 
                     {/* Options list */}
-                    {currentKeys.map(key => {
+                    {currentKeys.map((key, optIdx) => {
                       const hasImage = !!q.option_images?.[key]
                       const isInputOpen = Boolean(openOptionImageInputs[`${idx}_${key}`])
                       return (
-                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                        <div
+                          key={key}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.375rem',
+                            padding: '0.45rem 0.6rem',
+                            borderRadius: 8,
+                            background: optIdx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                            border: '1px solid #cbd5e1'
+                          }}
+                        >
                           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                             <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                               {key}
@@ -5066,7 +5077,18 @@ export default function CreateExam() {
 
 
                     {stmtKeys.map((key, i) => (
-                      <div key={key} style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
+                      <div
+                        key={key}
+                        style={{
+                          display: 'flex',
+                          gap: '0.625rem',
+                          alignItems: 'center',
+                          padding: '0.45rem 0.65rem',
+                          borderRadius: 8,
+                          background: i % 2 === 0 ? '#ffffff' : '#f8fafc',
+                          border: '1px solid #cbd5e1'
+                        }}
+                      >
                         <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                           {i + 1}
                         </span>
@@ -5195,7 +5217,7 @@ export default function CreateExam() {
                           Kolom Kiri (Premis / Soal) & Kunci Jawaban
                         </div>
                         {leftKeys.map((lKey, i) => (
-                          <div key={lKey} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--navy-mid)', padding: '0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                          <div key={lKey} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: i % 2 === 0 ? '#ffffff' : '#f8fafc', padding: '0.5rem', borderRadius: 8, border: '1px solid #cbd5e1' }}>
                             <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                               {lKey}
                             </span>
@@ -5239,8 +5261,8 @@ export default function CreateExam() {
                         <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           Kolom Kanan (Pilihan Pasangan Jawaban)
                         </div>
-                        {rightKeys.map((rKey) => (
-                          <div key={rKey} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--navy-mid)', padding: '0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        {rightKeys.map((rKey, rIdx) => (
+                          <div key={rKey} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: rIdx % 2 === 0 ? '#ffffff' : '#f8fafc', padding: '0.5rem', borderRadius: 8, border: '1px solid #cbd5e1' }}>
                             <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                               {rKey}
                             </span>
@@ -5328,7 +5350,7 @@ export default function CreateExam() {
                     {/* Items in chronological order */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       {items.map((item, itemIdx) => (
-                        <div key={item.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'var(--surface)', padding: '0.5rem', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        <div key={item.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: itemIdx % 2 === 0 ? '#ffffff' : '#f8fafc', padding: '0.5rem', borderRadius: 8, border: '1px solid #cbd5e1' }}>
                           <span style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                             {itemIdx + 1}
                           </span>
@@ -5549,10 +5571,21 @@ export default function CreateExam() {
                             💡 Klik tombol huruf opsi (A, B, C...) untuk menandai alasan mana saja yang <strong>BENAR</strong>. Siswa dapat memilih lebih dari satu alasan.
                           </p>
 
-                          {reasonKeys.map((key) => {
+                          {reasonKeys.map((key, rIdx) => {
                             const isCorrectReason = correctReasons.includes(key)
                             return (
-                              <div key={key} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <div
+                                key={key}
+                                style={{
+                                  display: 'flex',
+                                  gap: '0.5rem',
+                                  alignItems: 'center',
+                                  padding: '0.45rem 0.6rem',
+                                  borderRadius: 8,
+                                  background: rIdx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                                  border: '1px solid #cbd5e1'
+                                }}
+                              >
                                 <button
                                   type="button"
                                   className={`btn btn-sm ${isCorrectReason ? 'btn-success' : 'btn-ghost'}`}

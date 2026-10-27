@@ -697,6 +697,9 @@ select.form-input { cursor: pointer; }
 .table-wrap {
   overflow-x: auto;
   border-radius: var(--radius-sm);
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 table {
   width: 100%;
@@ -712,36 +715,50 @@ thead {
 th {
   padding: 0.85rem 1rem;
   text-align: left;
-  font-size: 0.75rem;
+  font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #334155;
+  color: #1e293b;
   background: #f1f5f9;
-  border-bottom: 2px solid #cbd5e1;
+  border-bottom: 2px solid #94a3b8;
+  border-right: 1px solid #cbd5e1;
   white-space: nowrap;
+}
+th:last-child {
+  border-right: none;
 }
 td {
   padding: 0.85rem 1rem;
   font-size: 0.88rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #cbd5e1;
+  border-right: 1px solid #e2e8f0;
   color: #0f172a;
   vertical-align: middle;
 }
+td:last-child {
+  border-right: none;
+}
 
-/* ── Alternating Zebra Striping (Prevents Accidental Click on Wrong Row) ── */
+/* ── Alternating Zebra Striping (High Contrast & Comfortable to Read) ── */
 tbody tr:nth-child(odd) {
   background-color: #ffffff;
 }
 tbody tr:nth-child(even) {
-  background-color: #f8fafc;
+  background-color: #f1f5f9;
 }
 tbody tr {
   transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
 tbody tr:hover {
-  background-color: #eff6ff !important;
+  background-color: #dbeafe !important;
   box-shadow: inset 4px 0 0 #2563eb;
+}
+tbody tr.row-published:nth-child(odd) {
+  background-color: #ffffff;
+}
+tbody tr.row-published:nth-child(even) {
+  background-color: #f0fdf4;
 }
 
 /* ─── ENHANCED ACTION BUTTONS (LARGER, HIGH CONTRAST & DISTINCT COLORS) ─── */
@@ -1305,7 +1322,7 @@ tbody tr:hover {
 .option-btn {
   display: flex; align-items: flex-start; gap: 0.875rem;
   padding: 0.875rem 1rem;
-  border: 1px solid var(--border);
+  border: 1.5px solid #cbd5e1;
   border-radius: var(--radius-sm);
   background: white;
   color: var(--text-primary);
@@ -1317,7 +1334,10 @@ tbody tr:hover {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
-.option-btn:hover { border-color: var(--accent); background: rgba(27,51,97,0.04); }
+.option-btn:nth-child(even):not(.selected):not(.selected-multi) {
+  background: #f8fafc;
+}
+.option-btn:hover { border-color: var(--accent); background: #eff6ff; }
 .option-btn.selected { border-color: var(--accent); background: rgba(27,51,97,0.08); color: var(--accent); font-weight: 600; }
 .option-btn.selected-multi { border-color: var(--gold-dark); background: rgba(223,174,52,0.12); color: var(--text-primary); }
 .option-key {
@@ -2841,6 +2861,10 @@ tbody tr:hover {
 .grid-table-wrapper {
   overflow-x: auto;
   margin-top: 0.25rem;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 .grid-table {
   width: 100%;
@@ -2849,16 +2873,30 @@ tbody tr:hover {
 }
 .grid-table th,
 .grid-table td {
-  padding: 0.625rem 0.75rem;
+  padding: 0.65rem 0.85rem;
   text-align: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid #cbd5e1;
+  border-right: 1px solid #e2e8f0;
+}
+.grid-table th:last-child,
+.grid-table td:last-child {
+  border-right: none;
 }
 .grid-table thead th {
   font-weight: 700;
-  color: var(--text-secondary);
+  color: #1e293b;
   font-size: 0.82rem;
-  background: var(--surface);
-  border-bottom: 2px solid var(--border);
+  background: #f1f5f9;
+  border-bottom: 2px solid #94a3b8;
+}
+.grid-table tbody tr:nth-child(odd) {
+  background-color: #ffffff;
+}
+.grid-table tbody tr:nth-child(even) {
+  background-color: #f1f5f9;
+}
+.grid-table tbody tr:hover {
+  background-color: #dbeafe !important;
 }
 .grid-table-header-label {
   width: 35%;

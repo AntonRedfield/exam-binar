@@ -270,15 +270,16 @@ export default function QuestionSequencing({ question, value, onChange }) {
               key={id}
               className="card"
               style={{
-                padding: '0.65rem 0.85rem',
+                padding: '0.75rem 1rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: '0.75rem',
-                background: 'var(--surface, #ffffff)',
-                border: '1px solid var(--border, #e2e8f0)',
-                borderRadius: 8,
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
+                background: idx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                border: '1.5px solid #cbd5e1',
+                borderLeft: '4px solid var(--accent)',
+                borderRadius: 10,
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
                 transition: 'border-color 0.12s ease, background-color 0.12s ease'
               }}
             >

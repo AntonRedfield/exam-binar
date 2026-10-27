@@ -417,9 +417,9 @@ export default function ExamList() {
                         return (
                           <tr
                             key={exam.id}
+                            className={isPublished ? 'row-published' : ''}
                             style={{
-                              borderLeft: isPublished ? '3.5px solid #10b981' : '3.5px solid transparent',
-                              background: isPublished ? 'rgba(16, 185, 129, 0.02)' : undefined
+                              borderLeft: isPublished ? '4px solid #10b981' : '4px solid transparent'
                             }}
                           >
                             <td style={{ fontWeight: 600 }}>

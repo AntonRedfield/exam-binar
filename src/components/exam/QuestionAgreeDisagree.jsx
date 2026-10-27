@@ -33,7 +33,21 @@ export default function QuestionAgreeDisagree({ question, value, onChange }) {
         </div>
         
         {keys.map((key, i) => (
-          <div key={key} className="card" style={{ padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'var(--surface)' }}>
+          <div
+            key={key}
+            className="card"
+            style={{
+              padding: '0.85rem 1.1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              background: i % 2 === 0 ? '#ffffff' : '#f8fafc',
+              border: '1.5px solid #cbd5e1',
+              borderLeft: '4px solid var(--accent)',
+              borderRadius: 10,
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
+            }}
+          >
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
               <span style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>{i + 1}.</span>
               <span style={{ flex: 1, lineHeight: 1.5 }}>{options[key]}</span>
@@ -241,7 +255,7 @@ export default function QuestionAgreeDisagree({ question, value, onChange }) {
                 Belum ada opsi alasan yang disediakan untuk soal ini.
               </div>
             ) : (
-              reasonKeys.map((key) => {
+              reasonKeys.map((key, rIdx) => {
                 const isSelected = selectedReasons.includes(key)
                 return (
                   <button
@@ -256,8 +270,8 @@ export default function QuestionAgreeDisagree({ question, value, onChange }) {
                       padding: '0.75rem 1rem',
                       textAlign: 'left',
                       borderRadius: 8,
-                      border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
-                      background: isSelected ? 'var(--accent-bg, rgba(59, 130, 246, 0.08))' : 'var(--surface)',
+                      border: isSelected ? '2px solid var(--accent)' : '1.5px solid #cbd5e1',
+                      background: isSelected ? 'var(--accent-bg, rgba(59, 130, 246, 0.08))' : (rIdx % 2 === 0 ? '#ffffff' : '#f8fafc'),
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}

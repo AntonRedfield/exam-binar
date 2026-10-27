@@ -23,7 +23,21 @@ export default function QuestionTrueFalse({ question, value, onChange }) {
       </div>
       
       {keys.map((key, i) => (
-        <div key={key} className="card" style={{ padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'var(--surface)' }}>
+        <div
+          key={key}
+          className="card"
+          style={{
+            padding: '0.85rem 1.1rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.75rem',
+            background: i % 2 === 0 ? '#ffffff' : '#f8fafc',
+            border: '1.5px solid #cbd5e1',
+            borderLeft: '4px solid var(--accent)',
+            borderRadius: 10,
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
+          }}
+        >
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
             <span style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>{i + 1}.</span>
             <span style={{ flex: 1, lineHeight: 1.5 }}>{options[key]}</span>
