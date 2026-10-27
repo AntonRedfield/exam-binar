@@ -1143,6 +1143,98 @@ function RenderQuestionAnswerBreakdown({ qType, question, given, correct, status
   // 1. MCQ & DROPDOWN
   if (qType === 'MCQ' || qType === 'DROPDOWN') {
     const keys = Object.keys(options).filter(k => k !== 'option_images')
+    const correctArr = Array.isArray(correct)
+      ? correct.map(s => String(s).trim().toLowerCase())
+      : (typeof correct === 'string' && correct.includes(',')
+        ? correct.split(',').map(s => s.trim().toLowerCase())
+        : (correct ? [String(correct).trim().toLowerCase()] : []))
+    const isMultiMcq = correctArr.length > 1 || (Array.isArray(given) && given.length > 1)
+
+    if (isMultiMcq) {
+      const studentPicks = Array.isArray(given)
+        ? given.map(s => String(s).trim().toLowerCase())
+        : (given ? [String(given).trim().toLowerCase()] : [])
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', marginBottom: '0.15rem' }}>
+            Pilihan Ganda Multi (Pilihan Siswa vs Kunci):
+          </div>
+          {keys.map(k => {
+            const lk = k.toLowerCase()
+            const isSelected = studentPicks.includes(lk)
+            const isKey = correctArr.includes(lk)
+
+            let border = '1px solid #e2e8f0'
+            let bg = '#ffffff'
+            let badge = null
+
+            if (isSelected && isKey) {
+              border = '1.5px solid #16a34a'
+              bg = '#f0fdf4'
+              badge = <span style={{ color: '#15803d', fontWeight: 700, fontSize: '0.72rem' }}>✓ Dipilih Siswa (Benar)</span>
+            } else if (isSelected && !isKey) {
+              border = '1.5px solid #ef4444'
+              bg = '#fef2f2'
+              badge = <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: '0.72rem' }}>✗ Dipilih Siswa (Salah)</span>
+            } else if (!isSelected && isKey) {
+              border = '1.5px dashed #d97706'
+              bg = '#fffbeb'
+              badge = <span style={{ color: '#b45309', fontWeight: 700, fontSize: '0.72rem' }}>⚠ Seharusnya Dipilih</span>
+            }
+
+            return (
+              <div
+                key={k}
+                style={{
+                  padding: '0.6rem 0.85rem',
+                  borderRadius: 8,
+                  border,
+                  background: bg,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1 }}>
+                  <span
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      background: isSelected
+                        ? (isKey ? '#16a34a' : '#ef4444')
+                        : '#f1f5f9',
+                      color: isSelected ? '#ffffff' : '#334155',
+                      border: isSelected ? 'none' : '1px solid #cbd5e1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {k.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: '0.85rem', color: '#1e293b' }}>
+                    {options[k]}
+                  </span>
+                </div>
+                {badge}
+              </div>
+            )
+          })}
+          {studentPicks.length === 0 && (
+            <div style={{ fontSize: '0.75rem', color: '#b91c1c', fontStyle: 'italic', marginTop: '0.2rem' }}>
+              ⚠️ Siswa tidak memilih jawaban untuk soal ini.
+            </div>
+          )}
+        </div>
+      )
+    }
+
     const givenKey = String(Array.isArray(given) ? given[0] : (given || '')).trim().toLowerCase()
     const correctKey = String(Array.isArray(correct) ? correct[0] : (correct || '')).trim().toLowerCase()
 

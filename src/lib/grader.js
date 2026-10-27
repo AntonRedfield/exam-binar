@@ -72,6 +72,39 @@ function parseArray(val) {
 }
 
 /**
+ * Safely count available choices / options in a question.
+ */
+export function getQuestionOptionCount(q) {
+  if (!q) return 0
+  const opts = q.options
+  if (opts) {
+    if (typeof opts === 'object' && !Array.isArray(opts)) {
+      const keys = Object.keys(opts).filter(k => k !== 'option_images' && k !== 'reason_type' && k !== 'rubric')
+      if (keys.length > 0) return keys.length
+    } else if (Array.isArray(opts)) {
+      return opts.length
+    } else if (typeof opts === 'string') {
+      const trimmed = opts.trim()
+      if (trimmed.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (typeof parsed === 'object' && !Array.isArray(parsed) && parsed !== null) {
+            const keys = Object.keys(parsed).filter(k => k !== 'option_images' && k !== 'reason_type' && k !== 'rubric')
+            if (keys.length > 0) return keys.length
+          }
+        } catch {}
+      } else if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (Array.isArray(parsed)) return parsed.length
+        } catch {}
+      }
+    }
+  }
+  return 0
+}
+
+/**
  * Grade an exam session against the correct answers.
  * Returns { autoScore, maxAutoScore, essayPending, breakdown }
  */
@@ -96,13 +129,27 @@ export function gradeExam(answers, questions) {
     if (q.type === 'MCQ' || q.type === 'DROPDOWN') {
       const correctArr = parseOptionList(q.correct_answer)
       if (correctArr.length > 1) {
-        // Multi-option MCQ proportional scoring: (pts / totalCorrect) * correctSelected
+        // Multi-option MCQ proportional scoring with deduction for wrong choices
         const givenArr = parseOptionList(studentAnswer)
         const totalCorrect = correctArr.length
         const correctSelected = givenArr.filter(a => correctArr.includes(a)).length
         const wrongSelected = givenArr.filter(a => !correctArr.includes(a)).length
 
-        const ratio = totalCorrect > 0 ? (correctSelected / totalCorrect) : 0
+        const totalOptions = getQuestionOptionCount(q)
+        const totalWrong = totalOptions > totalCorrect ? (totalOptions - totalCorrect) : 0
+
+        let ratio = 0
+        if (totalCorrect > 0) {
+          // If student selected all available options (and some are wrong), award 0 to prevent checking all boxes
+          if (totalOptions > 0 && givenArr.length >= totalOptions && totalWrong > 0) {
+            ratio = 0
+          } else {
+            // Right-minus-Wrong proportional scoring: each wrong choice cancels out a correct choice
+            const netCorrect = Math.max(0, correctSelected - wrongSelected)
+            ratio = netCorrect / totalCorrect
+          }
+        }
+
         const earned = Math.round(ratio * pts * 100) / 100
         autoScore += earned
 
@@ -132,8 +179,21 @@ export function gradeExam(answers, questions) {
       const correctSelected = givenSet.filter(a => correctSet.includes(a)).length
       const wrongSelected = givenSet.filter(a => !correctSet.includes(a)).length
 
-      // Proportional scoring: (pts / totalCorrect) * correctSelected
-      const ratio = totalCorrect > 0 ? (correctSelected / totalCorrect) : 0
+      const totalOptions = getQuestionOptionCount(q)
+      const totalWrong = totalOptions > totalCorrect ? (totalOptions - totalCorrect) : 0
+
+      let ratio = 0
+      if (totalCorrect > 0) {
+        // If student selected all available options (and some are wrong), award 0 to prevent checking all boxes
+        if (totalOptions > 0 && givenSet.length >= totalOptions && totalWrong > 0) {
+          ratio = 0
+        } else {
+          // Right-minus-Wrong proportional scoring: each wrong choice cancels out a correct choice
+          const netCorrect = Math.max(0, correctSelected - wrongSelected)
+          ratio = netCorrect / totalCorrect
+        }
+      }
+
       const earned = Math.round(ratio * pts * 100) / 100
       autoScore += earned
 
@@ -152,16 +212,17 @@ export function gradeExam(answers, questions) {
       const correctObj = parseObjectMap(q.correct_answer)
       const givenObj = parseObjectMap(studentAnswer)
 
-      const optKeys = Object.keys(optionsObj)
-      const ansKeys = Object.keys(correctObj)
-      const allKeys = Array.from(new Set([...optKeys, ...ansKeys]))
-      const validKeys = allKeys.filter(k => correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
+      const optKeys = Object.keys(optionsObj).filter(k => k !== 'option_images' && k !== 'reason_type')
+      const ansKeys = Object.keys(correctObj).filter(k => k !== 'option_images' && k !== 'reason_type')
+      const validKeys = optKeys.length > 0 ? optKeys : ansKeys
 
       let correctCount = 0
       for (const k of validKeys) {
-        const correctVal = String(correctObj[k]).trim().toLowerCase()
+        const correctVal = (correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
+          ? String(correctObj[k]).trim().toLowerCase()
+          : (optKeys.length > 0 && ansKeys.length > 0 ? 'false' : '')
         const givenVal = String(givenObj[k] || '').trim().toLowerCase()
-        if (correctVal === givenVal) {
+        if (correctVal !== '' && correctVal === givenVal) {
           correctCount++
         }
       }
@@ -246,16 +307,17 @@ export function gradeExam(answers, questions) {
       const isLegacy = typeof correctObj === 'object' && !('stance' in correctObj) && Object.keys(optionsObj).some(k => k.startsWith('stmt_'))
 
       if (isLegacy) {
-        const optKeys = Object.keys(optionsObj)
-        const ansKeys = Object.keys(correctObj)
-        const allKeys = Array.from(new Set([...optKeys, ...ansKeys]))
-        const validKeys = allKeys.filter(k => correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
+        const optKeys = Object.keys(optionsObj).filter(k => k !== 'option_images' && k !== 'reason_type')
+        const ansKeys = Object.keys(correctObj).filter(k => k !== 'option_images' && k !== 'reason_type')
+        const validKeys = optKeys.length > 0 ? optKeys : ansKeys
 
         let correctCount = 0
         for (const k of validKeys) {
-          const correctVal = String(correctObj[k]).trim().toLowerCase()
+          const correctVal = (correctObj[k] !== undefined && correctObj[k] !== null && String(correctObj[k]).trim() !== '')
+            ? String(correctObj[k]).trim().toLowerCase()
+            : ''
           const givenVal = String(givenObj[k] || '').trim().toLowerCase()
-          if (correctVal === givenVal) {
+          if (correctVal !== '' && correctVal === givenVal) {
             correctCount++
           }
         }
@@ -302,11 +364,15 @@ export function gradeExam(answers, questions) {
         } else {
           // Reason is prefilled options (complex MCQ)
           const correctReasons = parseOptionList(correctObj.reasons || [])
-          const givenReasons = Array.isArray(givenObj.reasons) ? givenObj.reasons.map(r => String(r).trim()) : parseOptionList(givenObj.reasons || [])
+          const givenReasons = parseOptionList(givenObj.reasons || [])
 
           const totalCorrectReasons = correctReasons.length
           const correctSelected = givenReasons.filter(r => correctReasons.includes(r)).length
           const wrongSelected = givenReasons.filter(r => !correctReasons.includes(r)).length
+
+          const reasonKeys = Object.keys(optionsObj).filter(k => k !== 'reason_type' && k !== 'option_images')
+          const totalReasonOptions = reasonKeys.length
+          const totalWrongReasons = totalReasonOptions > totalCorrectReasons ? (totalReasonOptions - totalCorrectReasons) : 0
 
           // Stance is 50% points, Reasons are 50% points
           const stancePoints = 0.5 * pts
@@ -316,8 +382,12 @@ export function gradeExam(answers, questions) {
 
           let reasonRatio = 0
           if (totalCorrectReasons > 0) {
-            const netCorrect = Math.max(0, correctSelected - (wrongSelected * 0.5))
-            reasonRatio = netCorrect / totalCorrectReasons
+            if (totalReasonOptions > 0 && givenReasons.length >= totalReasonOptions && totalWrongReasons > 0) {
+              reasonRatio = 0
+            } else {
+              const netCorrect = Math.max(0, correctSelected - wrongSelected)
+              reasonRatio = netCorrect / totalCorrectReasons
+            }
           } else {
             reasonRatio = 1
           }
