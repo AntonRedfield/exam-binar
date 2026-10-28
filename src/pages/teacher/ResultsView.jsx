@@ -4,8 +4,16 @@ import { exams, results, sessions, questions, users, fetchStudentProfilesMap, is
 import { getCurrentUser } from '../../lib/auth'
 import { gradeExam } from '../../lib/grader'
 import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
-import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText, Copy, Plus, Users, UserX, AlertTriangle, FileDown } from 'lucide-react'
+import ExtraScoringModal from '../../components/exam/ExtraScoringModal'
+import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText, Copy, Plus, Users, UserX, AlertTriangle, FileDown, Sparkles } from 'lucide-react'
 import { formatScore, roundScore } from '../../lib/format'
+import {
+  loadExtraScoringConfig,
+  saveExtraScoringConfig,
+  calculateStudentExtraScore,
+  calculateClassExtraStats,
+  getExtraSummaryLabel
+} from '../../lib/extraScoring'
 // jsPDF & autoTable are dynamically imported in handleDownloadPdf to avoid loading 418KB upfront
 
 export default function ResultsView() {
@@ -33,6 +41,19 @@ export default function ResultsView() {
   const [makeupLoading, setMakeupLoading] = useState(null)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
 
+  // Extra scoring configuration for Print & PDF export only (never modifies database)
+  const [extraScoring, setExtraScoring] = useState(() => loadExtraScoringConfig(examId))
+  const [extraScoringModalOpen, setExtraScoringModalOpen] = useState(false)
+
+  useEffect(() => {
+    setExtraScoring(loadExtraScoringConfig(examId))
+  }, [examId])
+
+  function handleSaveExtraScoring(newConfig) {
+    setExtraScoring(newConfig)
+    saveExtraScoringConfig(examId, newConfig)
+  }
+
   // Map of questions by question number for quick metadata lookup
   const questionMap = new Map((questionList || []).map(q => [Number(q.number), q]))
 
@@ -54,6 +75,18 @@ export default function ResultsView() {
     const pts = (q.points !== undefined && q.points !== null && !isNaN(Number(q.points))) ? roundScore(Number(q.points)) : 1
     return sum + (q.type === 'AGREE_DISAGREE' ? (pts * 0.5) : pts)
   }, 0))
+
+  // Memoized context for calculating extra scores safely without DB mutation
+  const extraScoringContext = useMemo(() => ({
+    totalExamMaxScore,
+    essayEdits,
+    passingGrade: exam?.passing_grade ?? 60
+  }), [totalExamMaxScore, essayEdits, exam?.passing_grade])
+
+  // Class aggregate statistics under extra scoring
+  const classExtraStats = useMemo(() => {
+    return calculateClassExtraStats(resultList, extraScoring, extraScoringContext)
+  }, [resultList, extraScoring, extraScoringContext])
 
   // Detect if any student results have outdated scores compared to current question points configuration
   const hasOutdatedScores = useMemo(() => {
@@ -686,9 +719,15 @@ export default function ResultsView() {
   }
 
   // Generate and download formal A4 PDF result report
-  async function handleDownloadPdf() {
+  async function handleDownloadPdf(overrideConfig = null) {
     if (downloadingPdf) return
     setDownloadingPdf(true)
+
+    const activeConfig = overrideConfig || extraScoring
+    const activeClassStats = calculateClassExtraStats(sortedResults, activeConfig, extraScoringContext)
+    const activePdfAvgStr = activeConfig.enabled ? activeClassStats.adjustedAvgStr : avgStr
+    const activePdfPassCount = activeConfig.enabled ? activeClassStats.adjustedPassCount : passCount
+    const activePdfFailCount = activeConfig.enabled ? activeClassStats.adjustedFailCount : failCount
 
     try {
       // Dynamic import: only load jsPDF when user clicks download
@@ -818,7 +857,21 @@ export default function ResultsView() {
       doc.text('Statistik', colRightLabel, 45)
       doc.text(':', colRightVal - 2, 45)
       doc.setFont('helvetica', 'normal')
-      doc.text(`Rata-rata: ${avgStr}% (Lulus: ${passCount}, Belum: ${failCount})`, colRightVal, 45)
+      doc.text(`Rata-rata: ${activePdfAvgStr}% (Lulus: ${activePdfPassCount}, Belum: ${activePdfFailCount})`, colRightVal, 45)
+
+      if (activeConfig.enabled) {
+        doc.setFont('helvetica', 'italic')
+        doc.setFontSize(7.5)
+        doc.setTextColor(180, 83, 9) // amber-700
+        const extraLabel = getExtraSummaryLabel(activeConfig)
+        doc.text(`* Penyesuaian Nilai: ${extraLabel}`, colRightLabel, 49)
+      }
+
+      const fullContext = {
+        ...extraScoringContext,
+        classMinScore: activeClassStats.classMinScore,
+        classMaxScore: activeClassStats.classMaxScore
+      }
 
       // Table rows data
       const tableBody = sortedResults.map((r, i) => {
@@ -828,7 +881,7 @@ export default function ResultsView() {
         const nisnOrUser = r.users?.nisn ? `NISN: ${r.users.nisn}` : (r.users?.username ? `@${r.users.username}` : '')
         const nameWithMeta = nisnOrUser ? `${studentName}\n${nisnOrUser}` : studentName
 
-        if (isUnattempted) {
+        if (isUnattempted && (!activeConfig.enabled || !activeConfig.includeUnattempted)) {
           return [
             String(i + 1),
             nameWithMeta,
@@ -841,13 +894,10 @@ export default function ResultsView() {
           ]
         }
 
-        const maxPossible = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(r.max_auto_score) || 0)
+        const calc = calculateStudentExtraScore(r, activeConfig, fullContext)
         const essayVal = essayEdits[r.id] !== undefined ? Number(essayEdits[r.id]) : (Number(r.essay_score) || 0)
-        const rawTotal = (Number(r.auto_score) || 0) + essayVal
-        const currentTotal = maxPossible > 0 ? Math.min(rawTotal, maxPossible) : rawTotal
-        const pctNum = maxPossible > 0 ? Math.min(100, Math.max(0, (currentTotal / maxPossible) * 100)) : 0
-        const pctStr = `${formatScore(pctNum)}%`
-        const isPassed = pctNum >= passingGrade
+        const finalScorePct = activeConfig.enabled ? calc.finalScore : calc.baseScore
+        const finalPassed = activeConfig.enabled ? calc.isPassed : calc.wasPassed
 
         return [
           String(i + 1),
@@ -855,8 +905,8 @@ export default function ResultsView() {
           studentClass,
           formatScore(r.auto_score),
           formatScore(essayVal),
-          pctStr,
-          isPassed ? 'LULUS' : 'BELUM LULUS',
+          `${formatScore(finalScorePct)}%`,
+          finalPassed ? 'LULUS' : 'BELUM LULUS',
           r.violation_count > 0 ? `⚠ ${r.violation_count}` : '0'
         ]
       })
@@ -984,16 +1034,26 @@ export default function ResultsView() {
     let aVal, bVal
 
     if (key === 'nilai') {
-      const aEssay = essayEdits[a.id] !== undefined ? Number(essayEdits[a.id]) : (Number(a.essay_score) || 0)
-      const bEssay = essayEdits[b.id] !== undefined ? Number(essayEdits[b.id]) : (Number(b.essay_score) || 0)
-      const aRaw = (Number(a.auto_score) || 0) + aEssay
-      const bRaw = (Number(b.auto_score) || 0) + bEssay
-      const aMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(a.max_auto_score) || 0)
-      const bMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(b.max_auto_score) || 0)
-      const aTotal = aMax > 0 ? Math.min(aRaw, aMax) : aRaw
-      const bTotal = bMax > 0 ? Math.min(bRaw, bMax) : bRaw
-      aVal = aMax > 0 ? Math.min(100, Math.max(0, (aTotal / aMax) * 100)) : 0
-      bVal = bMax > 0 ? Math.min(100, Math.max(0, (bTotal / bMax) * 100)) : 0
+      if (extraScoring.enabled) {
+        const fullContext = {
+          ...extraScoringContext,
+          classMinScore: classExtraStats.classMinScore,
+          classMaxScore: classExtraStats.classMaxScore
+        }
+        aVal = calculateStudentExtraScore(a, extraScoring, fullContext).finalScore
+        bVal = calculateStudentExtraScore(b, extraScoring, fullContext).finalScore
+      } else {
+        const aEssay = essayEdits[a.id] !== undefined ? Number(essayEdits[a.id]) : (Number(a.essay_score) || 0)
+        const bEssay = essayEdits[b.id] !== undefined ? Number(essayEdits[b.id]) : (Number(b.essay_score) || 0)
+        const aRaw = (Number(a.auto_score) || 0) + aEssay
+        const bRaw = (Number(b.auto_score) || 0) + bEssay
+        const aMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(a.max_auto_score) || 0)
+        const bMax = totalExamMaxScore > 0 ? totalExamMaxScore : (Number(b.max_auto_score) || 0)
+        const aTotal = aMax > 0 ? Math.min(aRaw, aMax) : aRaw
+        const bTotal = bMax > 0 ? Math.min(bRaw, bMax) : bRaw
+        aVal = aMax > 0 ? Math.min(100, Math.max(0, (aTotal / aMax) * 100)) : 0
+        bVal = bMax > 0 ? Math.min(100, Math.max(0, (bTotal / bMax) * 100)) : 0
+      }
     } else if (key === 'pelanggaran') {
       aVal = a.violation_count || 0
       bVal = b.violation_count || 0
@@ -1126,8 +1186,28 @@ export default function ResultsView() {
               <BarChart2 size={15} /> Analisis Soal
             </button>
             <button
+              className="btn btn-sm"
+              onClick={() => setExtraScoringModalOpen(true)}
+              title="Atur penyesuaian nilai ekstra khusus untuk Cetak dan Unduh PDF (tidak mengubah nilai di database)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontWeight: 700,
+                background: extraScoring.enabled
+                  ? 'linear-gradient(135deg, #d97706, #b45309)'
+                  : '#f8fafc',
+                color: extraScoring.enabled ? '#ffffff' : '#334155',
+                border: extraScoring.enabled ? '1px solid #b45309' : '1px solid #cbd5e1',
+                boxShadow: extraScoring.enabled ? '0 1px 4px rgba(217, 119, 6, 0.3)' : 'none'
+              }}
+            >
+              <Sparkles size={15} color={extraScoring.enabled ? '#fef08a' : '#d97706'} />
+              {extraScoring.enabled ? `Nilai Ekstra: ${getExtraSummaryLabel(extraScoring)}` : 'Nilai Ekstra (Cetak/PDF)'}
+            </button>
+            <button
               className="btn btn-ghost btn-sm"
-              onClick={handleDownloadPdf}
+              onClick={() => handleDownloadPdf()}
               disabled={downloadingPdf || sortedResults.length === 0}
               title="Unduh rekapitulasi nilai siswa dalam format PDF A4"
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}
@@ -1172,6 +1252,11 @@ export default function ResultsView() {
         />
         <h1 style={{ margin: '0.25rem 0 0', fontSize: '1.5rem', fontFamily: "'Inter', sans-serif", color: 'black', fontWeight: 800 }}>SNT 10 Kupang</h1>
         <h2 style={{ margin: '0.25rem 0 0', fontSize: '1.15rem', fontWeight: 'normal', color: 'black' }}>Hasil Ujian — Mata Pelajaran: {exam?.title} — KKM: {passingGrade}</h2>
+        {extraScoring.enabled && (
+          <div style={{ fontSize: '0.85rem', fontStyle: 'italic', color: '#1e293b', marginTop: '0.35rem' }}>
+            * Nilai akhir cetak mencakup penyesuaian nilai ekstra: {getExtraSummaryLabel(extraScoring)} (Rata-rata: {classExtraStats.adjustedAvgStr}%, Lulus: {classExtraStats.adjustedPassCount} siswa)
+          </div>
+        )}
       </div>
       <div className="page-body">
         {/* Class Target & Attendance KPI Card */}
@@ -1367,6 +1452,107 @@ export default function ResultsView() {
           </div>
         )}
 
+        {/* Active Extra Scoring Notice Banner */}
+        {extraScoring.enabled && (
+          <div
+            className="no-print"
+            style={{
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              border: '1.5px solid #f59e0b',
+              borderRadius: '12px',
+              padding: '0.85rem 1.25rem',
+              marginBottom: '1rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              flexWrap: 'wrap',
+              boxShadow: '0 2px 8px rgba(217, 119, 6, 0.08)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: '#d97706',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <Sparkles size={18} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, color: '#92400e', fontSize: '0.92rem' }}>
+                  ⚡ Nilai Ekstra Aktif Khusus Cetak & Unduh PDF ({getExtraSummaryLabel(extraScoring)})
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#b45309', marginTop: '0.15rem' }}>
+                  Rata-rata Dokumen: <strong>{classExtraStats.adjustedAvgStr}%</strong> (Asli: {classExtraStats.origAvgStr}%) ·
+                  Lulus: <strong>{classExtraStats.adjustedPassCount}</strong> siswa ·
+                  {classExtraStats.newlyPassedCount > 0 && <span><strong>+{classExtraStats.newlyPassedCount}</strong> siswa terbantu lulus · </span>}
+                  <span style={{ color: '#047857', fontWeight: 600 }}>🔒 Nilai database tetap asli & aman.</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontSize: '0.8rem',
+                  color: '#92400e',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginRight: '0.5rem'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={extraScoring.showInTable}
+                  onChange={e => handleSaveExtraScoring({ ...extraScoring, showInTable: e.target.checked })}
+                  style={{ accentColor: '#d97706' }}
+                />
+                Pratinjau di Layar
+              </label>
+
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setExtraScoringModalOpen(true)}
+                style={{
+                  background: '#ffffff',
+                  color: '#92400e',
+                  borderColor: '#fde68a',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  padding: '0.3rem 0.65rem'
+                }}
+              >
+                Ubah Pengaturan
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => handleSaveExtraScoring({ ...extraScoring, enabled: false })}
+                style={{
+                  color: '#dc2626',
+                  fontSize: '0.8rem',
+                  padding: '0.3rem 0.65rem'
+                }}
+              >
+                Nonaktifkan
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="card" style={{ padding: 0 }}>
           <div className="table-wrap">
             <table>
@@ -1389,6 +1575,16 @@ export default function ResultsView() {
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('nilai')}>
                     Nilai {sortConfig.key === 'nilai' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
+                  {extraScoring.enabled && extraScoring.showInTable && (
+                    <>
+                      <th className="no-print" style={{ width: 95, textAlign: 'center', color: '#b45309', background: 'rgba(245, 158, 11, 0.08)' }}>
+                        Ekstra (+)
+                      </th>
+                      <th className="no-print" style={{ width: 115, textAlign: 'center', color: '#1d4ed8', background: 'rgba(37, 99, 235, 0.08)' }}>
+                        Nilai Cetak
+                      </th>
+                    </>
+                  )}
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('pelanggaran')}>
                     Pelanggaran {sortConfig.key === 'pelanggaran' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   </th>
@@ -1398,7 +1594,7 @@ export default function ResultsView() {
               <tbody>
                 {sortedResults.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
+                    <td colSpan={extraScoring.enabled && extraScoring.showInTable ? 11 : 9} style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
                       {attendanceFilter === 'unattempted' ? (
                         <div style={{ color: '#16a34a' }}>
                           <div style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>🎉</div>
@@ -1482,6 +1678,16 @@ export default function ResultsView() {
                               TIDAK HADIR
                             </span>
                           </td>
+                          {extraScoring.enabled && extraScoring.showInTable && (
+                            <>
+                              <td className="no-print" style={{ textAlign: 'center' }}>
+                                <span className="text-muted" style={{ fontSize: '0.82rem' }}>—</span>
+                              </td>
+                              <td className="no-print" style={{ textAlign: 'center' }}>
+                                <span style={{ color: '#dc2626', fontWeight: 600 }}>0%</span>
+                              </td>
+                            </>
+                          )}
                           <td>
                             <span className="text-muted">—</span>
                           </td>
@@ -1539,6 +1745,13 @@ export default function ResultsView() {
                     const isPendingGrading = rEssays.some(b => b.status === 'pending')
                     const hasEssays = rEssays.length > 0 || totalMaxEssayScore > 0
 
+                    const fullContext = {
+                      ...extraScoringContext,
+                      classMinScore: classExtraStats.classMinScore,
+                      classMaxScore: classExtraStats.classMaxScore
+                    }
+                    const calc = calculateStudentExtraScore(r, extraScoring, fullContext)
+
                     return (
                       <tr key={r.id}>
                         <td className="text-muted" style={{ textAlign: 'center', fontWeight: 600 }}>{i + 1}</td>
@@ -1589,7 +1802,56 @@ export default function ResultsView() {
                         <td className="no-print" style={{ fontWeight: 700, color: nilaiColor }}>
                           {formatScore(currentTotal)} <span className="text-muted text-xs" style={{ fontWeight: 400 }}>/ {formatScore(maxPossible)}</span>
                         </td>
-                        <td style={{ fontWeight: 700, color: nilaiColor }}>{pctStr}%</td>
+                        <td style={{ fontWeight: 700, color: nilaiColor }}>
+                          <span className={extraScoring.enabled ? 'no-print' : ''}>{pctStr}%</span>
+                          {extraScoring.enabled && (
+                            <span className="print-only" style={{ fontWeight: 700, color: calc.isPassed ? '#166534' : '#991b1b' }}>
+                              {formatScore(calc.finalScore)}%
+                            </span>
+                          )}
+                        </td>
+                        {extraScoring.enabled && extraScoring.showInTable && (
+                          <>
+                            <td className="no-print" style={{ textAlign: 'center', background: 'rgba(245, 158, 11, 0.03)' }}>
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '0.15rem 0.45rem',
+                                  borderRadius: 6,
+                                  background: calc.extraPoints > 0 ? '#fef3c7' : '#f1f5f9',
+                                  color: calc.extraPoints > 0 ? '#b45309' : '#64748b',
+                                  fontWeight: 700,
+                                  fontSize: '0.82rem'
+                                }}
+                              >
+                                {calc.extraPoints > 0 ? `+${formatScore(calc.extraPoints)}` : (calc.extraPoints < 0 ? formatScore(calc.extraPoints) : '0')}
+                              </span>
+                              {calc.hasOverride && (
+                                <span style={{ fontSize: '0.65rem', color: '#d97706', display: 'block', fontWeight: 600 }}>
+                                  kustom
+                                </span>
+                              )}
+                            </td>
+                            <td className="no-print" style={{ textAlign: 'center', fontWeight: 800, background: 'rgba(37, 99, 235, 0.03)' }}>
+                              <span style={{ color: calc.isPassed ? 'var(--success)' : 'var(--danger)', fontSize: '0.92rem' }}>
+                                {formatScore(calc.finalScore)}%
+                              </span>
+                              {calc.statusChanged && (
+                                <span
+                                  style={{
+                                    display: 'block',
+                                    fontSize: '0.66rem',
+                                    color: '#16a34a',
+                                    fontWeight: 700,
+                                    marginTop: '0.1rem'
+                                  }}
+                                >
+                                  🎉 Lulus KKM
+                                </span>
+                              )}
+                            </td>
+                          </>
+                        )}
                         <td>
                           {r.violation_count > 0
                             ? <span style={{ color: 'var(--warning)' }}>⚠ {r.violation_count}</span>
@@ -2006,20 +2268,46 @@ export default function ResultsView() {
       })()}
 
       {/* Student Detailed Answers Review Modal */}
-      {selectedDetailResult && (
-        <StudentAnswerDetailModal
-          result={resultList.find(r => r.id === selectedDetailResult.id) || selectedDetailResult}
-          exam={exam}
-          questions={questionList}
-          onClose={() => setSelectedDetailResult(null)}
-          onOpenEssayGrading={(res) => openEssayModal(res)}
-          onUpdateResult={(updatedRes) => {
-            setResultList(prev => prev.map(r => r.id === updatedRes.id ? { ...r, ...updatedRes } : r))
-            setEssayEdits(prev => ({ ...prev, [updatedRes.id]: updatedRes.essay_score }))
-            setSelectedDetailResult(prev => prev ? { ...prev, ...updatedRes } : null)
-          }}
-        />
-      )}
+      {selectedDetailResult && (() => {
+        const fullDetailResult = resultList.find(r => r.id === selectedDetailResult.id) || selectedDetailResult
+        const fullContext = {
+          ...extraScoringContext,
+          classMinScore: classExtraStats.classMinScore,
+          classMaxScore: classExtraStats.classMaxScore
+        }
+        const studentExtraInfo = extraScoring.enabled ? calculateStudentExtraScore(fullDetailResult, extraScoring, fullContext) : null
+
+        return (
+          <StudentAnswerDetailModal
+            result={fullDetailResult}
+            exam={exam}
+            questions={questionList}
+            onClose={() => setSelectedDetailResult(null)}
+            onOpenEssayGrading={(res) => openEssayModal(res)}
+            onUpdateResult={(updatedRes) => {
+              setResultList(prev => prev.map(r => r.id === updatedRes.id ? { ...r, ...updatedRes } : r))
+              setEssayEdits(prev => ({ ...prev, [updatedRes.id]: updatedRes.essay_score }))
+              setSelectedDetailResult(prev => prev ? { ...prev, ...updatedRes } : null)
+            }}
+            extraScoreInfo={studentExtraInfo}
+          />
+        )
+      })()}
+
+      {/* Extra Scoring Configuration Modal (Only affects Print & PDF download) */}
+      <ExtraScoringModal
+        isOpen={extraScoringModalOpen}
+        onClose={() => setExtraScoringModalOpen(false)}
+        config={extraScoring}
+        onSaveConfig={handleSaveExtraScoring}
+        resultsList={displayList}
+        totalExamMaxScore={totalExamMaxScore}
+        essayEdits={essayEdits}
+        passingGrade={passingGrade}
+        onTriggerPrint={handlePrint}
+        onTriggerDownloadPdf={handleDownloadPdf}
+        examTitle={exam?.title}
+      />
     </>
   )
 }

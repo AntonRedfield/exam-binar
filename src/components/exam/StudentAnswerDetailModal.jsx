@@ -31,7 +31,8 @@ export default function StudentAnswerDetailModal({
   questions = [],
   onClose,
   onOpenEssayGrading,
-  onUpdateResult
+  onUpdateResult,
+  extraScoreInfo = null
 }) {
   const [localResult, setLocalResult] = useState(result)
   const [filterType, setFilterType] = useState('all') // 'all' | 'correct' | 'wrong' | 'partial' | 'pending'
@@ -505,12 +506,28 @@ export default function StudentAnswerDetailModal({
                 <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.3px' }}>
                   NILAI AKHIR
                 </div>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: isPassed ? '#16a34a' : '#dc2626', lineHeight: 1.2 }}>
-                  {pctStr}%
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', marginLeft: 6 }}>
-                    ({formatScore(totalScore)} / {formatScore(maxPossible)})
-                  </span>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: (extraScoreInfo ? extraScoreInfo.isPassed : isPassed) ? '#16a34a' : '#dc2626', lineHeight: 1.2 }}>
+                  {extraScoreInfo ? (
+                    <>
+                      {formatScore(extraScoreInfo.finalScore)}%
+                      <span className="no-print" style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', marginLeft: 6 }}>
+                        (Asli: {pctStr}% {extraScoreInfo.extraPoints > 0 ? `+${formatScore(extraScoreInfo.extraPoints)}` : (extraScoreInfo.extraPoints < 0 ? formatScore(extraScoreInfo.extraPoints) : '')})
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {pctStr}%
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', marginLeft: 6 }}>
+                        ({formatScore(totalScore)} / {formatScore(maxPossible)})
+                      </span>
+                    </>
+                  )}
                 </div>
+                {extraScoreInfo && (
+                  <div className="no-print" style={{ fontSize: '0.68rem', color: '#d97706', fontWeight: 700, marginTop: '0.15rem' }}>
+                    ⚡ Nilai Ekstra Cetak/PDF Aktif
+                  </div>
+                )}
               </div>
             </div>
 
@@ -559,12 +576,29 @@ export default function StudentAnswerDetailModal({
                     borderRadius: 6,
                     fontSize: '0.75rem',
                     fontWeight: 700,
-                    background: isPassed ? '#dcfce7' : '#fee2e2',
-                    color: isPassed ? '#15803d' : '#b91c1c',
+                    background: (extraScoreInfo ? extraScoreInfo.isPassed : isPassed) ? '#dcfce7' : '#fee2e2',
+                    color: (extraScoreInfo ? extraScoreInfo.isPassed : isPassed) ? '#15803d' : '#b91c1c',
                   }}
                 >
-                  {isPassed ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                  {isPassed ? 'TUNTAS (LULUS)' : 'BELUM TUNTAS'}
+                  {extraScoreInfo ? (
+                    extraScoreInfo.isPassed ? (
+                      <>
+                        <CheckCircle2 size={13} />
+                        <span>TUNTAS (LULUS)</span>
+                        {extraScoreInfo.statusChanged && <span style={{ fontSize: '0.65rem', marginLeft: 3 }}>🎉 Nilai Ekstra</span>}
+                      </>
+                    ) : (
+                      <>
+                        <XCircle size={13} />
+                        <span>BELUM TUNTAS</span>
+                      </>
+                    )
+                  ) : (
+                    <>
+                      {isPassed ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                      {isPassed ? 'TUNTAS (LULUS)' : 'BELUM TUNTAS'}
+                    </>
+                  )}
                 </span>
               </div>
             </div>
