@@ -5,6 +5,7 @@ import { getCurrentUser } from '../../lib/auth'
 import { gradeExam } from '../../lib/grader'
 import StudentAnswerDetailModal from '../../components/exam/StudentAnswerDetailModal'
 import ExtraScoringModal from '../../components/exam/ExtraScoringModal'
+import ExportPaperExamModal from '../../components/exam/ExportPaperExamModal'
 import { ChevronLeft, Printer, Edit3, Save, Eye, X, BarChart2, RefreshCw, Trash2, CheckCircle2, ShieldAlert, FileText, Copy, Plus, Users, UserX, AlertTriangle, FileDown, Sparkles } from 'lucide-react'
 import { formatScore, roundScore } from '../../lib/format'
 import {
@@ -44,6 +45,7 @@ export default function ResultsView() {
   // Extra scoring configuration for Print & PDF export only (never modifies database)
   const [extraScoring, setExtraScoring] = useState(() => loadExtraScoringConfig(examId))
   const [extraScoringModalOpen, setExtraScoringModalOpen] = useState(false)
+  const [exportPaperModalOpen, setExportPaperModalOpen] = useState(false)
 
   useEffect(() => {
     setExtraScoring(loadExtraScoringConfig(examId))
@@ -1207,6 +1209,15 @@ export default function ResultsView() {
             </button>
             <button
               className="btn btn-ghost btn-sm"
+              onClick={() => setExportPaperModalOpen(true)}
+              disabled={questionList.length === 0}
+              title="Ekspor & Cetak Naskah Soal / Kunci Jawaban ke Kertas A4 (Siap pakai jika internet mati)"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, color: '#047857' }}
+            >
+              <Printer size={15} /> Naskah Soal
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
               onClick={() => handleDownloadPdf()}
               disabled={downloadingPdf || sortedResults.length === 0}
               title="Unduh rekapitulasi nilai siswa dalam format PDF A4"
@@ -2307,6 +2318,14 @@ export default function ResultsView() {
         onTriggerPrint={handlePrint}
         onTriggerDownloadPdf={handleDownloadPdf}
         examTitle={exam?.title}
+      />
+
+      {/* Export Paper Exam Modal */}
+      <ExportPaperExamModal
+        isOpen={exportPaperModalOpen}
+        onClose={() => setExportPaperModalOpen(false)}
+        exam={exam}
+        questionsList={questionList}
       />
     </>
   )

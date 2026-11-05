@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
 import { exams, questions, users, results } from '../../lib/db'
-import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, Video, FileText, Layers, Copy, Paperclip, Headphones, X, RefreshCw, Lock } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Save, BookOpen, Zap, Clock, Info, ChevronDown, ChevronUp, AlertTriangle, ClipboardList, Calendar, Bell, Edit3, Repeat, Sliders, CheckCircle2, Image as ImageIcon, Video, FileText, Layers, Copy, Paperclip, Headphones, X, RefreshCw, Lock, Printer } from 'lucide-react'
 import { getDriveImageUrl } from '../../lib/grader'
 import { formatScore, roundScore } from '../../lib/format'
 import { MONITORING_LEVELS, normalizeMonitoringLevel } from '../../lib/monitoringConfig'
@@ -18,6 +18,7 @@ import {
   clearLocalDraftBackup
 } from '../../lib/questionMakerAutosave'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
+import ExportPaperExamModal from '../../components/exam/ExportPaperExamModal'
 
 const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'MATCHING', 'SEQUENCING', 'AGREE_DISAGREE', 'ESSAY']
 const SURVEY_TYPES = ['SHORT_ANSWER', 'PARAGRAPH', 'LINEAR_SCALE', 'MCQ_GRID', 'CHECKBOX_GRID', 'MCQ', 'CHECKBOXES', 'DROPDOWN']
@@ -184,6 +185,7 @@ export default function CreateExam() {
   const [defaultGridRowsCount, setDefaultGridRowsCount] = useState(3)
   const [defaultGridColsCount, setDefaultGridColsCount] = useState(3)
   const [actionNotice, setActionNotice] = useState('')
+  const [exportPaperModalOpen, setExportPaperModalOpen] = useState(false)
   const [openOptionImageInputs, setOpenOptionImageInputs] = useState({})
   const [questionItems, setQuestionItems] = useState([makeQuestion(1, false, 4, 3)])
   const [saving, setSaving] = useState(false)
@@ -426,6 +428,18 @@ export default function CreateExam() {
   }
 
   const isSurvey = mode === 'survey'
+
+  const currentExamPaperData = useMemo(() => ({
+    id: currentExamId,
+    title: title || (isSurvey ? 'Kuesioner Survei' : 'Naskah Soal Ujian'),
+    subject: '',
+    target_kelas: Array.isArray(targetKelas) ? targetKelas.join(',') : (targetKelas || 'all'),
+    duration_minutes: duration,
+    passing_grade: passingGrade,
+    status: examStatus,
+    mode: mode,
+    users: { name: user?.name || user?.email || 'Guru Pengampu' }
+  }), [currentExamId, title, isSurvey, targetKelas, duration, passingGrade, examStatus, mode, user])
 
   function showNotice(msg) {
     setActionNotice(msg)
@@ -2148,6 +2162,24 @@ export default function CreateExam() {
             </div>
           </div>
           <div className="sticky-exam-actions">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setExportPaperModalOpen(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontWeight: 600,
+                border: '1px solid #10b981',
+                background: '#ecfdf5',
+                color: '#047857'
+              }}
+              title="Ekspor & Cetak Naskah Soal ke Kertas A4 (Siap pakai jika internet mati)"
+            >
+              <Printer size={15} />
+              <span>Cetak Naskah</span>
+            </button>
             {examStatus === 'published' ? (
               <>
                 <button
@@ -3497,6 +3529,24 @@ export default function CreateExam() {
               title="Bentangkan semua butir soal"
             >
               <ChevronDown size={14} /> Bentangkan Semua Soal
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setExportPaperModalOpen(true)}
+              style={{
+                fontSize: '0.78rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                color: '#047857',
+                background: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                fontWeight: 600
+              }}
+              title="Ekspor & Cetak Naskah Soal ke Kertas A4 (Siap pakai jika internet mati)"
+            >
+              <Printer size={14} /> Cetak Paper Soal
             </button>
           </div>
         </div>
@@ -5976,6 +6026,14 @@ export default function CreateExam() {
         exam={{ title: title || 'Ujian Ini', id: currentExamId || examId }}
         onConfirm={handleConfirmUnpublish}
         isProcessing={isUnpublishing}
+      />
+
+      {/* Export Paper Exam Modal */}
+      <ExportPaperExamModal
+        isOpen={exportPaperModalOpen}
+        onClose={() => setExportPaperModalOpen(false)}
+        exam={currentExamPaperData}
+        questionsList={questionItems}
       />
     </>
   )

@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getCurrentUser } from '../../lib/auth'
-import { exams } from '../../lib/db'
-import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen, ClipboardList, Play, Sparkles, Search, X, ArrowDownUp, Check } from 'lucide-react'
+import { exams, questions } from '../../lib/db'
+import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen, ClipboardList, Play, Sparkles, Search, X, ArrowDownUp, Check, Printer, FileText } from 'lucide-react'
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
+import ExportPaperExamModal from '../../components/exam/ExportPaperExamModal'
 
 export default function ExamList() {
   const user = getCurrentUser()
@@ -19,6 +20,25 @@ export default function ExamList() {
   const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'published' | 'draft' | 'closed'
   const [unpublishModal, setUnpublishModal] = useState({ isOpen: false, exam: null, isProcessing: false })
   const [notification, setNotification] = useState(null)
+  const [exportPaperModal, setExportPaperModal] = useState({ isOpen: false, exam: null, questions: [], loading: false })
+
+  async function handleOpenExportPaper(targetExam) {
+    setExportPaperModal({ isOpen: true, exam: targetExam, questions: [], loading: true })
+    try {
+      const { data, error } = await questions.listByExam(targetExam.id)
+      if (error) {
+        console.error('Error fetching questions for paper export:', error)
+        alert('Gagal memuat butir soal ujian: ' + (error.message || error))
+        setExportPaperModal({ isOpen: false, exam: null, questions: [], loading: false })
+        return
+      }
+      setExportPaperModal({ isOpen: true, exam: targetExam, questions: data || [], loading: false })
+    } catch (err) {
+      console.error('Error fetching questions:', err)
+      alert('Terjadi kesalahan saat memuat soal ujian: ' + (err.message || err))
+      setExportPaperModal({ isOpen: false, exam: null, questions: [], loading: false })
+    }
+  }
 
   async function load() {
     const isTeacher = user?.role === 'MODERATOR' || user?.level === 2 || user?.level === 3
@@ -517,6 +537,19 @@ export default function ExamList() {
                                   <Play size={15} />
                                   <span>Coba</span>
                                 </button>
+                                <button
+                                  className="action-btn"
+                                  onClick={() => handleOpenExportPaper(exam)}
+                                  title="Cetak / Ekspor Naskah Soal ke Kertas A4 (Siap pakai jika internet mati)"
+                                  style={{
+                                    background: 'rgba(16, 185, 129, 0.08)',
+                                    color: '#059669',
+                                    border: '1px solid rgba(16, 185, 129, 0.3)'
+                                  }}
+                                >
+                                  <Printer size={15} />
+                                  <span>Cetak Soal</span>
+                                </button>
                                 {(user.role === 'SUPERADMIN' || exam.created_by === user.id) && (
                                   <button
                                     className="action-btn action-btn-danger"
@@ -548,6 +581,14 @@ export default function ExamList() {
         exam={unpublishModal.exam}
         onConfirm={handleConfirmUnpublish}
         isProcessing={unpublishModal.isProcessing}
+      />
+
+      {/* Export Paper Exam Modal */}
+      <ExportPaperExamModal
+        isOpen={exportPaperModal.isOpen}
+        onClose={() => setExportPaperModal({ isOpen: false, exam: null, questions: [], loading: false })}
+        exam={exportPaperModal.exam}
+        questionsList={exportPaperModal.questions}
       />
     </>
   )
