@@ -79,14 +79,24 @@ function parseArray(val) {
  * Generate official Kop Surat HTML
  */
 export function generateKopSuratHtml(config, exam, customTitle = null) {
+  // Gracefully handle argument order swaps if caller passed (exam, config) instead of (config, exam)
+  if (config && !exam && (config.subject !== undefined || config.duration_minutes !== undefined || config.title !== undefined)) {
+    exam = config
+    config = DEFAULT_PAPER_CONFIG
+  } else if (config && exam && (config.subject !== undefined || config.duration_minutes !== undefined) && (exam.schoolName !== undefined || exam.paperSize !== undefined)) {
+    const temp = config
+    config = exam
+    exam = temp
+  }
+
   exam = exam || {}
   config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
-  const title = customTitle || config.headerTitle || exam.title || 'NASKAH SOAL UJIAN'
-  const subject = exam.subject || 'Mata Pelajaran Umum'
-  const targetKelas = (!exam.target_kelas || exam.target_kelas === 'all')
+  const title = customTitle || config?.headerTitle || exam?.title || 'NASKAH SOAL UJIAN'
+  const subject = exam?.subject || exam?.category || 'Mata Pelajaran Umum'
+  const targetKelas = (!exam?.target_kelas || exam?.target_kelas === 'all')
     ? 'Semua Kelas'
-    : `Kelas ${String(exam.target_kelas).split(',').join(', ')}`
-  const duration = exam.duration_minutes ? `${exam.duration_minutes} Menit` : '90 Menit'
+    : `Kelas ${String(exam?.target_kelas || '').split(',').join(', ')}`
+  const duration = exam?.duration_minutes ? `${exam.duration_minutes} Menit` : '90 Menit'
   const currentDate = new Date().toLocaleDateString('id-ID', {
     weekday: 'long',
     day: 'numeric',
@@ -528,6 +538,12 @@ export function formatCorrectAnswerText(q) {
  * Generate Teacher Answer Key & Scoring Guide HTML
  */
 export function generateAnswerKeyHtml(questions = [], exam = {}, config = DEFAULT_PAPER_CONFIG) {
+  // Support (exam, questions) parameter order
+  if (!Array.isArray(questions) && Array.isArray(exam)) {
+    const temp = questions
+    questions = exam
+    exam = temp
+  }
   exam = exam || {}
   config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
   const sorted = [...(questions || [])].sort((a, b) => Number(a.number || 0) - Number(b.number || 0))
@@ -570,7 +586,7 @@ export function generateAnswerKeyHtml(questions = [], exam = {}, config = DEFAUL
           <tr>
             <td style="border: none; width: 33%;"><strong>Total Butir Soal:</strong> ${sorted.length} Soal</td>
             <td style="border: none; width: 33%;"><strong>Total Bobot Skor:</strong> ${totalPoints} Poin</td>
-            <td style="border: none; width: 34%;"><strong>KKM / Standar Kelulusan:</strong> ${exam.passing_grade || 60}</td>
+            <td style="border: none; width: 34%;"><strong>KKM / Standar Kelulusan:</strong> ${exam?.passing_grade || 60}</td>
           </tr>
         </table>
         <div style="margin-top: 0.5rem; font-size: 8.5pt; color: #334155; border-top: 1px solid #cbd5e1; padding-top: 0.4rem;">
@@ -605,7 +621,7 @@ export function generateAnswerKeyHtml(questions = [], exam = {}, config = DEFAUL
             <td style="border: none; width: 50%; text-align: center;">
               Kupang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br />
               <strong>Guru Mata Pelajaran</strong><br /><br /><br /><br />
-              ( <strong>${exam.users?.name || exam.created_by_name || 'Guru Pengampu'}</strong> )<br />
+              ( <strong>${exam?.users?.name || exam?.created_by_name || 'Guru Pengampu'}</strong> )<br />
               NIP. ....................................................
             </td>
           </tr>
@@ -620,6 +636,12 @@ export function generateAnswerKeyHtml(questions = [], exam = {}, config = DEFAUL
  * Allows schools to photocopy only 1-2 pages per student, reusing the question booklet!
  */
 export function generateStudentAnswerSheetHtml(questions = [], exam = {}, config = DEFAULT_PAPER_CONFIG) {
+  // Support (exam, questions) parameter order
+  if (!Array.isArray(questions) && Array.isArray(exam)) {
+    const temp = questions
+    questions = exam
+    exam = temp
+  }
   exam = exam || {}
   config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
   const sorted = [...(questions || [])].sort((a, b) => Number(a.number || 0) - Number(b.number || 0))
@@ -769,6 +791,12 @@ export function generateStudentAnswerSheetHtml(questions = [], exam = {}, config
  * Generate Complete Standalone HTML Document for Printing & Word Export
  */
 export function generateFullExamDocumentHtml(exam, questionsList = [], config = DEFAULT_PAPER_CONFIG) {
+  // Support (questionsList, exam) parameter order
+  if (Array.isArray(exam) && !Array.isArray(questionsList)) {
+    const temp = exam
+    exam = questionsList
+    questionsList = temp
+  }
   exam = exam || {}
   questionsList = questionsList || []
   config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
@@ -820,7 +848,7 @@ export function generateFullExamDocumentHtml(exam, questionsList = [], config = 
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <title>${exam.title || 'Naskah_Soal_Ujian'}</title>
+  <title>${exam?.title || 'Naskah_Soal_Ujian'}</title>
   <style>
     @page {
       size: A4 portrait;
