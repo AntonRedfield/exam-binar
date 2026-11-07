@@ -79,11 +79,13 @@ function parseArray(val) {
  * Generate official Kop Surat HTML
  */
 export function generateKopSuratHtml(config, exam, customTitle = null) {
+  exam = exam || {}
+  config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
   const title = customTitle || config.headerTitle || exam.title || 'NASKAH SOAL UJIAN'
   const subject = exam.subject || 'Mata Pelajaran Umum'
-  const targetKelas = (!exam.target_kelas || exam.target_kelas === 'all') 
-    ? 'Semua Kelas' 
-    : `Kelas ${exam.target_kelas.split(',').join(', ')}`
+  const targetKelas = (!exam.target_kelas || exam.target_kelas === 'all')
+    ? 'Semua Kelas'
+    : `Kelas ${String(exam.target_kelas).split(',').join(', ')}`
   const duration = exam.duration_minutes ? `${exam.duration_minutes} Menit` : '90 Menit'
   const currentDate = new Date().toLocaleDateString('id-ID', {
     weekday: 'long',
@@ -526,7 +528,9 @@ export function formatCorrectAnswerText(q) {
  * Generate Teacher Answer Key & Scoring Guide HTML
  */
 export function generateAnswerKeyHtml(questions = [], exam = {}, config = DEFAULT_PAPER_CONFIG) {
-  const sorted = [...questions].sort((a, b) => Number(a.number || 0) - Number(b.number || 0))
+  exam = exam || {}
+  config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
+  const sorted = [...(questions || [])].sort((a, b) => Number(a.number || 0) - Number(b.number || 0))
   const totalPoints = sorted.reduce((sum, q) => sum + (Number(q.points) || 1), 0)
 
   const rows = sorted.map((q, idx) => {
@@ -616,7 +620,9 @@ export function generateAnswerKeyHtml(questions = [], exam = {}, config = DEFAUL
  * Allows schools to photocopy only 1-2 pages per student, reusing the question booklet!
  */
 export function generateStudentAnswerSheetHtml(questions = [], exam = {}, config = DEFAULT_PAPER_CONFIG) {
-  const sorted = [...questions].sort((a, b) => Number(a.number || 0) - Number(b.number || 0))
+  exam = exam || {}
+  config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
+  const sorted = [...(questions || [])].sort((a, b) => Number(a.number || 0) - Number(b.number || 0))
   const mcqQuestions = sorted.filter(q => q.type === 'MCQ' || q.type === 'COMPLEX_MCQ')
   const nonMcqQuestions = sorted.filter(q => q.type !== 'MCQ' && q.type !== 'COMPLEX_MCQ')
 
@@ -763,6 +769,9 @@ export function generateStudentAnswerSheetHtml(questions = [], exam = {}, config
  * Generate Complete Standalone HTML Document for Printing & Word Export
  */
 export function generateFullExamDocumentHtml(exam, questionsList = [], config = DEFAULT_PAPER_CONFIG) {
+  exam = exam || {}
+  questionsList = questionsList || []
+  config = { ...DEFAULT_PAPER_CONFIG, ...(config || {}) }
   const isTimes = config.fontFamily === 'times'
   const fontFamilyCss = isTimes ? "'Times New Roman', Times, serif" : "Arial, Helvetica, sans-serif"
   const baseFontSize = config.fontSize === 'compact' ? '9pt' : '10pt'

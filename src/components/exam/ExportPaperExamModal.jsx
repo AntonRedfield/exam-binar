@@ -68,10 +68,19 @@ export default function ExportPaperExamModal({
     return counts
   }, [questionsList])
 
-  // Generate full HTML for current state
+  // Refresh header title when the exam loads/changes (modal may mount before exam is available)
+  useEffect(() => {
+    setConfig(prev => ({
+      ...prev,
+      headerTitle: exam?.title ? `ASESMEN SUMATIF / ${exam.title.toUpperCase()}` : DEFAULT_PAPER_CONFIG.headerTitle
+    }))
+  }, [exam?.title])
+
+  // Generate full HTML for current state (skip while closed or exam not loaded yet)
   const fullHtmlContent = useMemo(() => {
-    return generateFullExamDocumentHtml(exam, questionsList, config)
-  }, [exam, questionsList, config])
+    if (!isOpen || !exam) return ''
+    return generateFullExamDocumentHtml(exam, questionsList || [], config)
+  }, [isOpen, exam, questionsList, config])
 
   function showNotification(msg) {
     setNotice(msg)
@@ -174,7 +183,7 @@ export default function ExportPaperExamModal({
   }
 
   // Hook rules require hooks before early returns
-  if (!isOpen) return null
+  if (!isOpen || !exam) return null
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1200 }}>
