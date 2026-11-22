@@ -221,8 +221,18 @@ export default function ExamRoom() {
         setQuestionList(qs || [])
         setSession(sess)
         sessionRef.current = sess
-        answersRef.current = sess.answers || {}
-        setAnswers(sess.answers || {})
+        // Include answers saved on this device that never reached the server
+        // (e.g. the connection dropped just before time ran out).
+        let expiredAnswers = sess.answers || {}
+        try {
+          const engine = new ExamAtomicEngine(examId, user.id)
+          engineRef.current = engine
+          expiredAnswers = await engine.init(sess.answers || {}, null)
+        } catch (e) {
+          console.warn('Local answer recovery skipped:', e)
+        }
+        answersRef.current = expiredAnswers
+        setAnswers(expiredAnswers)
         setLoading(false)
         await submitExam(true)
         return
@@ -281,11 +291,14 @@ export default function ExamRoom() {
       const initialAnswers = await engine.init(sess.answers || {}, async (dirtyBatch, allAnswers) => {
         if (sessionRef.current?.id) {
           // Zero-body minimal sync (HTTP 204 No Content, no JSON response payload parsing)
-          await sessions.syncMinimal(sessionRef.current.id, {
+          const { error: syncErr } = await sessions.syncMinimal(sessionRef.current.id, {
             answers: allAnswers,
             current_question: currentQRef.current,
             violation_count: violationsRef.current,
-          })
+          }) || {}
+          // Supabase returns network/DB errors instead of throwing. Throw here so the
+          // engine keeps these answers marked unsynced and retries on the next cycle.
+          if (syncErr) throw new Error(syncErr.message || 'Sinkronisasi jawaban gagal')
         }
       })
 

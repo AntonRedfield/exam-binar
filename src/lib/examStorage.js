@@ -14,8 +14,10 @@
 // ─── Storage Adapter (Cross-Platform) ─────────────────────────────────────────
 
 class IndexedDBAdapter {
-  constructor(examId) {
-    this.dbName = `binar_exam_db_${examId}`
+  constructor(examId, userId) {
+    // Keyed per student as well as per exam: on a shared device (school lab),
+    // one student's saved answers must never load into another student's session.
+    this.dbName = userId ? `binar_exam_db_${examId}_${userId}` : `binar_exam_db_${examId}`
     this.storeName = 'answers'
     this.version = 1
     this.db = null
@@ -251,14 +253,14 @@ class WindowsBridgeAdapter {
 /**
  * Creates the appropriate platform storage adapter
  */
-export function createStorageAdapter(examId) {
+export function createStorageAdapter(examId, userId) {
   if (typeof window !== 'undefined' && window.AndroidExamBridge) {
     return new AndroidBridgeAdapter()
   }
   if (typeof window !== 'undefined' && window.WindowsExamBridge) {
     return new WindowsBridgeAdapter()
   }
-  return new IndexedDBAdapter(examId)
+  return new IndexedDBAdapter(examId, userId)
 }
 
 // ─── Exam Atomic Sync Engine ──────────────────────────────────────────────────
@@ -267,7 +269,7 @@ export class ExamAtomicEngine {
   constructor(examId, userId) {
     this.examId = examId
     this.userId = userId
-    this.adapter = createStorageAdapter(examId)
+    this.adapter = createStorageAdapter(examId, userId)
 
     // Layer A: In-Memory RAM Cache & Dirty Tracker
     this.ramCache = new Map() // Map<QuestionId, { q, v, t, s }>
@@ -319,20 +321,28 @@ export class ExamAtomicEngine {
       }
     }
 
-    // 3. Merge server answers (if local doesn't exist or is not dirty)
-    if (serverAnswers && typeof serverAnswers === 'object') {
-      for (const [qNum, val] of Object.entries(serverAnswers)) {
-        const qKey = String(qNum)
-        const existing = this.ramCache.get(qKey)
-        if (!existing) {
-          // Record only exists on server
-          this.ramCache.set(qKey, {
-            q: qKey,
-            v: val,
-            t: Date.now(),
-            s: 1 // Already synced on server
-          })
-        }
+    // 3. Merge server answers.
+    //    - Local DIRTY answers (never reached the server) always win.
+    //    - For answers already synced, the server is the source of truth: if the
+    //      teacher reset the session, stale local copies must not come back.
+    const server = (serverAnswers && typeof serverAnswers === 'object') ? serverAnswers : {}
+    for (const [qKey, rec] of [...this.ramCache.entries()]) {
+      if (rec.s === 0) continue
+      if (Object.prototype.hasOwnProperty.call(server, qKey)) {
+        rec.v = server[qKey]
+      } else {
+        this.ramCache.delete(qKey)
+      }
+    }
+    for (const [qNum, val] of Object.entries(server)) {
+      const qKey = String(qNum)
+      if (!this.ramCache.has(qKey)) {
+        this.ramCache.set(qKey, {
+          q: qKey,
+          v: val,
+          t: Date.now(),
+          s: 1 // Already synced on server
+        })
       }
     }
 
@@ -341,10 +351,10 @@ export class ExamAtomicEngine {
       window.addEventListener('online', this._handleOnline)
       document.addEventListener('visibilitychange', this._handleVisibilityChange)
 
-      // Start 15s delta sync timer
+      // Start 10s delta sync timer (matches "Jawaban disimpan otomatis setiap 10 detik" in the lobby)
       this.syncInterval = setInterval(() => {
         this.syncDirty()
-      }, 15000)
+      }, 10000)
     }
 
     // Return plain answers map for initial React state hydration
@@ -543,8 +553,26 @@ export class ExamAtomicEngine {
    * Syncs only unsynced questions (dirtyKeys) with optimistic timestamp verification
    */
   async syncDirty(customSyncCallback = null) {
-    if (this.isSyncing || this.dirtyKeys.size === 0) return
+    // A sync is already running: wait for it, then sync whatever changed since.
+    // (Previously this returned at once, so "save now before submit/lockout"
+    // silently skipped the student's latest answers.)
+    if (this.isSyncing) {
+      if (!this._pendingResync) {
+        this._pendingResync = (this._currentSync || Promise.resolve())
+          .then(() => {
+            this._pendingResync = null
+            return this.syncDirty(customSyncCallback)
+          })
+      }
+      return this._pendingResync
+    }
+    if (this.dirtyKeys.size === 0) return
     this.isSyncing = true
+    this._currentSync = this._doSync(customSyncCallback)
+    return this._currentSync
+  }
+
+  async _doSync(customSyncCallback = null) {
 
     // Snapshot current dirty batch
     const batch = []
@@ -552,7 +580,10 @@ export class ExamAtomicEngine {
     for (const q of this.dirtyKeys) {
       const rec = this.ramCache.get(q)
       if (rec && rec.s === 0) {
-        batch.push({ q: rec.q, v: rec.v, t: rec.t })
+        // Keep a reference to the exact record: saveAnswer() replaces it with a new
+        // object, so identity tells us reliably whether it changed mid-flight
+        // (timestamps can collide when two answers land in the same millisecond).
+        batch.push({ q: rec.q, v: rec.v, t: rec.t, ref: rec })
         timestampMap[rec.q] = rec.t
       }
     }
@@ -573,7 +604,7 @@ export class ExamAtomicEngine {
         const syncedKeys = []
         for (const item of batch) {
           const current = this.ramCache.get(item.q)
-          if (current && current.t === item.t) {
+          if (current && current === item.ref) {
             current.s = 1
             this.dirtyKeys.delete(item.q)
             syncedKeys.push(item.q)

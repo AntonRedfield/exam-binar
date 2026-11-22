@@ -234,6 +234,13 @@ export async function saveExamDraftToSupabase({
       )
     )
 
+    // Two questions sharing an id would make the upsert fail and overwrite one another
+    const seenIds = new Set()
+    for (const pq of preparedQuestions) {
+      if (seenIds.has(pq.id)) pq.id = generateQuestionId('q')
+      seenIds.add(pq.id)
+    }
+
     // Safe Question Sync (Prevent deleting questions during active exam)
     // 1. Fetch current questions in DB for this exam
     const { data: existingQs, error: fetchErr } = await supabase
@@ -248,7 +255,43 @@ export async function saveExamDraftToSupabase({
     const existingIdSet = new Set((existingQs || []).map(q => q.id).filter(Boolean))
     const currentIdSet = new Set(preparedQuestions.map(q => q.id).filter(Boolean))
 
-    // 2. Delete ONLY questions that were explicitly removed by the teacher
+    // 2. Upsert questions FIRST (updates matching ids in place, inserts new ones),
+    //    so a failed write never leaves the exam with its questions already deleted.
+    if (preparedQuestions.length > 0) {
+      const { error: upsertErr } = await supabase
+        .from('questions')
+        .upsert(preparedQuestions, { onConflict: 'id' })
+
+      if (upsertErr) {
+        console.warn('[Autosave] Upsert error, trying individual update/insert fallback:', upsertErr)
+        const failedNumbers = []
+        for (const pq of preparedQuestions) {
+          if (existingIdSet.has(pq.id)) {
+            const { error: upErr } = await supabase
+              .from('questions')
+              .update(pq)
+              .eq('id', pq.id)
+            if (upErr) {
+              console.warn('[Autosave] Fallback update error for question', pq.number, upErr)
+              failedNumbers.push(pq.number)
+            }
+          } else {
+            const { error: inErr } = await supabase
+              .from('questions')
+              .insert([pq])
+            if (inErr) {
+              console.warn('[Autosave] Fallback insert error for question', pq.number, inErr)
+              failedNumbers.push(pq.number)
+            }
+          }
+        }
+        if (failedNumbers.length > 0) {
+          throw new Error(`Gagal menyimpan soal nomor ${failedNumbers.join(', ')}: ${upsertErr.message}`)
+        }
+      }
+    }
+
+    // 3. Delete ONLY questions that were explicitly removed by the teacher
     const idsToDelete = [...existingIdSet].filter(id => !currentIdSet.has(id))
     if (idsToDelete.length > 0) {
       const { error: delErr } = await supabase
@@ -261,33 +304,9 @@ export async function saveExamDraftToSupabase({
       }
     }
 
-    // 3. Upsert questions (updates matching question IDs in place, inserts newly added ones)
-    if (preparedQuestions.length > 0) {
-      const { error: upsertErr } = await supabase
-        .from('questions')
-        .upsert(preparedQuestions, { onConflict: 'id' })
-
-      if (upsertErr) {
-        console.warn('[Autosave] Upsert error, trying individual update/insert fallback:', upsertErr)
-        for (const pq of preparedQuestions) {
-          if (existingIdSet.has(pq.id)) {
-            const { error: upErr } = await supabase
-              .from('questions')
-              .update(pq)
-              .eq('id', pq.id)
-            if (upErr) console.warn('[Autosave] Fallback update error for question', pq.number, upErr)
-          } else {
-            const { error: inErr } = await supabase
-              .from('questions')
-              .insert([pq])
-            if (inErr) console.warn('[Autosave] Fallback insert error for question', pq.number, inErr)
-          }
-        }
-      }
-    }
-
-    // 4. If exam is published (live) or live apply triggered, broadcast update to all connected students
-    if (targetStatus === 'published' || isLiveApply) {
+    // 4. Broadcast to connected students only on an explicit publish or "Terapkan Langsung".
+    //    A background autosave of a live exam must not push half-typed edits to students.
+    if (publish || isLiveApply) {
       broadcastExamLiveUpdate(targetExamId, {
         type: 'LIVE_QUESTIONS_UPDATED',
         examId: targetExamId,

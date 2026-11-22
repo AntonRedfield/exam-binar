@@ -15,7 +15,8 @@ import {
   saveExamDraftToSupabase,
   saveLocalDraftBackup,
   getLocalDraftBackup,
-  clearLocalDraftBackup
+  clearLocalDraftBackup,
+  generateQuestionId
 } from '../../lib/questionMakerAutosave'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
 import ExportPaperExamModal from '../../components/exam/ExportPaperExamModal'
@@ -132,9 +133,28 @@ function makeGridColumns(count = 3) {
   return Array.from({ length: clamped }, (_, i) => `Kolom ${i + 1}`)
 }
 
+// Every question needs a stable id so autosave can update rows in place
+// instead of deleting and re-inserting the whole question set on each save.
+function ensureQuestionIds(items) {
+  const seen = new Set()
+  let changed = false
+  const out = (items || []).map(q => {
+    if (q && q.id && !seen.has(q.id)) {
+      seen.add(q.id)
+      return q
+    }
+    changed = true
+    const id = generateQuestionId('q')
+    seen.add(id)
+    return { ...q, id }
+  })
+  return changed ? out : items
+}
+
 function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCount = 3) {
   if (isSurvey) {
     return {
+      id: generateQuestionId('q'),
       number: n, type: 'SHORT_ANSWER', question_text: '', image_url: '', video_url: '',
       audio_url: '', max_plays: 1, allow_pause: false,
       options: {}, option_images: {}, correct_answer: null, points: 0, variant: 'A', time_limit: null,
@@ -144,7 +164,7 @@ function makeQuestion(n, isSurvey = false, defaultOptsCount = 4, defaultStmtsCou
     }
   }
   const opts = makeOptions(defaultOptsCount)
-  return { number: n, type: 'MCQ', question_text: '', image_url: '', video_url: '', audio_url: '', max_plays: 1, allow_pause: false, options: opts, option_images: {}, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
+  return { id: generateQuestionId('q'), number: n, type: 'MCQ', question_text: '', image_url: '', video_url: '', audio_url: '', max_plays: 1, allow_pause: false, options: opts, option_images: {}, correct_answer: 'A', points: 1, variant: 'A', time_limit: null }
 }
 
 export default function CreateExam() {
@@ -164,6 +184,25 @@ export default function CreateExam() {
   const [showAutosaveMenu, setShowAutosaveMenu] = useState(false)
   const [recoverableDraft, setRecoverableDraft] = useState(null)
   const isAutosavingRef = useRef(false)
+  // Latest known exam id (updated immediately after the first insert) and a
+  // promise chain so autosave and manual saves never run at the same time.
+  // Without this, a manual save during the first autosave of a new exam
+  // would see no id yet and insert a second, duplicate exam.
+  const currentExamIdRef = useRef(examId || null)
+  const saveChainRef = useRef(Promise.resolve())
+
+  const runSerializedSave = useCallback((params) => {
+    const run = saveChainRef.current.then(async () => {
+      const result = await saveExamDraftToSupabase({ ...params, examId: currentExamIdRef.current })
+      if (result?.success && result.examId) {
+        currentExamIdRef.current = result.examId
+      }
+      return result
+    })
+    // Keep the chain alive even if this save throws
+    saveChainRef.current = run.catch(() => {})
+    return run
+  }, [])
 
   const [title, setTitle] = useState('')
   const [information, setInformation] = useState('')
@@ -536,7 +575,7 @@ export default function CreateExam() {
           }
         }
 
-        setQuestionItems(qs.map(q => {
+        setQuestionItems(ensureQuestionIds(qs.map(q => {
           let opts = q.options
           let ans = q.correct_answer
 
@@ -673,7 +712,7 @@ export default function CreateExam() {
             allow_other: q.allow_other || false,
             required: q.required !== false,
           }
-        }))
+        })))
         if ((exam?.quiz_timer_type || 'uniform') === 'uniform' && qs[0]?.time_limit) {
           setUniformTime(qs[0].time_limit)
         }
@@ -708,7 +747,7 @@ export default function CreateExam() {
     if (f.defaultGridColsCount) setDefaultGridColsCount(f.defaultGridColsCount)
 
     if (Array.isArray(draft.questionItems) && draft.questionItems.length > 0) {
-      setQuestionItems(draft.questionItems)
+      setQuestionItems(ensureQuestionIds(draft.questionItems))
     }
 
     setRecoverableDraft(null)
@@ -734,6 +773,7 @@ export default function CreateExam() {
       uniformTime: Number(uniformTime) || 0,
       monitoringLevel,
       questionOrder,
+      keepEssayAtEnd,
       defaultOptionsCount,
       defaultStatementsCount,
       defaultMatchingCount,
@@ -775,7 +815,7 @@ export default function CreateExam() {
     })
   }, [
     title, information, pdfUrl, duration, passingGrade, targetKelas, mode,
-    quizTimerType, uniformTime, monitoringLevel, questionOrder,
+    quizTimerType, uniformTime, monitoringLevel, questionOrder, keepEssayAtEnd,
     defaultOptionsCount, defaultStatementsCount, defaultMatchingCount,
     defaultSequencingCount, defaultAgreeDisagreeCount, defaultSurveyOptionsCount,
     defaultGridRowsCount, defaultGridColsCount, surveyType, surveyRecurrence,
@@ -797,6 +837,17 @@ export default function CreateExam() {
     initialSnapshotRef.current !== currentSnapshot
   )
 
+  // Refs read by the autosave heartbeat so its interval doesn't restart on every keystroke
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges)
+  hasUnsavedChangesRef.current = hasUnsavedChanges
+  const savingRef = useRef(saving)
+  savingRef.current = saving
+  const countdownRef = useRef(autosaveCountdown)
+  useEffect(() => {
+    // Picks up resets made elsewhere (after a save, or changing the interval)
+    countdownRef.current = autosaveCountdown
+  }, [autosaveCountdown])
+
   // ─── Autosave Execution Controller (Direct Supabase Sync) ──────────────────
   const performAutosave = useCallback(async () => {
     if (saving || isAutosavingRef.current || loading || !hasUnsavedChanges) return false
@@ -816,8 +867,7 @@ export default function CreateExam() {
     }
 
     try {
-      const result = await saveExamDraftToSupabase({
-        examId: currentExamId,
+      const result = await runSerializedSave({
         formData,
         questionItems,
         user,
@@ -869,20 +919,19 @@ export default function CreateExam() {
   useEffect(() => {
     if (!autosaveEnabled || loading) return
 
+    // Count down in a ref and trigger the save outside the state updater:
+    // state updaters must be pure (React may run them twice).
     const timer = setInterval(() => {
-      setAutosaveCountdown(prev => {
-        if (prev <= 1) {
-          if (hasUnsavedChanges && !saving && !isAutosavingRef.current) {
-            triggerAutosaveRef.current()
-          }
-          return autosaveInterval
-        }
-        return prev - 1
-      })
+      countdownRef.current = countdownRef.current <= 1 ? autosaveInterval : countdownRef.current - 1
+      setAutosaveCountdown(countdownRef.current)
+      if (countdownRef.current === autosaveInterval &&
+          hasUnsavedChangesRef.current && !savingRef.current && !isAutosavingRef.current) {
+        triggerAutosaveRef.current()
+      }
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [autosaveEnabled, autosaveInterval, hasUnsavedChanges, saving, loading])
+  }, [autosaveEnabled, autosaveInterval, loading])
 
   // Fast-track debounced autosave: especially after creating more than 3 questions
   const prevQuestionCountRef = useRef(questionItems.length)
@@ -1841,8 +1890,7 @@ export default function CreateExam() {
         status: unpublish ? 'draft' : examStatus
       }
 
-      const result = await saveExamDraftToSupabase({
-        examId: currentExamId,
+      const result = await runSerializedSave({
         formData,
         questionItems,
         user,
