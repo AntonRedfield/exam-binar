@@ -4,6 +4,7 @@ import { getCurrentUser } from '../lib/auth'
 import { results, exams, sessions, questions } from '../lib/db'
 import { CheckCircle, XCircle, Clock, ShieldAlert, Printer, ArrowLeft } from 'lucide-react'
 import { formatScore, roundScore } from '../lib/format'
+import { isOffline } from '../lib/network'
 
 export default function Results() {
   const { resultId } = useParams()
@@ -16,23 +17,47 @@ export default function Results() {
 
   useEffect(() => {
     let isMounted = true
+    let inFlight = false
+    let haveFull = false
     const loadResult = async () => {
+      if (inFlight) return
+      inFlight = true
       try {
-        const { data } = await results.getById(resultId)
-        if (isMounted && data) {
-          setResult(data)
-          setLoading(false)
+        if (!haveFull) {
+          // First load: result + its exam and student profile
+          const { data } = await results.getById(resultId)
+          if (isMounted && data) {
+            haveFull = true
+            setResult(data)
+            setLoading(false)
+          }
+        } else {
+          // Later polls (essay grading updates): just the result row, merged
+          // into the exam/profile already loaded — 1 request instead of 4
+          const { data: row } = await results.getRowById(resultId)
+          if (isMounted && row) {
+            setResult(prev => prev ? results._attachRelations({ ...row, profiles: prev.profiles, exams: prev.exams }) : prev)
+          }
         }
       } catch {
         if (isMounted) setLoading(false)
+      } finally {
+        inFlight = false
       }
     }
 
-    loadResult()
-    const pollTimer = setInterval(loadResult, 3500)
+    // Until the result exists (right after submitting) check every 5 s;
+    // afterwards every 20 s. Paused while the page is hidden or offline.
+    let timer = null
+    const tick = async () => {
+      const hidden = typeof document !== 'undefined' && document.hidden
+      if (!hidden && !isOffline()) await loadResult()
+      if (isMounted) timer = setTimeout(tick, haveFull ? 20000 : 5000)
+    }
+    tick()
     return () => {
       isMounted = false
-      clearInterval(pollTimer)
+      clearTimeout(timer)
     }
   }, [resultId])
 
@@ -40,9 +65,13 @@ export default function Results() {
     if (!result?.exam_id || !user?.id) return
     let isMounted = true
 
+    let inFlight = false
     const checkActiveSession = async () => {
+      if (inFlight || isOffline() || (typeof document !== 'undefined' && document.hidden)) return
+      inFlight = true
       try {
-        const { data: sess } = await sessions.get(user.id, result.exam_id)
+        // Status columns only (no answers / selfie photo)
+        const { data: sess } = await sessions.getStatus(user.id, result.exam_id)
         if (isMounted) {
           if (sess && sess.status === 'active') {
             setActiveSession(sess)
@@ -52,11 +81,13 @@ export default function Results() {
         }
       } catch (e) {
         // quiet ignore
+      } finally {
+        inFlight = false
       }
     }
 
     checkActiveSession()
-    const interval = setInterval(checkActiveSession, 3500)
+    const interval = setInterval(checkActiveSession, 15000)
     return () => {
       isMounted = false
       clearInterval(interval)

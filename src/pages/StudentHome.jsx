@@ -6,6 +6,8 @@ import { BookOpen, Clock, CheckCircle, Play, LogOut, RotateCcw, ZapOff, Zap, Cli
 import BiometricPrompt from '../components/BiometricPrompt'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 import { formatScore, roundScore } from '../lib/format'
+import { loadOffline, saveOffline } from '../lib/offlineCache'
+import { isNetworkError, isOffline } from '../lib/network'
 
 function getStatusBadge(status, returneeRequired = false) {
   if (returneeRequired) return <span className="badge badge-returnee">🔒 Returnee</span>
@@ -23,22 +25,54 @@ export default function StudentHome() {
   const [resultMap, setResultMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [connectionNote, setConnectionNote] = useState('')
 
   useEffect(() => {
-    async function load() {
+    let cancelled = false
+
+    async function load({ background = false } = {}) {
       if (!user?.id) {
         setLoading(false)
         return
       }
 
-      setLoading(true)
+      // 1. Show the last saved list immediately: instant on slow links, and
+      //    still usable when the connection is down.
+      if (!background) {
+        const saved = loadOffline(user.id, 'home', 7 * 24 * 60 * 60 * 1000)
+        if (saved?.data?.examList) {
+          setExamList(saved.data.examList)
+          setSessionMap(saved.data.sessionMap || {})
+          setResultMap(saved.data.resultMap || {})
+          setLoading(false)
+        } else {
+          setLoading(true)
+        }
+      }
+
       try {
-        const [{ data: allExams }, { data: allSessions }, { data: allResults }] = await Promise.all([
-          exams.list(),
-          sessions.listByStudent(user.id),
-          results.listByStudent(user.id)
+        // 2. Refresh with light queries (only the columns the cards use)
+        const [pubRes, sessRes, resRes] = await Promise.all([
+          exams.listPublishedLight(),
+          sessions.listByStudentLight(user.id),
+          results.listByStudentLight(user.id)
         ])
-        if (!allExams) return
+        const failure = pubRes.error || sessRes.error || resRes.error
+        if (failure || !pubRes.data || !sessRes.data || !resRes.data) {
+          throw failure || new Error('Data tidak lengkap')
+        }
+        const allSessions = sessRes.data
+        const allResults = resRes.data
+        // Closed exams the student already took are not in the published list
+        const publishedIds = new Set(pubRes.data.map(e => e.id))
+        const historyIds = [...allSessions, ...allResults].map(x => x.exam_id).filter(id => id && !publishedIds.has(id))
+        let allExams = pubRes.data
+        if (historyIds.length > 0) {
+          const { data: older, error: olderErr } = await exams.listByIdsLight(historyIds)
+          if (olderErr || !older) throw olderErr || new Error('Data tidak lengkap')
+          allExams = [...allExams, ...older]
+        }
+        if (cancelled) return
 
         // Build session & result maps in memory
         const sMap = {}
@@ -99,13 +133,30 @@ export default function StudentHome() {
         setExamList(visibleExams)
         setSessionMap(sMap)
         setResultMap(rMap)
+        setConnectionNote('')
+        saveOffline(user.id, 'home', { examList: visibleExams, sessionMap: sMap, resultMap: rMap })
       } catch (err) {
         console.error('[StudentHome] Error loading exams:', err)
+        if (!cancelled) {
+          setConnectionNote(
+            isOffline() || isNetworkError(err)
+              ? 'Koneksi bermasalah — menampilkan data terakhir yang tersimpan di perangkat. Daftar diperbarui otomatis saat koneksi kembali.'
+              : 'Gagal memuat daftar ujian terbaru. Buka ulang halaman untuk mencoba lagi.'
+          )
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
+
     load()
+    // Refresh automatically when the connection comes back
+    const onOnline = () => load({ background: true })
+    window.addEventListener('online', onOnline)
+    return () => {
+      cancelled = true
+      window.removeEventListener('online', onOnline)
+    }
   }, [user?.id, user?.kelas, user?.level])
 
   function handleExamClick(exam) {
@@ -195,9 +246,23 @@ export default function StudentHome() {
       {/* Body */}
       <main style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
         <h2 style={{ marginBottom: '0.5rem' }}>Ujian Tersedia</h2>
-        <p className="text-muted" style={{ marginBottom: '2rem', fontSize: '0.9rem' }}>
+        <p className="text-muted" style={{ marginBottom: connectionNote ? '0.75rem' : '2rem', fontSize: '0.9rem' }}>
           Kelas {user.kelas} &mdash; {examList.length} ujian ditemukan
         </p>
+        {connectionNote && (
+          <div role="status" style={{
+            marginBottom: '1.5rem',
+            padding: '0.6rem 0.85rem',
+            borderRadius: 8,
+            background: '#fffbeb',
+            border: '1px solid #fcd34d',
+            color: '#92400e',
+            fontSize: '0.82rem',
+            lineHeight: 1.45
+          }}>
+            {connectionNote}
+          </div>
+        )}
 
         {examList.length === 0 ? (
           <div className="empty-state card">

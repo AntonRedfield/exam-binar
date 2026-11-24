@@ -12,12 +12,75 @@
 
 import { supabase, isSupabaseConfigured } from './supabase.js'
 import { parseDeviceInfo } from './loginAudit.js'
+import { isOffline } from './network.js'
 
 const SESSION_TOKEN_KEY = 'binar_active_session_token'
 const TAB_ID_KEY = 'binar_active_tab_id'
 const KICKOUT_REASON_KEY = 'binar_kickout_reason'
 const CHANNEL_NAME = 'binar_single_session_sync'
 const TAB_LOCK_PREFIX = 'binar_tab_lock_'
+// Token whose write to the database was confirmed. If the write failed (bad
+// connection), a token mismatch does NOT mean another device took over.
+const CONFIRMED_TOKEN_KEY = 'binar_active_session_confirmed'
+
+// The realtime subscription reports a takeover instantly; polling is only a
+// fallback, so it can be slow and cheap on mobile data.
+const DB_CHECK_INTERVAL_MS = 30000
+const DB_CHECK_MIN_GAP_MS = 8000
+
+function markTokenConfirmed(token) {
+  try {
+    if (token) sessionStorage.setItem(CONFIRMED_TOKEN_KEY, token)
+    else sessionStorage.removeItem(CONFIRMED_TOKEN_KEY)
+  } catch { /* storage unavailable */ }
+}
+
+function isTokenConfirmed(token) {
+  try {
+    return Boolean(token) && sessionStorage.getItem(CONFIRMED_TOKEN_KEY) === token
+  } catch {
+    return false
+  }
+}
+
+// Tokens look like `ds_<created ms>_<random>`.
+function tokenTime(token) {
+  const match = /^ds_(\d+)_/.exec(String(token || ''))
+  return match ? Number(match[1]) : 0
+}
+
+/**
+ * The database holds a different token than ours. Is that a real takeover by
+ * another device, or just a stale value because our own login write was lost?
+ * Latest login wins: only a token NEWER than ours counts as a takeover.
+ */
+function isRealTakeover(dbToken, myToken) {
+  if (isTokenConfirmed(myToken)) return true
+  const dbTime = tokenTime(dbToken)
+  const myTime = tokenTime(myToken)
+  if (!dbTime || !myTime) return true // unknown format: keep the strict behaviour
+  return dbTime > myTime
+}
+
+/** Write this device's session token to the profile. Returns true when the write succeeded. */
+async function writeActiveSessionToken(userId, token, extra = {}) {
+  if (!isSupabaseConfigured || !supabase || !userId) return false
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ ...extra, active_session_id: token })
+      .eq('id', userId)
+    if (error) {
+      console.warn('[SessionGuard] Could not save active session:', error.message)
+      return false
+    }
+    markTokenConfirmed(token)
+    return true
+  } catch (err) {
+    console.warn('[SessionGuard] Could not save active session:', err)
+    return false
+  }
+}
 
 /**
  * Returns true if the user level requires strict single active session enforcement.
@@ -97,20 +160,23 @@ export async function registerActiveSession(userId, level) {
   // ALWAYS update last_login_at and last_login_device for ALL users (including Teachers & Admins)
   if (isSupabaseConfigured && supabase && userId) {
     try {
-      const { deviceName, deviceModel } = parseDeviceInfo()
-      const cleanDeviceName = deviceName || deviceModel || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 150) : 'web')
+      const { deviceName, deviceModel, deviceNickname } = parseDeviceInfo()
+      const cleanDeviceName = deviceNickname || deviceModel || deviceName ||
+        (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 150) : 'web')
       const updateData = {
         last_login_at: new Date().toISOString(),
         last_login_device: cleanDeviceName
       }
+      markTokenConfirmed(null)
       if (isEnforced && token) {
-        updateData.active_session_id = token
+        await writeActiveSessionToken(userId, token, updateData)
+      } else {
+        const { error } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', userId)
+        if (error) console.warn('[SessionGuard] Failed to register login in database:', error.message)
       }
-
-      await supabase
-        .from('profiles')
-        .update(updateData)
-        .eq('id', userId)
     } catch (err) {
       console.warn('[SessionGuard] Failed to register login in database:', err)
     }
@@ -223,8 +289,16 @@ export function startSessionGuard(user, onConflict) {
   checkTabLock()
 
   // 2. Check database session validity (cross-device enforcement)
-  async function checkDatabaseSession() {
+  let dbCheckInFlight = false
+  let lastDbCheckAt = 0
+  async function checkDatabaseSession({ force = false } = {}) {
     if (isTerminated || !isSupabaseConfigured || !supabase || !user.id) return
+    // Cheap on bad connections: one request at a time, none while offline or
+    // in the background, and focus/visibility bursts are collapsed.
+    if (dbCheckInFlight || isOffline()) return
+    if (!force && Date.now() - lastDbCheckAt < DB_CHECK_MIN_GAP_MS) return
+    dbCheckInFlight = true
+    lastDbCheckAt = Date.now()
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -234,21 +308,32 @@ export function startSessionGuard(user, onConflict) {
 
       if (error || !data) return
 
-      // If active_session_id in DB exists and doesn't match our local token, another device took over!
       if (data.active_session_id && myToken && data.active_session_id !== myToken) {
-        console.warn('[SessionGuard] Another device logged in. Current session token mismatch.')
-        triggerConflict('other_device')
+        if (isRealTakeover(data.active_session_id, myToken)) {
+          console.warn('[SessionGuard] Another device logged in. Current session token mismatch.')
+          triggerConflict('other_device')
+        } else {
+          // Our own login write never reached the server (connection dropped),
+          // so the older value is just stale. Claim the session instead of
+          // kicking the student out.
+          await writeActiveSessionToken(user.id, myToken)
+        }
+      } else if (data.active_session_id && myToken && data.active_session_id === myToken) {
+        markTokenConfirmed(myToken)
       } else if (!myToken && data.active_session_id) {
         setLocalSessionToken(data.active_session_id)
         myToken = data.active_session_id
+        markTokenConfirmed(myToken)
       }
     } catch (err) {
       console.warn('[SessionGuard] Error checking database session:', err)
+    } finally {
+      dbCheckInFlight = false
     }
   }
 
   // Perform initial DB check
-  checkDatabaseSession()
+  checkDatabaseSession({ force: true })
 
   // 3. BroadcastChannel for instant same-browser windows/tabs sync
   let bc = null
@@ -313,9 +398,17 @@ export function startSessionGuard(user, onConflict) {
           (payload) => {
             if (isTerminated) return
             const newActiveId = payload.new?.active_session_id
-            if (newActiveId && myToken && newActiveId !== myToken) {
-              console.warn('[SessionGuard] Realtime update: new active_session_id detected from another device.')
-              triggerConflict('other_device')
+            if (newActiveId && myToken && newActiveId === myToken) {
+              markTokenConfirmed(myToken)
+            } else if (newActiveId && myToken && newActiveId !== myToken) {
+              if (isRealTakeover(newActiveId, myToken)) {
+                console.warn('[SessionGuard] Realtime update: new active_session_id detected from another device.')
+                triggerConflict('other_device')
+              } else {
+                // Some other profile update replayed the stale token because our
+                // own login write was lost: claim the session again.
+                writeActiveSessionToken(user.id, myToken)
+              }
             }
           }
         )
@@ -326,10 +419,14 @@ export function startSessionGuard(user, onConflict) {
   }
 
   // 5. Periodic Heartbeats:
-  // - Tab lock refresh every 1.5 seconds
-  // - DB session check every 5 seconds
+  // - Tab lock refresh every 1.5 seconds (local only, no network)
+  // - DB session check every 30 seconds, skipped while the page is hidden
+  //   (realtime above already catches a takeover instantly)
   const tabLockInterval = setInterval(checkTabLock, 1500)
-  const dbInterval = setInterval(checkDatabaseSession, 5000)
+  const dbInterval = setInterval(() => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    checkDatabaseSession()
+  }, DB_CHECK_INTERVAL_MS)
 
   // 6. Visibility and Focus Handlers (immediate check when user switches back to this tab)
   function handleFocusOrVisibility() {

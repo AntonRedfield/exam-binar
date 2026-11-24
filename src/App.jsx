@@ -1,33 +1,35 @@
-import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react'
+import { useState, useEffect, createContext, useContext, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { getSession, getUserRole, getUserLevel, onAuthStateChange, _syncCurrentUser, getCurrentUser, logout } from './lib/auth'
 import { startSessionGuard } from './lib/sessionGuard'
+import { lazyWithRetry } from './lib/lazyWithRetry'
+import NetworkStatusBanner from './components/NetworkStatusBanner'
 
 // ─── Lazy Page Imports (code-split per route) ───────────────────────────────
-const Login = lazy(() => import('./pages/Login'))
-const StudentHome = lazy(() => import('./pages/StudentHome'))
-const ExamLobby = lazy(() => import('./pages/ExamLobby'))
-const ExamRoom = lazy(() => import('./pages/ExamRoom'))
-const Results = lazy(() => import('./pages/Results'))
-const SurveyRoom = lazy(() => import('./pages/SurveyRoom'))
+const Login = lazyWithRetry(() => import('./pages/Login'))
+const StudentHome = lazyWithRetry(() => import('./pages/StudentHome'))
+const ExamLobby = lazyWithRetry(() => import('./pages/ExamLobby'))
+const ExamRoom = lazyWithRetry(() => import('./pages/ExamRoom'))
+const Results = lazyWithRetry(() => import('./pages/Results'))
+const SurveyRoom = lazyWithRetry(() => import('./pages/SurveyRoom'))
 
-const TeacherLayout = lazy(() => import('./pages/teacher/TeacherLayout'))
-const TeacherDashboard = lazy(() => import('./pages/teacher/TeacherDashboard'))
-const ExamList = lazy(() => import('./pages/teacher/ExamList'))
-const CreateExam = lazy(() => import('./pages/teacher/CreateExam'))
-const Monitor = lazy(() => import('./pages/teacher/Monitor'))
-const ActiveMonitorHub = lazy(() => import('./pages/teacher/ActiveMonitorHub'))
-const ResultsView = lazy(() => import('./pages/teacher/ResultsView'))
-const QuestionAnalytics = lazy(() => import('./pages/teacher/QuestionAnalytics'))
-const SurveyResponses = lazy(() => import('./pages/teacher/SurveyResponses'))
+const TeacherLayout = lazyWithRetry(() => import('./pages/teacher/TeacherLayout'))
+const TeacherDashboard = lazyWithRetry(() => import('./pages/teacher/TeacherDashboard'))
+const ExamList = lazyWithRetry(() => import('./pages/teacher/ExamList'))
+const CreateExam = lazyWithRetry(() => import('./pages/teacher/CreateExam'))
+const Monitor = lazyWithRetry(() => import('./pages/teacher/Monitor'))
+const ActiveMonitorHub = lazyWithRetry(() => import('./pages/teacher/ActiveMonitorHub'))
+const ResultsView = lazyWithRetry(() => import('./pages/teacher/ResultsView'))
+const QuestionAnalytics = lazyWithRetry(() => import('./pages/teacher/QuestionAnalytics'))
+const SurveyResponses = lazyWithRetry(() => import('./pages/teacher/SurveyResponses'))
 
-const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'))
-const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
-const UserManagement = lazy(() => import('./pages/admin/UserManagement'))
-const ExamOversight = lazy(() => import('./pages/admin/ExamOversight'))
-const Analytics = lazy(() => import('./pages/admin/Analytics'))
-const ClassManagement = lazy(() => import('./pages/admin/ClassManagement'))
-const LoginLogs = lazy(() => import('./pages/admin/LoginLogs'))
+const AdminLayout = lazyWithRetry(() => import('./pages/admin/AdminLayout'))
+const AdminDashboard = lazyWithRetry(() => import('./pages/admin/AdminDashboard'))
+const UserManagement = lazyWithRetry(() => import('./pages/admin/UserManagement'))
+const ExamOversight = lazyWithRetry(() => import('./pages/admin/ExamOversight'))
+const Analytics = lazyWithRetry(() => import('./pages/admin/Analytics'))
+const ClassManagement = lazyWithRetry(() => import('./pages/admin/ClassManagement'))
+const LoginLogs = lazyWithRetry(() => import('./pages/admin/LoginLogs'))
 
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
@@ -155,6 +157,7 @@ function RoleRedirect() {
 export default function App() {
   return (
     <BrowserRouter>
+      <NetworkStatusBanner />
       <AuthProvider>
         <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>

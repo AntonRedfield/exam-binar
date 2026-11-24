@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.js'
+import { isOffline } from './network.js'
 
 /**
  * Live Exam Sync Engine
@@ -162,9 +163,12 @@ export function subscribeToExamLiveUpdates(examId, onUpdate) {
   }
 
   // 5. Fallback Polling / Heartbeat
-  // Every 15 seconds, check if the exam status has closed/unpublished or updated
+  // Realtime above delivers changes instantly; this light poll (3 columns) is
+  // only a safety net, so it runs every 30 s, one at a time, never offline.
+  let checkInFlight = false
   const checkSync = async () => {
-    if (!isSupabaseConfigured || !supabase) return
+    if (!isSupabaseConfigured || !supabase || checkInFlight || isOffline()) return
+    checkInFlight = true
     try {
       const { data: examData } = await supabase
         .from('exams')
@@ -191,10 +195,14 @@ export function subscribeToExamLiveUpdates(examId, onUpdate) {
           handleUpdate({ examId, type: 'HEARTBEAT_SYNC', timestamp: remoteTime })
         }
       }
-    } catch (e) {}
+    } catch {
+      // ignore: retried on the next tick
+    } finally {
+      checkInFlight = false
+    }
   }
 
-  heartbeatTimer = setInterval(checkSync, 15000)
+  heartbeatTimer = setInterval(checkSync, 30000)
 
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {

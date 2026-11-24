@@ -1608,6 +1608,7 @@ tbody tr.row-published:nth-child(even) {
 .alert-error { background: var(--danger-bg); border: 1px solid rgba(239,68,68,0.3); color: #dc2626; }
 .alert-success { background: var(--success-bg); border: 1px solid rgba(16,185,129,0.3); color: #059669; }
 .alert-info { background: rgba(27,51,97,0.08); border: 1px solid rgba(27,51,97,0.2); color: #1b3361; }
+.alert-warning { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
 
 /* ─── LOGIN PAGE ──────────────────────────────────────────────────────────── */
 .login-bg {

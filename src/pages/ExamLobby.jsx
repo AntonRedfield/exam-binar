@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions, results } from '../lib/db'
+import { isNetworkError, isOffline } from '../lib/network'
+import { loadOffline, saveOffline, slimSession } from '../lib/offlineCache'
 import {
   BookOpen,
   Clock,
@@ -49,15 +51,44 @@ export default function ExamLobby() {
   const [verifyingToken, setVerifyingToken] = useState(false)
   const [returneeError, setReturneeError] = useState('')
   const [returneeSuccess, setReturneeSuccess] = useState('')
+  // Set when the server could not be reached: the lobby shows the last saved
+  // exam info, keeps retrying, and blocks entering until the lock state can
+  // be checked again.
+  const [connectionIssue, setConnectionIssue] = useState('')
+  const [reloadTick, setReloadTick] = useState(0)
+  // One session id per lobby visit, so pressing "Mulai" again after a lost
+  // response can never create a second session row.
+  const newSessionIdRef = useRef(null)
 
   useEffect(() => {
     if (!user) return
+    let cancelled = false
     async function load() {
-      const [{ data: examData }, { count: qCount }, { data: sess }] = await Promise.all([
+      const [examRes, countRes, sessRes] = await Promise.all([
         exams.getById(examId),
         questions.countByExam(examId),
         sessions.get(user.id, examId),
       ])
+      if (cancelled) return
+      const examData = examRes.data
+      const qCount = countRes.count
+      const sess = sessRes.data
+
+      const networkFailed = isOffline() ||
+        (!examData && isNetworkError(examRes.error)) ||
+        Boolean(sessRes.error && isNetworkError(sessRes.error))
+      if (networkFailed) {
+        const saved = loadOffline(user.id, `lobby_${examId}`)
+        if (saved?.data?.exam) {
+          setExam(saved.data.exam)
+          setQuestionCount(saved.data.questionCount || 0)
+          setSession(saved.data.session || null)
+        }
+        setConnectionIssue('Koneksi internet bermasalah. Menampilkan data ujian terakhir yang tersimpan di perangkat — halaman dimuat ulang otomatis saat koneksi kembali.')
+        setLoading(false)
+        return
+      }
+      setConnectionIssue('')
 
       // Redirect surveys to SurveyRoom — no lobby needed
       if (examData?.mode === 'survey') {
@@ -116,24 +147,52 @@ export default function ExamLobby() {
       setQuestionCount(qCount || 0)
       setSession(currentSess)
       setLoading(false)
+      if (examData) {
+        saveOffline(user.id, `lobby_${examId}`, {
+          exam: examData,
+          questionCount: qCount || 0,
+          session: slimSession(currentSess),
+        })
+      }
     }
     load()
-  }, [examId, user?.id, navigate])
+    return () => { cancelled = true }
+  }, [examId, user?.id, navigate, reloadTick])
+
+  // ─── Reload automatically once the connection is back ──────────────────────
+  useEffect(() => {
+    if (!connectionIssue) return
+    const retry = () => setReloadTick(t => t + 1)
+    window.addEventListener('online', retry)
+    const timer = setInterval(() => { if (!isOffline()) retry() }, 20000)
+    return () => {
+      window.removeEventListener('online', retry)
+      clearInterval(timer)
+    }
+  }, [connectionIssue])
 
   // ─── Auto-listen for proctor unlock while student is locked in lobby ────────
   useEffect(() => {
     if (!session?.returnee_token_required || !user?.id || !examId) return
+    let inFlight = false
     const interval = setInterval(async () => {
-      const { data: latestSess } = await sessions.get(user.id, examId)
-      if (latestSess && !latestSess.returnee_token_required && latestSess.status === 'active') {
-        setSession(latestSess)
-        setReturneeSuccess('Pengawas telah membuka kunci ujian Anda! Mengalihkan ke ruang ujian...')
-        sessionStorage.setItem('binar_exam_active_room', examId)
-        setTimeout(() => {
-          navigate(`/exam/${examId}/room`)
-        }, 1000)
+      // Light status-only query, one at a time, nothing while offline
+      if (inFlight || isOffline()) return
+      inFlight = true
+      try {
+        const { data: latestSess } = await sessions.getStatus(user.id, examId)
+        if (latestSess && !latestSess.returnee_token_required && latestSess.status === 'active') {
+          setSession(prev => ({ ...(prev || {}), ...latestSess }))
+          setReturneeSuccess('Pengawas telah membuka kunci ujian Anda! Mengalihkan ke ruang ujian...')
+          sessionStorage.setItem('binar_exam_active_room', examId)
+          setTimeout(() => {
+            navigate(`/exam/${examId}/room`)
+          }, 1000)
+        }
+      } finally {
+        inFlight = false
       }
-    }, 2500)
+    }, 4000)
     return () => clearInterval(interval)
   }, [session?.returnee_token_required, user?.id, examId, navigate])
 
@@ -209,7 +268,11 @@ export default function ExamLobby() {
           })
           if (upErr) throw new Error(upErr.message)
         } else {
+          if (!newSessionIdRef.current) {
+            newSessionIdRef.current = `sess-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`
+          }
           const { error: crErr } = await sessions.create({
+            id: newSessionIdRef.current,
             student_id: user.id,
             exam_id: examId,
             variant: 'A',
@@ -220,14 +283,28 @@ export default function ExamLobby() {
             status: 'active',
             returnee_token_required: false,
           })
-          if (crErr) throw new Error(crErr.message)
+          if (crErr) {
+            // Same id already stored = an earlier attempt did succeed
+            const alreadyCreated = crErr.code === '23505' || /duplicate key/i.test(crErr.message || '')
+            if (!alreadyCreated) {
+              // The response may have been lost after the row was created: check before failing
+              const { data: existing } = isNetworkError(crErr)
+                ? await sessions.getStatus(user.id, examId)
+                : { data: null }
+              if (!existing) throw crErr
+            }
+          }
         }
       }
 
       sessionStorage.setItem('binar_exam_active_room', examId)
       navigate(`/exam/${examId}/room`)
     } catch (err) {
-      setError('Gagal memulai ujian: ' + err.message)
+      setError(
+        isOffline() || isNetworkError(err)
+          ? 'Gagal memulai ujian karena koneksi terputus. Jawaban belum ada yang hilang — tunggu sinyal stabil lalu tekan tombol lagi.'
+          : 'Gagal memulai ujian: ' + (err.message || err)
+      )
       setStarting(false)
     }
   }
@@ -269,9 +346,9 @@ export default function ExamLobby() {
   }
 
   async function handleRecheckUnlock() {
-    const { data: updatedSess } = await sessions.get(user.id, examId)
+    const { data: updatedSess } = await sessions.getStatus(user.id, examId)
     if (updatedSess && !updatedSess.returnee_token_required) {
-      setSession(updatedSess)
+      setSession(prev => ({ ...(prev || {}), ...updatedSess }))
       setReturneeSuccess('Kunci telah dibuka oleh pengawas! Mengalihkan...')
       sessionStorage.setItem('binar_exam_active_room', examId)
       setTimeout(() => {
@@ -289,8 +366,18 @@ export default function ExamLobby() {
   )
 
   if (!exam) return (
-    <div className="loading-screen">
-      <p className="text-muted">Ujian tidak ditemukan.</p>
+    <div className="loading-screen" style={{ padding: '1.5rem', textAlign: 'center' }}>
+      {connectionIssue ? (
+        <div style={{ maxWidth: 420 }}>
+          <div className="spinner" style={{ width: 28, height: 28, margin: '0 auto 1rem' }} />
+          <p style={{ fontWeight: 600, marginBottom: '0.4rem' }}>Menunggu koneksi internet…</p>
+          <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+            Data ujian belum bisa dimuat. Halaman akan terbuka otomatis saat koneksi kembali.
+          </p>
+        </div>
+      ) : (
+        <p className="text-muted">Ujian tidak ditemukan.</p>
+      )}
     </div>
   )
 
@@ -497,6 +584,11 @@ export default function ExamLobby() {
           </div>
         )}
 
+        {connectionIssue && (
+          <div className="alert alert-warning" role="status" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+            {connectionIssue} Masuk ke ruang ujian membutuhkan koneksi untuk memeriksa status ujian Anda.
+          </div>
+        )}
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
         {isDone ? (
@@ -584,7 +676,7 @@ export default function ExamLobby() {
               <button
                 className="btn btn-gold btn-lg w-full"
                 onClick={handleVerifyReturneeToken}
-                disabled={verifyingToken || returneeTokenInput.length !== 6 || !canStart}
+                disabled={verifyingToken || returneeTokenInput.length !== 6 || !canStart || Boolean(connectionIssue)}
                 style={(!canStart || returneeTokenInput.length !== 6) ? { opacity: 0.6 } : {}}
               >
                 {verifyingToken ? (
@@ -617,7 +709,7 @@ export default function ExamLobby() {
             <button
               className="btn btn-gold btn-lg w-full"
               onClick={handleStart}
-              disabled={starting || !canStart}
+              disabled={starting || !canStart || Boolean(connectionIssue)}
               style={!canStart ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
               {starting

@@ -297,7 +297,11 @@ export class ExamAtomicEngine {
    * 4. Merges with server answers (local dirty answers take precedence)
    * 5. Sets up listeners and 15s sync interval
    */
-  async init(serverAnswers = {}, onSyncCallback = null) {
+  async init(serverAnswers = {}, onSyncCallback = null, options = {}) {
+    // serverIsAuthoritative=false: `serverAnswers` came from an on-device copy
+    // (no connection), not from the server, so it may be stale. Then answers
+    // stored on this device win and are never dropped.
+    const { serverIsAuthoritative = true } = options || {}
     this.onSyncCallback = onSyncCallback
     await this.adapter.init()
 
@@ -327,7 +331,7 @@ export class ExamAtomicEngine {
     //      teacher reset the session, stale local copies must not come back.
     const server = (serverAnswers && typeof serverAnswers === 'object') ? serverAnswers : {}
     for (const [qKey, rec] of [...this.ramCache.entries()]) {
-      if (rec.s === 0) continue
+      if (rec.s === 0 || !serverIsAuthoritative) continue
       if (Object.prototype.hasOwnProperty.call(server, qKey)) {
         rec.v = server[qKey]
       } else {

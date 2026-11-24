@@ -2,11 +2,13 @@ import { MONITORING_LEVELS } from './monitoringConfig'
 
 // ─── MONITORING LEVEL LOGO MAP ───────────────────────────────────────────────
 
+// Small WebP renders of the original artwork (the .svg files wrap full-size
+// PNGs: ~320 KB together vs ~33 KB here). Icons display at 64 px at most.
 const LEVEL_LOGOS = {
-  1: 'monitoring-casual.svg',
-  2: 'monitoring-scout.svg',
-  3: 'monitoring-vanguard.svg',
-  4: 'monitoring-strix.svg',
+  1: 'monitoring-casual.webp',
+  2: 'monitoring-scout.webp',
+  3: 'monitoring-vanguard.webp',
+  4: 'monitoring-strix.webp',
 }
 
 // ─── ICON COMPONENT ──────────────────────────────────────────────────────────

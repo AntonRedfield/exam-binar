@@ -4,31 +4,48 @@ import './index.css'
 import App from './App.jsx'
 import { registerSW } from 'virtual:pwa-register'
 
-// Automatically check and activate newest service worker build without stale cache
-const updateSW = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    updateSW(true)
-  },
-  onRegisteredSW(swUrl, registration) {
-    if (registration) {
-      registration.update()
-      setInterval(() => {
-        registration.update()
-      }, 60 * 1000)
-    }
-  }
-})
+// ─── Service worker (offline cache + updates) ───────────────────────────────
+// - Registered only after the page has loaded, so installing the offline cache
+//   never competes with the first screen and the login on a slow connection.
+// - A new version is applied (page reload) only on "safe" pages. Never inside
+//   an exam or survey: reloading the exam room marks the student as Returnee
+//   and locks them out until a proctor gives a token.
+const UPDATE_CHECK_MS = 30 * 60 * 1000
+const isSafeToReload = () => !/\/(exam|survey)\//.test(window.location.pathname)
 
-// Auto reload once when the service worker controlling the page updates
-let refreshing = false
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!refreshing) {
-      refreshing = true
-      window.location.reload()
-    }
+function startServiceWorker() {
+  let updatePending = false
+  let applying = false
+
+  const updateSW = registerSW({
+    onNeedRefresh() {
+      updatePending = true
+      applyUpdateWhenSafe()
+    },
+    onRegisteredSW(swUrl, registration) {
+      if (!registration) return
+      setInterval(() => {
+        if (navigator.onLine === false || !isSafeToReload()) return
+        registration.update().catch(() => {})
+      }, UPDATE_CHECK_MS)
+    },
   })
+
+  function applyUpdateWhenSafe() {
+    if (!updatePending || applying || !isSafeToReload()) return
+    applying = true
+    updateSW(true) // activates the new version, then reloads once
+  }
+
+  // In-app navigation fires no reliable event; a cheap local check is enough
+  setInterval(applyUpdateWhenSafe, 15000)
+  window.addEventListener('popstate', applyUpdateWhenSafe)
+}
+
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  const start = () => setTimeout(startServiceWorker, 3000)
+  if (document.readyState === 'complete') start()
+  else window.addEventListener('load', start, { once: true })
 }
 
 // Strictly block browser auto-translation across modern web browsers

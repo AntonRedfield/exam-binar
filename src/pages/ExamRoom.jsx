@@ -37,6 +37,8 @@ import {
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../lib/monitoringUI'
 import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle, Zap, Lock, CheckCircle2, ZoomIn, ZoomOut, Sparkles, Clock } from 'lucide-react'
 import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
+import { isNetworkError, isOffline, getNetworkState, subscribeNetwork } from '../lib/network'
+import { loadOffline, saveOffline, slimSession } from '../lib/offlineCache'
 import { scheduleSlowLocationVerification, flushPendingDeviceScan } from '../lib/loginAudit'
 import {
   capturePassiveSelfie,
@@ -183,6 +185,13 @@ export default function ExamRoom() {
   const [forceSubmitted, setForceSubmitted] = useState(false)
   const [forceSubmitMessage, setForceSubmitMessage] = useState('')
 
+  // Weak / no connection handling
+  const [waitingForConnection, setWaitingForConnection] = useState(false) // no data and no device copy yet
+  const [usingBackup, setUsingBackup] = useState(false) // opened from the on-device copy
+  const [roomReloadTick, setRoomReloadTick] = useState(0)
+  const [netState, setNetState] = useState(() => getNetworkState())
+  const [pendingAnswers, setPendingAnswers] = useState(0) // answers saved on device, not yet on server
+
   const sessionRef = useRef(null)
   const answersRef = useRef({})
   const violationsRef = useRef(0)
@@ -202,12 +211,67 @@ export default function ExamRoom() {
 
   useEffect(() => {
     if (!user) return
+    let cancelled = false
     async function load() {
-      const [{ data: examData }, { data: qs }, { data: sess }] = await Promise.all([
-        exams.getById(examId),
-        questions.listByExam(examId),
-        sessions.get(user.id, examId),
-      ])
+      // Copy of this exam saved on the device the last time the room opened
+      const backup = !isPrivileged ? loadOffline(user.id, `exam_${examId}`)?.data : null
+      const backupSess = backup?.session
+      const backupExpired = backupSess?.end_timestamp && new Date(backupSess.end_timestamp).getTime() <= Date.now()
+      const backupUsable = Boolean(
+        backup?.exam && Array.isArray(backup.questions) && backup.questions.length > 0 &&
+        backupSess?.status === 'active' && !backupSess.returnee_token_required && !backupExpired
+      )
+
+      let examRes, qRes, sessRes
+      if (backupUsable && isOffline()) {
+        // No connection at all: open from the device copy at once instead of
+        // waiting for requests that cannot succeed.
+        const offline = { data: null, error: { message: 'TypeError: Failed to fetch (offline)' } }
+        examRes = qRes = sessRes = offline
+      } else {
+        const fetchAll = Promise.all([
+          exams.getById(examId),
+          questions.listByExam(examId),
+          sessions.get(user.id, examId),
+        ])
+        // With a device copy available, a very slow signal must not keep the
+        // student staring at a spinner: give the network 10 s, then use the copy.
+        const result = backupUsable
+          ? await Promise.race([fetchAll, new Promise(resolve => setTimeout(() => resolve(null), 10000))])
+          : await fetchAll
+        if (result) {
+          [examRes, qRes, sessRes] = result
+        } else {
+          const slow = { data: null, error: { message: 'TypeError: Failed to fetch (timeout 10s)' } }
+          examRes = qRes = sessRes = slow
+        }
+      }
+      if (cancelled) return
+      let examData = examRes.data
+      let qs = qRes.data
+      let sess = sessRes.data
+      let usedBackup = false
+
+      // A failed request is not the same as "no session". Fall back to the
+      // copy saved on this device the last time the room opened, so a reload
+      // or a weak signal does not throw the student out of the exam.
+      const examFailed = !examData && isNetworkError(examRes.error)
+      const questionsFailed = Boolean(qRes.error) && isNetworkError(qRes.error)
+      const sessionFailed = Boolean(sessRes.error) && isNetworkError(sessRes.error)
+      if (!isPrivileged && (examFailed || questionsFailed || sessionFailed || (isOffline() && (!examData || !sess)))) {
+        if (!backupUsable) {
+          // Nothing safe to show yet: wait for the connection and retry automatically
+          setWaitingForConnection(true)
+          return
+        }
+        if (examFailed || !examData) examData = backup.exam
+        if (questionsFailed || !qs || qs.length === 0) qs = backup.questions
+        if (sessionFailed || !sess) sess = backupSess
+        usedBackup = true
+      }
+      setWaitingForConnection(false)
+      setUsingBackup(usedBackup)
+
       if (!isPrivileged && (!sess || sess.status === 'submitted' || sess.status === 'time_up' || sess.returnee_token_required)) {
         navigate(`/exam/${examId}/lobby`)
         return
@@ -250,7 +314,12 @@ export default function ExamRoom() {
             sessionStorage.setItem('binar_exam_active_room', examId)
           } else {
             if (sess?.id) {
-              await markSessionAsReturnee(sess.id, 'Sesi terputus / akses langsung')
+              const marking = markSessionAsReturnee(sess.id, 'Sesi terputus / akses langsung')
+              // Offline the lock can't be written yet: don't keep the student on a
+              // spinner. The request keeps retrying in the background, and the
+              // lobby (which blocks entry while offline) applies the lock again
+              // once the connection is back.
+              if (!isOffline()) await marking
             }
             navigate(`/exam/${examId}/lobby`)
             return
@@ -284,10 +353,17 @@ export default function ExamRoom() {
       setSession(sess)
       sessionRef.current = sess
 
+      // Keep a light on-device copy (no selfie photo) for the next reload / weak signal
+      if (!usedBackup && examData && Array.isArray(qs) && qs.length > 0 && sess) {
+        saveOffline(user.id, `exam_${examId}`, { exam: examData, questions: qs, session: slimSession(sess) })
+      }
+
       // Initialize atomic exam storage and dirty-bit sync engine
       const engine = new ExamAtomicEngine(examId, user.id)
       engineRef.current = engine
 
+      // With the device copy, the "server" answers may be stale: let answers
+      // stored on this device win instead of being replaced.
       const initialAnswers = await engine.init(sess.answers || {}, async (dirtyBatch, allAnswers) => {
         if (sessionRef.current?.id) {
           // Zero-body minimal sync (HTTP 204 No Content, no JSON response payload parsing)
@@ -300,7 +376,7 @@ export default function ExamRoom() {
           // engine keeps these answers marked unsynced and retries on the next cycle.
           if (syncErr) throw new Error(syncErr.message || 'Sinkronisasi jawaban gagal')
         }
-      })
+      }, { serverIsAuthoritative: !usedBackup })
 
       setAnswers(initialAnswers)
       answersRef.current = initialAnswers
@@ -330,7 +406,53 @@ export default function ExamRoom() {
       setLoading(false)
     }
     load()
-  }, [examId, user?.id, navigate])
+    return () => { cancelled = true }
+  }, [examId, user?.id, navigate, roomReloadTick])
+
+  // Opened from the device copy: the server's verdict was skipped, so check it
+  // once the connection is back. A session that was locked, reset or finished
+  // in the meantime goes back to the lobby, exactly as a normal load would.
+  useEffect(() => {
+    if (!usingBackup || isPrivileged || !user?.id) return
+    let done = false
+    let checking = false
+    const check = async () => {
+      if (done || checking || isOffline()) return
+      checking = true
+      try {
+        const { data: serverSess, error } = await sessions.getStatus(user.id, examId)
+        if (done || error || !serverSess) return // still no connection: try again later
+        done = true
+        setUsingBackup(false)
+        if (serverSess.returnee_token_required || serverSess.status !== 'active') {
+          if (sessionRef.current) sessionRef.current = { ...sessionRef.current, ...serverSess }
+          navigate(`/exam/${examId}/lobby`)
+        }
+      } finally {
+        checking = false
+      }
+    }
+    check()
+    window.addEventListener('online', check)
+    const timer = setInterval(check, 20000)
+    return () => {
+      done = true
+      window.removeEventListener('online', check)
+      clearInterval(timer)
+    }
+  }, [usingBackup, isPrivileged, user?.id, examId, navigate])
+
+  // No connection and no device copy yet: retry as soon as the signal is back
+  useEffect(() => {
+    if (!waitingForConnection) return
+    const retry = () => setRoomReloadTick(t => t + 1)
+    window.addEventListener('online', retry)
+    const timer = setInterval(() => { if (!isOffline()) retry() }, 15000)
+    return () => {
+      window.removeEventListener('online', retry)
+      clearInterval(timer)
+    }
+  }, [waitingForConnection])
 
   // Sync current question index ref for asynchronous background syncing
   useEffect(() => {
@@ -372,7 +494,8 @@ export default function ExamRoom() {
                 selfie_captured_at: null,
                 selfie_failure_reason: res?.reason || 'Kamera tidak tersedia',
               }
-          sessions.update(sessionRef.current.id, payload).catch(() => {})
+          // No response body needed (update() would download the photo back)
+          sessions.syncMinimal(sessionRef.current.id, payload).catch(() => {})
         }
       } catch (e) {
         // Silently ignore — selfie is optional, never interrupts exam
@@ -581,14 +704,19 @@ export default function ExamRoom() {
     }
   }, [examId, loading, refreshQuestionsLive, user?.id, handleForceSubmitted])
 
-  // Fallback heartbeat to detect unpublish/close, extra time, or forced completion
+  // Fallback heartbeat to detect unpublish/close, extra time, or forced completion.
+  // Realtime events cover these instantly; this is the safety net, so it uses
+  // status-only queries (no answers / selfie download) every 20 s, one at a time.
   useEffect(() => {
     if (!user?.id || !examId || loading) return
+    let inFlight = false
     const interval = setInterval(async () => {
+      if (inFlight || isOffline()) return
+      inFlight = true
       try {
         const [{ data: latestExam }, { data: latestSess }] = await Promise.all([
-          exams.getById(examId),
-          sessions.get(user.id, examId)
+          exams.getStatus(examId),
+          sessions.getStatus(user.id, examId)
         ])
 
         // 1. If teacher unpublished or closed the exam, force submit immediately
@@ -624,6 +752,14 @@ export default function ExamRoom() {
               sessionRef.current.status = 'active'
               sessionRef.current.returnee_token_required = false
             }
+            // Keep the on-device copy in step, so an offline reload keeps the extra time
+            const saved = loadOffline(user.id, `exam_${examId}`)
+            if (saved?.data?.session) {
+              saveOffline(user.id, `exam_${examId}`, {
+                ...saved.data,
+                session: { ...saved.data.session, end_timestamp: latestSess.end_timestamp, status: 'active', returnee_token_required: false }
+              })
+            }
             setTimeUp(false)
             setSubmitting(false)
             submitLock.current = false
@@ -639,10 +775,22 @@ export default function ExamRoom() {
         }
       } catch (e) {
         // quiet ignore
+      } finally {
+        inFlight = false
       }
-    }, 12000)
+    }, 20000)
     return () => clearInterval(interval)
   }, [user?.id, examId, loading])
+
+  // ─── Connection status for the autosave badge ──────────────────────
+  useEffect(() => subscribeNetwork(setNetState), [])
+  useEffect(() => {
+    // Local-only check (no network): how many answers are waiting to be sent
+    const timer = setInterval(() => {
+      setPendingAnswers(engineRef.current?.getDirtyCount?.() || 0)
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [])
 
   const monitorLevel = exam?.monitoring_level || 1
   const isQuiz = exam?.mode === 'quiz'
@@ -866,12 +1014,18 @@ export default function ExamRoom() {
     try {
       const currentSessionId = sessionRef.current?.id || session?.id
       if (currentSessionId) {
-        await sessions.update(currentSessionId, {
+        const { error: submitSyncErr } = await sessions.syncMinimal(currentSessionId, {
           answers: answersRef.current,
           violation_count: violationsRef.current,
           current_question: currentQRef.current || currentQ,
           status: isAuto ? 'time_up' : 'submitted',
-        })
+        }) || {}
+        // Connection lost: stop here so the student can press Kumpulkan again
+        // (time-up submits retry automatically) instead of grading an exam
+        // whose answers never reached the server.
+        if (submitSyncErr && isNetworkError(submitSyncErr)) {
+          throw new Error('Koneksi terputus saat mengirim jawaban. Jawaban tetap tersimpan di perangkat — coba lagi saat sinyal stabil.')
+        }
       }
 
       const { autoScore, maxAutoScore, breakdown } = gradeExam(answersRef.current, questionList)
@@ -981,9 +1135,19 @@ export default function ExamRoom() {
   }, [])
 
   if (loading) return (
-    <div className="loading-screen">
+    <div className="loading-screen" style={{ padding: '1.5rem', textAlign: 'center' }}>
       <div className="spinner" style={{ width: 40, height: 40 }} />
-      <p className="text-muted">Memuat ruang ujian...</p>
+      {waitingForConnection ? (
+        <div style={{ maxWidth: 420 }}>
+          <p style={{ fontWeight: 600, marginTop: '0.75rem' }}>Menunggu koneksi internet…</p>
+          <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+            Soal belum bisa dimuat. Jawaban Anda yang sudah ada tetap aman di perangkat ini.
+            Ruang ujian terbuka otomatis saat sinyal kembali.
+          </p>
+        </div>
+      ) : (
+        <p className="text-muted">Memuat ruang ujian...</p>
+      )}
     </div>
   )
 
@@ -1242,19 +1406,31 @@ export default function ExamRoom() {
             )}
 
             {/* Passive Autosave Notice */}
-            <div
-              className={`autosave-notice-badge ${saveFlash ? 'flash' : ''}`}
-              title={
-                lastSaved
-                  ? `Jawaban Soal No. ${lastSaved.qNum} otomatis tersimpan (${lastSaved.timeStr})`
-                  : 'Autosave aktif: jawaban Anda otomatis tersimpan secara real-time'
-              }
-            >
-              <span className="autosave-pulse-dot" />
-              <span className="autosave-notice-text">
-                {lastSaved ? `Tersimpan: No. ${lastSaved.qNum}` : 'Autosave aktif'}
-              </span>
-            </div>
+            {(() => {
+              // Weak signal: answers are still saved on the device and sent later
+              const offline = !netState.online
+              const waiting = pendingAnswers > 0 && (offline || netState.failing)
+              const label = offline
+                ? (pendingAnswers > 0 ? `Offline · ${pendingAnswers} jawaban tersimpan di perangkat` : 'Offline · jawaban disimpan di perangkat')
+                : waiting
+                ? `Sinyal lemah · ${pendingAnswers} jawaban menunggu dikirim`
+                : (lastSaved ? `Tersimpan: No. ${lastSaved.qNum}` : 'Autosave aktif')
+              const title = offline || waiting
+                ? `Jawaban Anda aman di perangkat ini dan dikirim otomatis saat koneksi kembali.${usingBackup ? ' Soal dibuka dari salinan di perangkat karena koneksi terputus.' : ''}`
+                : (lastSaved
+                    ? `Jawaban Soal No. ${lastSaved.qNum} otomatis tersimpan (${lastSaved.timeStr})`
+                    : 'Autosave aktif: jawaban Anda otomatis tersimpan secara real-time')
+              return (
+                <div
+                  className={`autosave-notice-badge ${saveFlash ? 'flash' : ''}`}
+                  title={title}
+                  style={offline || waiting ? { background: '#fffbeb', borderColor: '#fcd34d', color: '#92400e' } : undefined}
+                >
+                  <span className="autosave-pulse-dot" style={offline || waiting ? { background: '#f59e0b' } : undefined} />
+                  <span className="autosave-notice-text">{label}</span>
+                </div>
+              )
+            })()}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>

@@ -6,13 +6,34 @@ import { VitePWA } from 'vite-plugin-pwa'
 const isGitHubPages = process.env.GITHUB_ACTIONS === 'true'
 const base = isGitHubPages ? '/exam-binar/' : '/'
 
+// Teacher/admin pages and heavy libraries students never need. They are NOT
+// downloaded when the app is installed (that download used to be ~2.8 MB and
+// competed with the student's login on slow connections); instead they are
+// cached the first time a teacher opens them (see runtimeCaching below).
+const NOT_PRECACHED = [
+  'CreateExam', 'ResultsView', 'Monitor', 'ActiveMonitorHub', 'ExamList', 'TeacherLayout',
+  'TeacherDashboard', 'QuestionAnalytics', 'SurveyResponses', 'UnpublishExamModal',
+  'QuestionTextEditor', 'ExportPaperExamModal', 'AdminLayout', 'AdminDashboard', 'UserManagement',
+  'ExamOversight', 'Analytics', 'ClassManagement', 'LoginLogs',
+  'vendor-pdf', 'html2canvas.esm', 'index.es', 'purify.es', 'vision_bundle',
+].map(name => `assets/${name}-*.js`)
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    // Lets the app detect a device clock set in the past (breaks HTTPS → "code 0")
+    __BUILD_TIME__: JSON.stringify(Date.now()),
+  },
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['Logo_SNT.webp', 'logo-snt.png', 'binar-logo.png', 'vite.svg'],
+      // 'prompt': a new version waits until the app decides it is safe to switch
+      // (main.jsx never reloads the page during an exam — a reload there would
+      // lock the student out as a Returnee).
+      registerType: 'prompt',
+      // Registered from main.jsx after the page has loaded
+      injectRegister: false,
+      includeAssets: ['Logo_SNT.webp', 'logo-snt.png'],
       manifest: {
         name: 'Sistem Asesmen Terpadu SNT 10 Kupang',
         short_name: 'SNT 10 Kupang',
@@ -47,10 +68,45 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
-        skipWaiting: true,
+        skipWaiting: false,
         clientsClaim: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,webp,woff2}'],
+        globIgnores: [
+          ...NOT_PRECACHED,
+          // Original monitoring artwork (replaced by small .webp icons)
+          'monitoring-*.svg',
+          'binar-logo.png',
+          'logo-snt.webp',
+          'vite.svg',
+        ],
         runtimeCaching: [
+          {
+            // Page files are content-hashed, so a cached copy never goes stale
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.includes('/assets/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'app-assets',
+              expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'google-fonts-stylesheets',
+              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 365 }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-webfonts',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
           {
             urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@mediapipe\/.*/i,
             handler: 'CacheFirst',

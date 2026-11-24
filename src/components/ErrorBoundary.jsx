@@ -19,6 +19,12 @@ export class ErrorBoundary extends React.Component {
     window.location.reload()
   }
 
+  // A page file that could not be downloaded (weak signal / just-deployed update)
+  isConnectionError() {
+    const msg = String(this.state.error?.message || this.state.error || '')
+    return /dynamically imported module|importing a module script failed|error loading dynamically imported|failed to fetch|chunkloaderror|loading chunk/i.test(msg)
+  }
+
   handleGoHome = () => {
     window.location.href = '/'
   }
@@ -59,11 +65,13 @@ export class ErrorBoundary extends React.Component {
             </div>
             
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.5rem' }}>
-              Terjadi Kendala Memuat Halaman
+              {this.isConnectionError() ? 'Halaman Gagal Dimuat (Koneksi)' : 'Terjadi Kendala Memuat Halaman'}
             </h2>
-            
+
             <p style={{ fontSize: '0.88rem', color: '#64748b', lineHeight: 1.5, marginBottom: '1.75rem' }}>
-              Halaman ini mengalami kendala teknis saat memuat data. Silakan muat ulang halaman atau kembali ke beranda.
+              {this.isConnectionError()
+                ? 'Koneksi internet terputus saat memuat halaman. Pastikan sinyal stabil lalu tekan Muat Ulang. Jawaban ujian yang sudah tersimpan di perangkat tidak hilang.'
+                : 'Halaman ini mengalami kendala teknis saat memuat data. Silakan muat ulang halaman atau kembali ke beranda.'}
             </p>
 
             {this.state.error && (

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { createResilientFetch } from './network.js'
 
 // ─── Canonical project: "SNT 10 Kupang EXAM" (asjgavgxbppauzykqqgv) ─────────
 // Publishable keys are safe to ship in client bundles (access is enforced by RLS).
@@ -20,7 +21,11 @@ export const supabase = isSupabaseConfigured
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-      }
+      },
+      global: {
+        // Timeouts + safe automatic retries for slow / unstable connections (see network.js)
+        fetch: createResilientFetch(),
+      },
     })
   : null
 

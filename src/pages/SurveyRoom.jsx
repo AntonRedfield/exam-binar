@@ -122,14 +122,26 @@ export default function SurveyRoom() {
     return () => unsubscribe()
   }, [examId, loading, submitted])
 
-  // Auto-save session answers every 15 seconds
+  // Auto-save session answers every 15 seconds — only when they changed since
+  // the last successful save (no repeated uploads of the same data)
+  const lastSentAnswersRef = useRef(null)
   useEffect(() => {
     if (!session || submitted) return
+    let inFlight = false
     const timer = setInterval(async () => {
-      if (session) {
-        await sessions.update(session.id, {
+      if (!session || inFlight) return
+      const snapshot = JSON.stringify(answersRef.current || {})
+      if (snapshot === lastSentAnswersRef.current) return
+      inFlight = true
+      try {
+        const { error: saveErr } = await sessions.update(session.id, {
           answers: answersRef.current,
-        })
+        }) || {}
+        if (!saveErr) lastSentAnswersRef.current = snapshot
+      } catch {
+        // kept locally (saveLocal below); retried on the next tick
+      } finally {
+        inFlight = false
       }
     }, 15000)
     return () => clearInterval(timer)

@@ -7,7 +7,7 @@
     <meta name="googlebot" content="notranslate" />
     <meta name="robots" content="notranslate" />
     <meta http-equiv="Content-Language" content="id" />
-    <link rel="icon" type="image/webp" href="./Logo_SNT.webp" />
+    <link rel="icon" type="image/webp" href="/Logo_SNT.webp" />
     <link rel="icon" type="image/png" href="./logo-snt.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
     <meta name="theme-color" content="#ffffff" />
@@ -21,7 +21,10 @@
     <meta http-equiv="Expires" content="0" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Loaded without blocking the first paint: on a slow or blocked connection the
+         app renders immediately with the system font and switches to Inter when ready. -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"></noscript>
     <title>Sistem Asesmen Terpadu SNT 10 Kupang</title>
   </head>
   <body class="notranslate" translate="no">

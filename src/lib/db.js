@@ -44,6 +44,16 @@ function generateId(prefix = 'id') {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`
 }
 
+// Columns needed to know where a student is in an exam. Excludes the heavy
+// `answers` JSON and the base64 `selfie_image` that select('*') returns.
+const SESSION_STATUS_COLUMNS =
+  'id, exam_id, student_id, variant, status, end_timestamp, started_at, current_question, ' +
+  'violation_count, returnee_token_required, returnee_reason, returnee_unlocked_at'
+
+// Columns the student home cards and filters use.
+const STUDENT_HOME_EXAM_COLUMNS =
+  'id, title, mode, status, target_kelas, duration_minutes, created_at, updated_at'
+
 /**
  * Check if a profile or user object belongs to teacher or admin (privileged user)
  */
@@ -675,6 +685,48 @@ export const exams = {
     return { data: null, error }
   },
 
+  /**
+   * Status-only read for heartbeats/polls: a few bytes instead of the whole
+   * exam row plus a second request for the teacher's profile.
+   */
+  getStatus: async (id) => {
+    if (!isSupabaseConfigured || !supabase || !id) return { data: null, error: null }
+    const { data, error } = await supabase
+      .from('exams')
+      .select('id, status, updated_at')
+      .eq('id', id)
+      .maybeSingle()
+    if (error) return { data: null, error }
+    return { data: data || null, error: null }
+  },
+
+  /**
+   * Published exams with only the columns the student home cards use
+   * (instead of every exam in the school with all columns + teacher profiles).
+   */
+  listPublishedLight: async () => {
+    if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('exams')
+      .select(STUDENT_HOME_EXAM_COLUMNS)
+      .eq('status', 'published')
+      .order('created_at', { ascending: false })
+    if (error) return { data: null, error }
+    return { data: data || [], error: null }
+  },
+
+  /** Specific exams (e.g. closed ones a student already took), light columns. */
+  listByIdsLight: async (ids = []) => {
+    const unique = Array.from(new Set(ids.filter(Boolean)))
+    if (!isSupabaseConfigured || !supabase || unique.length === 0) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('exams')
+      .select(STUDENT_HOME_EXAM_COLUMNS)
+      .in('id', unique)
+    if (error) return { data: null, error }
+    return { data: data || [], error: null }
+  },
+
   listPublished: async () => {
     if (!isSupabaseConfigured || !supabase) return { data: [], error: null }
     const { data, error } = await supabase
@@ -1291,6 +1343,33 @@ export const sessions = {
     return { data: data || [], error: null }
   },
 
+  /**
+   * Session status columns only — no answers JSON and no base64 selfie photo,
+   * which `select('*')` would download on every poll.
+   */
+  getStatus: async (studentId, examId) => {
+    if (!isSupabaseConfigured || !supabase) return { data: null, error: null }
+    const { data, error } = await supabase
+      .from('exam_sessions')
+      .select(SESSION_STATUS_COLUMNS)
+      .eq('exam_id', examId)
+      .eq('student_id', studentId)
+      .maybeSingle()
+    if (error) return { data: null, error }
+    return { data: data || null, error: null }
+  },
+
+  /** All of a student's sessions, status columns only (for the home list). */
+  listByStudentLight: async (studentId) => {
+    if (!isSupabaseConfigured || !supabase || !studentId) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('exam_sessions')
+      .select(SESSION_STATUS_COLUMNS)
+      .eq('student_id', studentId)
+    if (error) return { data: null, error }
+    return { data: data || [], error: null }
+  },
+
   create: async (data) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
     const now = new Date().toISOString()
@@ -1756,6 +1835,29 @@ export const results = {
       .eq('student_id', studentId)
     if (error) return { data: [], error }
     return { data: data || [], error: null }
+  },
+
+  /** A student's results with only the columns the home cards need. */
+  listByStudentLight: async (studentId) => {
+    if (!isSupabaseConfigured || !supabase || !studentId) return { data: [], error: null }
+    const { data, error } = await supabase
+      .from('results')
+      .select('id, exam_id, auto_score, essay_score, max_auto_score, breakdown')
+      .eq('student_id', studentId)
+    if (error) return { data: null, error }
+    return { data: data || [], error: null }
+  },
+
+  /** Re-read just the result row (no profile/exam lookups) for polling. */
+  getRowById: async (id) => {
+    if (!isSupabaseConfigured || !supabase || !id) return { data: null, error: null }
+    const { data, error } = await supabase
+      .from('results')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    if (error) return { data: null, error }
+    return { data: data || null, error: null }
   },
 
   delete: async (id) => {

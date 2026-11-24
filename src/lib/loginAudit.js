@@ -16,6 +16,7 @@
 
 import { supabase, isSupabaseConfigured } from './supabase.js'
 import { captureFuzzedDeviceLocation } from './deviceLocation.js'
+import { isOffline } from './network.js'
 
 const LOCAL_AUDIT_KEY = 'binar_login_audit_cache'
 const MAX_LOCAL_CACHE = 250
@@ -416,6 +417,10 @@ export async function getClientIp() {
   if (cachedClientIp && now - lastIpFetchTime < 600000) {
     return cachedClientIp
   }
+  // No point trying three external services while the device is offline
+  if (isOffline()) {
+    return cachedClientIp || 'Unknown / Client IP'
+  }
 
   const providers = [
     { url: 'https://api.ipify.org?format=json', parse: d => d.ip },
@@ -764,19 +769,9 @@ export async function recordLoginAttempt({
   // Immediately push baseline record to Supabase so EVERY login is recorded without fail!
   pushLogToSupabase(logRecord).catch(() => {})
 
-  // Also immediately update profiles table if user_id is present
-  if (userId && isSupabaseConfigured && supabase) {
-    const cleanDev = resolvedModel || 'Web Browser'
-    supabase
-      .from('profiles')
-      .update({
-        last_login_at: logRecord.created_at,
-        last_login_device: cleanDev
-      })
-      .eq('id', userId)
-      .then(() => {})
-      .catch(() => {})
-  }
+  // (profiles.last_login_at / last_login_device are written once by
+  // registerActiveSession() on a successful login — not here, so a failed
+  // login no longer stamps "last login" and no duplicate request is sent.)
 
   // 2. Failed logins are pushed promptly so admin can immediately detect breaches
   if (status === 'failed') {

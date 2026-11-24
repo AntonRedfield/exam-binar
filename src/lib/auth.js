@@ -19,6 +19,8 @@ import {
 } from './sessionGuard.js'
 import { markActiveSessionsAsReturnee } from './returnee.js'
 import { recordLoginAttempt, flushPendingDeviceScan } from './loginAudit.js'
+import { isNetworkError, isOffline, getClockProblem } from './network.js'
+import { clearOfflineForUser } from './offlineCache.js'
 
 export { isSingleSessionEnforced, getLocalSessionToken, setLocalSessionToken }
 
@@ -71,6 +73,33 @@ function notifyAuthChange(event, session) {
   })
 }
 
+// ─── Keep the saved login in sync with supabase-js ──────────────────────────
+// supabase-js refreshes the access token roughly every hour. Copy the new
+// tokens into our saved login so a reload never resurrects stale tokens, and
+// drop the saved login when supabase-js reports the session is really gone.
+if (isSupabaseConfigured && supabase && typeof localStorage !== 'undefined') {
+  supabase.auth.onAuthStateChange((event, supaSession) => {
+    try {
+      if (event === 'SIGNED_OUT') {
+        localStorage.removeItem(AUTH_STORAGE_KEY)
+        return
+      }
+      if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') && supaSession?.access_token) {
+        const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+        if (!raw) return
+        const stored = JSON.parse(raw)
+        if (!stored?.user?.id || stored.user.id !== supaSession.user?.id) return
+        stored.access_token = supaSession.access_token
+        stored.refresh_token = supaSession.refresh_token || stored.refresh_token
+        if (supaSession.expires_at) stored.expires_at = supaSession.expires_at * 1000
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(stored))
+      }
+    } catch {
+      // Storage unavailable (private mode / quota): nothing to keep in sync
+    }
+  })
+}
+
 // ─── Shadow Email Mapping ───────────────────────────────────────────────────
 
 export function usernameToEmail(username) {
@@ -115,6 +144,39 @@ export function getRoleLabel(user) {
 // ─── Login ──────────────────────────────────────────────────────────────────
 
 /**
+ * True when Supabase never got an answer from the server (status 0):
+ * no internet, blocked DNS/VPN/firewall, wrong device clock (TLS fails),
+ * data-saver proxy browsers, etc. supabase-js reports these as
+ * AuthRetryableFetchError with status 0 instead of throwing.
+ * (Transient failures are already retried automatically in network.js.)
+ */
+function isNetworkAuthError(error) {
+  return isNetworkError(error)
+}
+
+/** Explain a "could not reach the server" failure in a way a student can act on. */
+function networkLoginMessage() {
+  const clock = getClockProblem()
+  if (clock) {
+    const shown = clock.deviceTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+    return `Tanggal di perangkat ini salah (${shown}), sehingga koneksi aman ke server ditolak. ` +
+      'Aktifkan "Tanggal & waktu otomatis" di pengaturan HP, lalu coba login lagi.'
+  }
+  if (isOffline()) {
+    return 'Perangkat tidak terhubung ke internet. Nyalakan data seluler atau Wi-Fi, lalu coba lagi.'
+  }
+  return 'Tidak dapat terhubung ke server login (kode 0), padahal sistem sudah mencoba ulang otomatis. ' +
+    'Periksa sinyal internet, matikan VPN / Private DNS / mode hemat data, atau ganti jaringan ' +
+    '(Wi-Fi ↔ data seluler), lalu coba lagi.'
+}
+
+const dbRoleForLevel = (lvl) => (lvl === 4 ? 'admin' : (lvl === 3 ? 'teacher' : (lvl === 2 ? 'officer' : 'student')))
+
+// A saved login is kept across reloads for at most this long (the short-lived
+// access token itself is refreshed automatically by supabase-js).
+const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
  * Login using username/email + password directly against Supabase Auth.
  * 
  * @param {string} username — raw username (e.g., "mordlicht", "ivan", "7a1")
@@ -142,6 +204,7 @@ export async function login(username, password) {
   // IMPORTANT: We pass p_password: '' so that prepare_student_login does NOT
   // overwrite user passwords with default credentials during identifier resolution.
   let prepResult = null
+  let prepNetworkFailed = false
   try {
     const { data: res, error: prepError } = await supabase.rpc('prepare_student_login', {
       p_identifier: cleanUsername,
@@ -150,31 +213,49 @@ export async function login(username, password) {
     if (!prepError && res?.found && res?.email) {
       prepResult = res
       email = res.email
+    } else if (prepError && isNetworkError(prepError)) {
+      prepNetworkFailed = true
     }
   } catch (rpcErr) {
+    prepNetworkFailed = isNetworkError(rpcErr)
     console.warn('[Auth] prepare_student_login RPC call skipped or failed:', rpcErr?.message)
   }
 
-  let data, error
+  let data = null
+  let error = null
   try {
     ({ data, error } = await supabase.auth.signInWithPassword({
       email,
       password: cleanPassword
     }))
-  } catch (netErr) {
+  } catch (signInErr) {
+    error = signInErr
+  }
+
+  if (isNetworkAuthError(error)) {
+    const netErr = error
     console.error('[Auth] Network error during sign-in:', netErr)
-    // Audit failed login (network error)
+    // Audit failed login (network error). Sent in the background; it only
+    // arrives if the connection recovers.
     recordLoginAttempt({
       identifier: cleanUsername,
       userId: prepResult?.user_id || null,
       fullName: prepResult?.fullname || null,
-      role: prepResult?.role_level === 4 ? 'admin' : (prepResult?.role_level === 3 ? 'teacher' : (prepResult?.role_level === 2 ? 'officer' : 'student')),
+      role: dbRoleForLevel(prepResult?.role_level),
       roleLevel: prepResult?.role_level || null,
       status: 'failed',
       failureReason: `Jaringan error: ${netErr?.message || 'tidak dapat terhubung ke server'}`,
-      metadata: { email, stage: 'network' }
+      metadata: {
+        email,
+        stage: 'network',
+        errorStatus: netErr?.status ?? null,
+        online: typeof navigator !== 'undefined' ? navigator.onLine : null,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        deviceTime: new Date().toISOString(),
+        clockBehind: Boolean(getClockProblem()),
+      }
     }).catch(() => {})
-    throw new Error(`Tidak dapat terhubung ke server autentikasi (${netErr?.message || 'network error'}).`)
+    throw new Error(networkLoginMessage())
   }
 
   // If initial sign-in fails, check if this is an uncustomized student/officer account
@@ -222,7 +303,7 @@ export async function login(username, password) {
       identifier: cleanUsername,
       userId: prepResult?.user_id || null,
       fullName: prepResult?.fullname || null,
-      role: prepResult?.role_level === 4 ? 'admin' : (prepResult?.role_level === 3 ? 'teacher' : (prepResult?.role_level === 2 ? 'officer' : 'student')),
+      role: dbRoleForLevel(prepResult?.role_level),
       roleLevel: prepResult?.role_level || null,
       status: 'failed',
       failureReason,
@@ -230,24 +311,38 @@ export async function login(username, password) {
     }).catch(() => {})
 
     if (error?.code === 'invalid_credentials' || msg.includes('invalid login credentials')) {
+      if (prepNetworkFailed) {
+        // The account lookup (NISN / full name → account) failed because of the
+        // connection, so "wrong password" would be misleading.
+        throw new Error('Koneksi tidak stabil saat memeriksa akun Anda. Tunggu sebentar lalu coba login sekali lagi.')
+      }
       throw new Error('Username atau password salah. Silakan periksa kembali kredensial Anda.')
     }
     if (error?.status === 429 || msg.includes('rate limit')) {
-      throw new Error('Terlalu banyak percobaan login. Tunggu beberapa menit lalu coba lagi.')
+      throw new Error('Terlalu banyak percobaan login dari jaringan ini. Tunggu 2–5 menit lalu coba lagi.')
+    }
+    if (isNetworkAuthError(error)) {
+      throw new Error(networkLoginMessage())
     }
     throw new Error(`Login gagal: ${error?.message || 'respons server tidak valid'} (kode ${error?.status ?? '-'})`)
   }
 
-  // Fetch user profile from Supabase profiles table
-  const { data: profile } = await supabase
+  // Fetch the profile and register this device's session AT THE SAME TIME:
+  // on a slow link every sequential round trip adds seconds to the login.
+  const levelHint = Number(prepResult?.role_level) || Number(data.user.user_metadata?.level) || null
+  const profilePromise = supabase
     .from('profiles')
-    .select('*')
+    .select('id, username, display_name, fullname, role_level, class_section')
     .eq('id', data.user.id)
     .maybeSingle()
+    .then(res => res, () => ({ data: null }))
+  const earlyRegistration = levelHint ? registerActiveSession(data.user.id, levelHint) : null
 
-  const level = profile?.role_level ?? (data.user.user_metadata?.level ? Number(data.user.user_metadata.level) : 1)
+  const { data: profile } = await profilePromise
+
+  const level = profile?.role_level ?? levelHint ?? 1
   const role = LEVEL_TO_APP_ROLE[level] || 'USER'
-  const dbRole = level === 4 ? 'admin' : (level === 3 ? 'teacher' : (level === 2 ? 'officer' : 'student'))
+  const dbRole = dbRoleForLevel(level)
 
   const sessionUser = {
     id: data.user.id,
@@ -266,14 +361,22 @@ export async function login(username, password) {
     }
   }
 
-  // Register active session for Level 1 & 2 users (Level 3 & 4 remain unrestricted)
-  const activeSessionToken = await registerActiveSession(data.user.id, level)
+  // Register active session for Level 1 & 2 users (Level 3 & 4 remain unrestricted).
+  // Reuse the early registration unless the real level changes the rule.
+  let activeSessionToken
+  if (earlyRegistration && isSingleSessionEnforced(levelHint) === isSingleSessionEnforced(level)) {
+    activeSessionToken = await earlyRegistration
+  } else {
+    if (earlyRegistration) await earlyRegistration.catch(() => null)
+    activeSessionToken = await registerActiveSession(data.user.id, level)
+  }
 
   const session = {
     access_token: data.session.access_token,
     refresh_token: data.session.refresh_token,
     user: sessionUser,
     expires_at: data.session.expires_at ? data.session.expires_at * 1000 : Date.now() + 86400000 * 7,
+    login_at: Date.now(),
     active_session_token: activeSessionToken,
   }
 
@@ -315,46 +418,44 @@ export async function login(username, password) {
 
 // ─── Logout ─────────────────────────────────────────────────────────────────
 
+// Wait for a background network step, but never longer than `ms`. The request
+// itself keeps running and still lands if the connection recovers; logging out
+// just doesn't hang on a bad connection.
+function settleWithin(promise, ms) {
+  return Promise.race([
+    Promise.resolve(promise).catch(err => console.warn('[Auth] logout step error:', err?.message || err)),
+    new Promise(resolve => setTimeout(resolve, ms)),
+  ])
+}
+
 export async function logout(reason = null) {
-  try {
-    await flushPendingDeviceScan()
-  } catch (e) {}
-
   const currentUser = getCurrentUser()
-  if (currentUser) {
-    try {
-      // Mark any active exam session as requiring returnee token
-      const returneeReason = reason === 'split_screen'
-        ? 'Terdeteksi Split Screen'
-        : reason === 'app_switch'
-        ? 'Keluar dari aplikasi ujian terlalu lama'
-        : reason === 'other_device'
-        ? 'Terdeteksi login di perangkat lain'
-        : reason === 'other_window'
-        ? 'Terdeteksi membuka tab/jendela lain'
-        : 'Logout terdeteksi'
-      await markActiveSessionsAsReturnee(currentUser.id, returneeReason)
-    } catch (e) {
-      console.warn('[Auth] markActiveSessionsAsReturnee error:', e)
-    }
 
-    try {
-      // Clear active_session_id in DB if voluntary logout
-      if (!reason) {
-        await clearActiveSession(currentUser.id, currentUser.level)
-      }
-    } catch (e) {
-      console.warn('[Auth] clearActiveSession error:', e)
-    }
-  }
+  const returneeReason = reason === 'split_screen'
+    ? 'Terdeteksi Split Screen'
+    : reason === 'app_switch'
+    ? 'Keluar dari aplikasi ujian terlalu lama'
+    : reason === 'other_device'
+    ? 'Terdeteksi login di perangkat lain'
+    : reason === 'other_window'
+    ? 'Terdeteksi membuka tab/jendela lain'
+    : 'Logout terdeteksi'
+
+  await Promise.all([
+    settleWithin(flushPendingDeviceScan(), 3000),
+    // Mark any active exam session as requiring returnee token
+    currentUser ? settleWithin(markActiveSessionsAsReturnee(currentUser.id, returneeReason), 8000) : null,
+    // Clear active_session_id in DB if voluntary logout
+    currentUser && !reason ? settleWithin(clearActiveSession(currentUser.id, currentUser.level), 5000) : null,
+  ])
 
   if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase.auth.signOut()
-    } catch (err) {
-      console.warn('[Auth] Supabase signOut error:', err)
-    }
+    await settleWithin(supabase.auth.signOut(), 5000)
   }
+
+  // Shared devices: the next student must not see this student's cached data.
+  // (Unsent exam answers live in IndexedDB and are intentionally kept.)
+  if (currentUser) clearOfflineForUser(currentUser.id)
 
   try {
     localStorage.removeItem(AUTH_STORAGE_KEY)
@@ -396,8 +497,14 @@ export async function getSession() {
       return null
     }
 
-    // Check expiration
-    if (session.expires_at && Date.now() > session.expires_at) {
+    // Expiration. `expires_at` is the ~1 hour access token, which supabase-js
+    // refreshes on its own with the refresh token. Signing the student out
+    // here (the old behaviour) forced a fresh login on every reload after the
+    // first hour — exactly when the connection is often bad. Only drop the
+    // saved login when it can't be refreshed, or after MAX_SESSION_AGE_MS.
+    const accessExpired = session.expires_at && Date.now() > session.expires_at
+    const tooOld = session.login_at && Date.now() - session.login_at > MAX_SESSION_AGE_MS
+    if ((accessExpired && !session.refresh_token) || tooOld) {
       localStorage.removeItem(AUTH_STORAGE_KEY)
       return null
     }
