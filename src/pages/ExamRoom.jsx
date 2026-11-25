@@ -1666,7 +1666,7 @@ export default function ExamRoom() {
             )}
           </div>
 
-          <div style={{ padding: '0.625rem 1.25rem', background: 'var(--navy)', fontSize: '0.75rem', color: 'white', display: 'flex', gap: '1rem', borderTop: '1px solid var(--border)' }}>
+          <div style={{ padding: '0.625rem 1.25rem', background: 'var(--navy-light)', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', gap: '1rem', borderTop: '1px solid var(--border)' }}>
             <span>✅ {Object.keys(answers).length} Dijawab</span>
             <span>⬜ {totalQ - Object.keys(answers).length} Belum</span>
             {isQuiz && <span>🔒 {Object.keys(lockedQuestions).length} Terkunci</span>}

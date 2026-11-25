@@ -4569,7 +4569,7 @@ export default function CreateExam() {
                       return (
                         <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
                           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                            <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                               {i + 1}
                             </span>
                             <input
@@ -4877,7 +4877,7 @@ export default function CreateExam() {
                           }}
                         >
                           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                            <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                               {key}
                             </span>
                             <input
@@ -5187,7 +5187,7 @@ export default function CreateExam() {
                           border: '1px solid #cbd5e1'
                         }}
                       >
-                        <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                        <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--accent)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                           {i + 1}
                         </span>
                         <input
@@ -5327,10 +5327,10 @@ export default function CreateExam() {
                               onChange={e => updateMatchingLeft(idx, lKey, e.target.value)}
                             />
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gold)' }}>➔ Kunci:</span>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gold-darker)' }}>➔ Kunci:</span>
                               <select
                                 className="form-input"
-                                style={{ width: 62, padding: '0.25rem 0.4rem', fontSize: '0.8rem', fontWeight: 700, borderColor: 'var(--gold)', color: 'var(--gold)' }}
+                                style={{ width: 62, padding: '0.25rem 0.4rem', fontSize: '0.8rem', fontWeight: 700, borderColor: 'var(--gold)', color: 'var(--gold-darker)' }}
                                 value={q.correct_answer?.[lKey] || rightKeys[i] || 'A'}
                                 onChange={e => updateMatchingAnswer(idx, lKey, e.target.value)}
                               >
@@ -5356,12 +5356,12 @@ export default function CreateExam() {
 
                       {/* Right Column (Target Answers) */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold-darker)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           Kolom Kanan (Pilihan Pasangan Jawaban)
                         </div>
                         {rightKeys.map((rKey, rIdx) => (
                           <div key={rKey} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: rIdx % 2 === 0 ? '#ffffff' : '#f8fafc', padding: '0.5rem', borderRadius: 8, border: '1px solid #cbd5e1' }}>
-                            <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--navy)', border: '1px solid var(--border)', color: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
+                            <span style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--accent)', border: '1px solid var(--accent-dark)', color: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>
                               {rKey}
                             </span>
                             <input
