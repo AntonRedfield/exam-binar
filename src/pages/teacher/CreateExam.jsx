@@ -19,6 +19,7 @@ import {
   generateQuestionId
 } from '../../lib/questionMakerAutosave'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
+import { describeCloseResult } from '../../lib/examCloser'
 import ExportPaperExamModal from '../../components/exam/ExportPaperExamModal'
 
 const EXAM_TYPES = ['MCQ', 'COMPLEX_MCQ', 'TRUE_FALSE', 'MATCHING', 'SEQUENCING', 'AGREE_DISAGREE', 'ESSAY']
@@ -370,7 +371,10 @@ export default function CreateExam() {
       await handleSave(false, null, { stayOnPage: true, unpublish: true })
       const examIdToUnpublish = currentExamId || examId
       if (examIdToUnpublish) {
-        await exams.unpublishAndForceSubmit(examIdToUnpublish, targetStatus)
+        const closeRes = await exams.unpublishAndForceSubmit(examIdToUnpublish, targetStatus)
+        const closeMsg = describeCloseResult(closeRes, targetStatus)
+        setActionNotice(closeMsg)
+        setTimeout(() => setActionNotice(prev => prev === closeMsg ? '' : prev), 12000)
       }
       setExamStatus(targetStatus)
       setShowUnpublishModal(false)

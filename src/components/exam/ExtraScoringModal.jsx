@@ -23,8 +23,14 @@ import {
   getExtraSummaryLabel
 } from '../../lib/extraScoring'
 
-export default function ExtraScoringModal({
-  isOpen,
+// Hooks may not run conditionally: mount the dialog body only while open, so
+// it starts from the saved settings every time it is opened.
+export default function ExtraScoringModal(props) {
+  if (!props.isOpen) return null
+  return <ExtraScoringModalBody {...props} />
+}
+
+function ExtraScoringModalBody({
   onClose,
   config,
   onSaveConfig,
@@ -36,8 +42,6 @@ export default function ExtraScoringModal({
   onTriggerDownloadPdf,
   examTitle = 'Ujian'
 }) {
-  if (!isOpen) return null
-
   // Local working copy of configuration
   const [draftConfig, setDraftConfig] = useState(() => ({
     ...DEFAULT_EXTRA_SCORING_CONFIG,

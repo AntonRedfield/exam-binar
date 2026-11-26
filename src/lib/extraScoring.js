@@ -127,8 +127,11 @@ export function calculateStudentExtraScore(result, config, context = {}) {
         break
       }
       case 'linear_scale': {
-        const tMin = Number(config.scaleMin) ?? passingGrade
-        const tMax = Number(config.scaleMax) ?? 100
+        // Number(undefined) is NaN (never null), so `??` never applied the fallback
+        const minVal = Number(config.scaleMin)
+        const maxVal = Number(config.scaleMax)
+        const tMin = Number.isFinite(minVal) ? minVal : passingGrade
+        const tMax = Number.isFinite(maxVal) ? maxVal : 100
         const cMin = Number(classMinScore) || 0
         const cMax = Number(classMaxScore) || 100
 

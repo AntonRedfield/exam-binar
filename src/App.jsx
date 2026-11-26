@@ -2,6 +2,8 @@ import { useState, useEffect, createContext, useContext, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { getSession, getUserRole, getUserLevel, onAuthStateChange, _syncCurrentUser, getCurrentUser, logout } from './lib/auth'
 import { startSessionGuard } from './lib/sessionGuard'
+import { startSubmissionRunner } from './lib/submissionQueue'
+import { startCloseJobRunner } from './lib/examCloser'
 import { lazyWithRetry } from './lib/lazyWithRetry'
 import NetworkStatusBanner from './components/NetworkStatusBanner'
 
@@ -101,6 +103,21 @@ function AuthProvider({ children }) {
       }
     )
     return () => stopGuard()
+  }, [session?.user?.id, session?.level])
+
+  // 4. Finish any exam submission still waiting on this device (e.g. the app
+  //    was closed or the signal dropped while sending). Retried until the
+  //    server confirms; see lib/submissionQueue.js.
+  useEffect(() => {
+    if (!session?.user?.id) return
+    return startSubmissionRunner(session.user.id)
+  }, [session?.user?.id])
+
+  // 5. Teachers/admins: finish the follow-up checks of exams they closed
+  //    (re-grade late answers, retry results that could not be stored yet)
+  useEffect(() => {
+    if (!session?.user?.id || (Number(session.level) || 1) < 3) return
+    return startCloseJobRunner()
   }, [session?.user?.id, session?.level])
 
   // Show loading spinner while session is being determined

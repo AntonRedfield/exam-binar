@@ -26,6 +26,7 @@ import {
   getExamTokenInfo
 } from './returnee.js'
 import { broadcastExamLiveUpdate } from './liveExamSync.js'
+import { closeExamReliably } from './examCloser.js'
 import { getCurrentUser } from './auth.js'
 import { roundScore } from './format.js'
 import { gradeExam } from './grader.js'
@@ -749,133 +750,14 @@ export const exams = {
     return { data: attached, error: null }
   },
 
-  unpublishAndForceSubmit: async (examId, targetStatus = 'draft') => {
-    if (!isSupabaseConfigured || !supabase) return { success: false, error: 'Database offline' }
-
-    // 1. Fetch questions for the exam (for grading)
-    const { data: qData } = await supabase
-      .from('questions')
-      .select('*')
-      .eq('exam_id', examId)
-      .order('number', { ascending: true })
-
-    const questionList = qData || []
-
-    // 2. Fetch all exam sessions and existing results in parallel
-    const [{ data: sessionData, error: sessErr }, { data: resultsData, error: resErr }] = await Promise.all([
-      supabase.from('exam_sessions').select('*').eq('exam_id', examId),
-      supabase.from('results').select('*').eq('exam_id', examId)
-    ])
-
-    if (sessErr) {
-      console.error('[DB] Failed to fetch sessions on unpublish:', sessErr)
-      return { success: false, error: sessErr.message }
-    }
-
-    const sessionList = sessionData || []
-    const existingResults = resultsData || []
-    const resultsMapByStudent = new Map()
-    const resultsMapBySession = new Map()
-    existingResults.forEach(r => {
-      if (r.student_id) resultsMapByStudent.set(r.student_id, r)
-      if (r.session_id) resultsMapBySession.set(r.session_id, r)
-    })
-
-    let countSubmitted = 0
-    let countGraded = 0
-
-    // 3. Extract answers, grade, and force submit each session
-    for (const s of sessionList) {
-      if (!s.student_id) continue
-
-      const isAlreadySubmitted = s.status === 'submitted' || s.status === 'time_up'
-      const existingRes = resultsMapByStudent.get(s.student_id) || resultsMapBySession.get(s.id)
-
-      const answers = s.answers || {}
-      const { autoScore, maxAutoScore, breakdown } = gradeExam(answers, questionList)
-      const cleanAuto = roundScore(autoScore)
-      const cleanMax = roundScore(maxAutoScore)
-
-      try {
-        if (existingRes) {
-          await results.update(existingRes.id, {
-            session_id: s.id,
-            auto_score: cleanAuto,
-            max_auto_score: cleanMax,
-            violation_count: s.violation_count || 0,
-            breakdown: JSON.stringify(breakdown)
-          })
-        } else {
-          await results.create({
-            student_id: s.student_id,
-            exam_id: examId,
-            session_id: s.id,
-            auto_score: cleanAuto,
-            max_auto_score: cleanMax,
-            essay_score: 0,
-            violation_count: s.violation_count || 0,
-            breakdown: JSON.stringify(breakdown),
-            submitted_at: new Date().toISOString()
-          })
-        }
-        countGraded++
-      } catch (gradeErr) {
-        console.warn('[DB] Error grading/saving result during force submit for student:', s.student_id, gradeErr)
-      }
-
-      // If session is not already submitted, force status to 'submitted'
-      if (!isAlreadySubmitted) {
-        try {
-          await supabase
-            .from('exam_sessions')
-            .update({
-              status: 'submitted',
-              last_sync: new Date().toISOString()
-            })
-            .eq('id', s.id)
-          countSubmitted++
-        } catch (updErr) {
-          console.warn('[DB] Error updating session status to submitted:', s.id, updErr)
-        }
-      }
-    }
-
-    // 4. Update exam status to targetStatus ('draft' or 'closed')
-    const finalStatus = targetStatus === 'closed' ? 'closed' : 'draft'
-    const { data: updatedExam, error: examErr } = await supabase
-      .from('exams')
-      .update({ status: finalStatus, updated_at: new Date().toISOString() })
-      .eq('id', examId)
-      .select()
-      .single()
-
-    if (examErr) {
-      console.error(`[DB] Failed to update exam status to ${finalStatus}:`, examErr)
-      return { success: false, error: examErr.message }
-    }
-
-    // 5. Broadcast live event to open student exam rooms
-    try {
-      await broadcastExamLiveUpdate(examId, {
-        type: 'EXAM_UNPUBLISHED',
-        action: 'force_submitted',
-        targetStatus: finalStatus,
-        message: finalStatus === 'closed'
-          ? 'Ujian telah ditutup secara resmi oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
-          : 'Ujian telah dihentikan/di-unpublish oleh guru pengawas. Seluruh jawaban Anda telah otomatis dikumpulkan dan dinilai.'
-      })
-    } catch (bcErr) {
-      console.warn('[DB] Broadcast EXAM_UNPUBLISHED error:', bcErr)
-    }
-
-    return {
-      success: true,
-      data: updatedExam,
-      countSubmitted,
-      countGraded,
-      totalSessions: sessionList.length,
-      finalStatus
-    }
+  /**
+   * Close / unpublish an exam, force-submit every student and store every
+   * result. Delegates to examCloser.js: closes first, verifies and retries every
+   * write, never grades against an empty question list, and keeps re-checking
+   * results in the background until all are stored.
+   */
+  unpublishAndForceSubmit: async (examId, targetStatus = 'draft', options = {}) => {
+    return closeExamReliably(examId, targetStatus, options)
   },
 
   closeExam: async (examId) => {
@@ -1076,30 +958,6 @@ export async function fetchStudentProfilesMap(studentIds) {
 const _lastCleanTimeMap = new Map()
 
 export const sessions = {
-  create: async (data) => {
-    if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
-    const newSession = {
-      id: data.id || generateId('sess'),
-      variant: data.variant || 'A',
-      status: data.status || 'active',
-      answers: data.answers || {},
-      violation_count: data.violation_count || 0,
-      current_question: data.current_question || 1,
-      started_at: data.started_at || new Date().toISOString(),
-      last_sync: new Date().toISOString(),
-      ...data,
-    }
-
-    const { data: created, error } = await supabase
-      .from('exam_sessions')
-      .insert([newSession])
-      .select()
-      .single()
-
-    if (error) return { data: null, error }
-    return { data: created, error: null }
-  },
-
   delete: async (id) => {
     if (!isSupabaseConfigured || !supabase) return { data: null, error: { message: 'Database offline' } }
     const { error } = await supabase.from('exam_sessions').delete().eq('id', id)
@@ -1588,7 +1446,7 @@ export const sessions = {
       }
 
       // Fetch questions and existing results in parallel only when candidates exist
-      const [{ data: qs }, { data: existingResults, error: resErr }] = await Promise.all([
+      const [{ data: qs, error: qsErr }, { data: existingResults, error: resErr }] = await Promise.all([
         questions.listByExam(examId),
         supabase.from('results').select('*').eq('exam_id', examId)
       ])
@@ -1597,7 +1455,12 @@ export const sessions = {
         return { lockedCount, syncedCount: 0, error: resErr }
       }
 
-      const rawQuestions = qs || []
+      // Never grade against an empty question list (e.g. the questions request
+      // failed on a weak connection): that would overwrite every score with 0
+      if (qsErr || !qs || qs.length === 0) {
+        return { lockedCount, syncedCount: 0, error: qsErr || { message: 'Soal tidak dapat dimuat' } }
+      }
+      const rawQuestions = qs
       const resultsMapByStudent = new Map()
       const resultsMapBySession = new Map()
       ;(existingResults || []).forEach(r => {
@@ -2235,6 +2098,27 @@ export const surveys = {
       return targetList.includes(userClass)
     })
     return { data: filtered, error: null }
+  },
+
+  /**
+   * Target-class students who have not submitted this survey yet (used by the
+   * teacher's "Belum Mengisi" tab). Restored: the page called it but it was
+   * missing, so the survey responses page crashed on open.
+   */
+  getMissingRespondents: async (examId) => {
+    if (!isSupabaseConfigured || !supabase || !examId) return { data: [], error: null }
+    const [{ data: exam }, { data: sessionRows, error: sessErr }] = await Promise.all([
+      exams.getById(examId),
+      supabase.from('exam_sessions').select('student_id, status').eq('exam_id', examId),
+    ])
+    if (!exam) return { data: [], error: { message: 'Survei tidak ditemukan' } }
+    if (sessErr) return { data: [], error: sessErr }
+
+    const { data: targetStudents, error: stuErr } = await users.listTargetStudents(exam.target_kelas || 'all')
+    if (stuErr) return { data: [], error: stuErr }
+
+    const responded = new Set((sessionRows || []).filter(s => s.status === 'submitted').map(s => s.student_id))
+    return { data: (targetStudents || []).filter(s => !responded.has(s.id)), error: null }
   }
 }
 

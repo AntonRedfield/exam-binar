@@ -6,6 +6,7 @@ import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, BookOpen, C
 import { MONITORING_LEVELS } from '../../lib/monitoringConfig'
 import { MonitoringIcon, getMonitoringBadgeStyle } from '../../lib/monitoringUI'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
+import { describeCloseProgress, describeCloseResult } from '../../lib/examCloser'
 import ExportPaperExamModal from '../../components/exam/ExportPaperExamModal'
 
 export default function ExamList() {
@@ -19,6 +20,7 @@ export default function ExamList() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'published' | 'draft' | 'closed'
   const [unpublishModal, setUnpublishModal] = useState({ isOpen: false, exam: null, isProcessing: false })
+  const [closeProgress, setCloseProgress] = useState('')
   const [notification, setNotification] = useState(null)
   const [exportPaperModal, setExportPaperModal] = useState({ isOpen: false, exam: null, questions: [], loading: false })
 
@@ -64,13 +66,14 @@ export default function ExamList() {
     const targetExam = unpublishModal.exam
     setUnpublishModal(prev => ({ ...prev, isProcessing: true }))
     try {
-      const res = await exams.unpublishAndForceSubmit(targetExam.id, targetStatus)
+      setCloseProgress('')
+      const res = await exams.unpublishAndForceSubmit(targetExam.id, targetStatus, {
+        onProgress: (p) => setCloseProgress(describeCloseProgress(p))
+      })
       setUnpublishModal({ isOpen: false, exam: null, isProcessing: false })
       await load()
-      const submittedCount = res.countSubmitted || 0
-      const statusLabel = targetStatus === 'closed' ? 'ditutup & dikunci' : 'di-unpublish ke draft'
-      setNotification(`Ujian "${targetExam.title}" berhasil ${statusLabel}. ${submittedCount > 0 ? `${submittedCount} siswa aktif berhasil dikumpulkan & dinilai otomatis.` : `Ujian kini berstatus ${targetStatus === 'closed' ? 'Tutup' : 'Draft'}.`}`)
-      setTimeout(() => setNotification(null), 6000)
+      setNotification(describeCloseResult(res, targetStatus))
+      setTimeout(() => setNotification(null), 15000)
     } catch (err) {
       console.error('Error during unpublish/close:', err)
       alert('Terjadi kesalahan saat menutup/membatalkan publikasi ujian: ' + (err.message || err))
@@ -581,6 +584,7 @@ export default function ExamList() {
         exam={unpublishModal.exam}
         onConfirm={handleConfirmUnpublish}
         isProcessing={unpublishModal.isProcessing}
+        progressText={closeProgress}
       />
 
       {/* Export Paper Exam Modal */}

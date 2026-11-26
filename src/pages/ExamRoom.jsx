@@ -39,6 +39,12 @@ import { BookOpen, Send, ChevronLeft, ChevronRight, ShieldCheck, ShieldAlert, Al
 import { subscribeToExamLiveUpdates } from '../lib/liveExamSync'
 import { isNetworkError, isOffline, getNetworkState, subscribeNetwork } from '../lib/network'
 import { loadOffline, saveOffline, slimSession } from '../lib/offlineCache'
+import {
+  enqueueSubmission,
+  processSubmission,
+  cancelSubmission,
+  hasPendingSubmission
+} from '../lib/submissionQueue'
 import { scheduleSlowLocationVerification, flushPendingDeviceScan } from '../lib/loginAudit'
 import {
   capturePassiveSelfie,
@@ -130,6 +136,53 @@ function formatCorrectAnswer(correct, qType, question = null) {
   return String(correct);
 }
 
+// Short status line for the submit / force-submit screens
+function submitStatusLine(progress) {
+  if (!progress) return 'Mengirim jawaban ke server…'
+  switch (progress.stage) {
+    case 'done': return 'Jawaban berhasil tersimpan di server. Mengalihkan ke lembar hasil nilai…'
+    case 'waiting': return 'Menunggu koneksi internet…'
+    case 'retrying': return `${progress.reason || 'Koneksi bermasalah'} — mencoba lagi otomatis (percobaan ${progress.attempt}).`
+    case 'paused': return 'Sesi login berakhir. Jawaban tersimpan di perangkat ini dan dikirim otomatis setelah Anda login kembali.'
+    case 'saving-result': return 'Menyimpan nilai…'
+    default: return progress.attempt > 1 ? `Mengirim jawaban ke server… (percobaan ${progress.attempt})` : 'Mengirim jawaban ke server…'
+  }
+}
+
+function SubmitProgressText({ progress, isQuiz }) {
+  const [secondsLeft, setSecondsLeft] = useState(null)
+  const retryAt = progress?.stage === 'retrying' ? progress.retryAt : null
+
+  useEffect(() => {
+    if (!retryAt) return
+    const timer = setInterval(() => {
+      setSecondsLeft(Math.max(0, Math.ceil((retryAt - Date.now()) / 1000)))
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+      setSecondsLeft(null)
+    }
+  }, [retryAt])
+
+  const done = progress?.stage === 'done'
+  return (
+    <>
+      <p style={{ color: '#e2e8f0', fontSize: '0.95rem', lineHeight: 1.55, marginBottom: '0.75rem' }}>
+        {done
+          ? submitStatusLine(progress)
+          : <>{isQuiz ? 'Kuis' : 'Ujian'} Anda sedang dikumpulkan. {submitStatusLine(progress)}{retryAt && secondsLeft !== null ? ` Coba lagi dalam ${secondsLeft} detik.` : ''}</>}
+      </p>
+      {!done && (
+        <p style={{ color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+          Jawaban Anda sudah tersimpan aman di perangkat ini dan terus dikirim sampai server menerimanya.
+          Jangan logout. Jika aplikasi tertutup, pengiriman dilanjutkan otomatis saat aplikasi dibuka lagi.
+        </p>
+      )}
+      <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto', borderColor: 'rgba(148,163,184,0.25)', borderTopColor: done ? '#34d399' : '#fbbf24' }} />
+    </>
+  )
+}
+
 export default function ExamRoom() {
   const { examId } = useParams()
   const navigate = useNavigate()
@@ -194,6 +247,11 @@ export default function ExamRoom() {
 
   const sessionRef = useRef(null)
   const answersRef = useRef({})
+  // Always the current question list, also inside callbacks created before it
+  // loaded (grading with a stale, empty list gave students a score of 0)
+  const questionListRef = useRef([])
+  const submissionKeyRef = useRef(null)
+  const [submitProgress, setSubmitProgress] = useState(null) // { stage, attempt, reason, retryAt }
   const violationsRef = useRef(0)
   const currentQRef = useRef(1)
   const engineRef = useRef(null)
@@ -213,6 +271,14 @@ export default function ExamRoom() {
     if (!user) return
     let cancelled = false
     async function load() {
+      // This exam was already submitted from this device and is still being
+      // sent (e.g. the page reloaded mid-submit): don't treat that as leaving
+      // the exam. The lobby shows the progress; the outbox keeps sending.
+      if (!isPrivileged && hasPendingSubmission(user.id, examId)) {
+        navigate(`/exam/${examId}/lobby`, { replace: true })
+        return
+      }
+
       // Copy of this exam saved on the device the last time the room opened
       const backup = !isPrivileged ? loadOffline(user.id, `exam_${examId}`)?.data : null
       const backupSess = backup?.session
@@ -273,6 +339,34 @@ export default function ExamRoom() {
       setUsingBackup(usedBackup)
 
       if (!isPrivileged && (!sess || sess.status === 'submitted' || sess.status === 'time_up' || sess.returnee_token_required)) {
+        // The session was closed on the server (time ran out / proctor closed
+        // it) while some answers were still only on this device: send them so
+        // they are graded too. Sent in the background by the submission outbox.
+        const closed = sess && (sess.status === 'submitted' || sess.status === 'time_up')
+        if (closed && Array.isArray(qs) && qs.length > 0 && !hasPendingSubmission(user.id, examId)) {
+          const probe = new ExamAtomicEngine(examId, user.id)
+          try {
+            const merged = await probe.init(sess.answers || {}, null)
+            if (probe.getDirtyCount() > 0) {
+              const key = enqueueSubmission({
+                userId: user.id,
+                examId,
+                sessionId: sess.id,
+                sessionEnd: sess.end_timestamp,
+                answers: merged,
+                violationCount: sess.violation_count,
+                currentQuestion: sess.current_question,
+                status: null, // keep the server's status
+                grading: gradeExam(merged, qs),
+              })
+              processSubmission(key).catch(() => {})
+            }
+          } catch (e) {
+            console.warn('Unsent answer recovery skipped:', e)
+          } finally {
+            probe.destroy()
+          }
+        }
         navigate(`/exam/${examId}/lobby`)
         return
       }
@@ -283,6 +377,9 @@ export default function ExamRoom() {
         setTimeUp(true)
         setExam(examData)
         setQuestionList(qs || [])
+        // submitExam() below runs before React re-renders with these questions:
+        // hand them over through the ref so the exam is graded against them
+        questionListRef.current = qs || []
         setSession(sess)
         sessionRef.current = sess
         // Include answers saved on this device that never reached the server
@@ -350,6 +447,7 @@ export default function ExamRoom() {
 
       setExam(examData)
       setQuestionList(finalQs)
+      questionListRef.current = finalQs
       setSession(sess)
       sessionRef.current = sess
 
@@ -459,6 +557,11 @@ export default function ExamRoom() {
     currentQRef.current = currentQ
   }, [currentQ])
 
+  // Keep the grading list current (e.g. after a live question fix by the teacher)
+  useEffect(() => {
+    if (questionList.length > 0) questionListRef.current = questionList
+  }, [questionList])
+
   // ─── Deferred Secret Selfie (Anti-Piloting / Anti-Joki) ─────────────────
   // Fires silently once per exam, 4 seconds AFTER the student enters the room.
   // Never blocks exam entry. Never shows any UI. Failure is silently recorded.
@@ -557,40 +660,39 @@ export default function ExamRoom() {
       if (faceDetectionRef.current?.stopCamera) faceDetectionRef.current.stopCamera()
     } catch (e) {}
 
-    // 1. Immediately flush pending local disk writes and sync dirty answers to server
-    if (sessionRef.current?.id) {
+    if (engineRef.current) engineRef.current.flushPendingDiskWrites()
+
+    // The proctor's close already graded whatever answers the server had. Send
+    // this device's FINAL answers through the submission outbox so the result
+    // includes the last ones too (server status is kept; retried until confirmed).
+    let resultId = null
+    if (!isPrivileged && user?.id && sessionRef.current?.id) {
+      const finalAnswers = { ...answersRef.current }
+      const key = enqueueSubmission({
+        userId: user.id,
+        examId,
+        sessionId: sessionRef.current.id,
+        sessionEnd: sessionRef.current.end_timestamp || null,
+        answers: finalAnswers,
+        violationCount: violationsRef.current,
+        currentQuestion: currentQRef.current || 1,
+        status: null,
+        grading: gradeExam(finalAnswers, questionListRef.current),
+      })
+      const outcome = await processSubmission(key, { onProgress: setSubmitProgress })
+      if (outcome.ok) resultId = outcome.resultId
+    } else {
       try {
-        if (engineRef.current) {
-          engineRef.current.flushPendingDiskWrites()
-          await engineRef.current.syncDirty()
-        } else {
-          await sessions.syncMinimal(sessionRef.current.id, {
-            answers: answersRef.current,
-            current_question: currentQRef.current || 1,
-          })
-        }
-      } catch (e) {
-        console.warn('Auto-save answers on force submit error:', e)
-      }
+        if (engineRef.current) await engineRef.current.syncDirty()
+        if (engineRef.current?.clear) await engineRef.current.clear()
+      } catch { /* teacher / admin try mode */ }
+      const { data: res } = await results.get(user?.id, examId)
+      resultId = res?.id || null
     }
 
-    try {
-      if (engineRef.current?.clear) await engineRef.current.clear()
-    } catch (e) {}
-
-    setTimeout(async () => {
-      try {
-        const { data: res } = await results.get(user?.id, examId)
-        if (res?.id) {
-          navigate(`/results/${res.id}`, { replace: true })
-        } else {
-          navigate('/home', { replace: true })
-        }
-      } catch (err) {
-        navigate('/home', { replace: true })
-      }
-    }, 2800)
-  }, [examId, user?.id, navigate])
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    navigate(resultId ? `/results/${resultId}` : '/home', { replace: true })
+  }, [examId, user?.id, navigate, isPrivileged])
 
   // ─── Live Exam Sync: Listen to live question edits by teacher ──────
   const refreshQuestionsLive = useCallback(async () => {
@@ -683,6 +785,12 @@ export default function ExamRoom() {
             sessionRef.current.status = 'active'
             sessionRef.current.returnee_token_required = false
           }
+          // Extra time granted: cancel a time-up submission still on its way
+          if (submissionKeyRef.current) {
+            cancelSubmission(submissionKeyRef.current)
+            submissionKeyRef.current = null
+          }
+          setSubmitProgress(null)
           setTimeUp(false)
           setSubmitting(false)
           submitLock.current = false
@@ -760,6 +868,12 @@ export default function ExamRoom() {
                 session: { ...saved.data.session, end_timestamp: latestSess.end_timestamp, status: 'active', returnee_token_required: false }
               })
             }
+            // Extra time granted: cancel a time-up submission still on its way
+            if (submissionKeyRef.current) {
+              cancelSubmission(submissionKeyRef.current)
+              submissionKeyRef.current = null
+            }
+            setSubmitProgress(null)
             setTimeUp(false)
             setSubmitting(false)
             submitLock.current = false
@@ -1011,89 +1125,51 @@ export default function ExamRoom() {
       faceDetectionRef.current.stopCamera()
     }
 
-    try {
-      const currentSessionId = sessionRef.current?.id || session?.id
-      if (currentSessionId) {
-        const { error: submitSyncErr } = await sessions.syncMinimal(currentSessionId, {
-          answers: answersRef.current,
-          violation_count: violationsRef.current,
-          current_question: currentQRef.current || currentQ,
-          status: isAuto ? 'time_up' : 'submitted',
-        }) || {}
-        // Connection lost: stop here so the student can press Kumpulkan again
-        // (time-up submits retry automatically) instead of grading an exam
-        // whose answers never reached the server.
-        if (submitSyncErr && isNetworkError(submitSyncErr)) {
-          throw new Error('Koneksi terputus saat mengirim jawaban. Jawaban tetap tersimpan di perangkat — coba lagi saat sinyal stabil.')
-        }
-      }
+    // 1. Save the COMPLETE submission (final answers + grade) on this device
+    //    before sending anything. From here on it cannot be lost: it is sent
+    //    until the server confirms, even across reloads / closing the app.
+    const finalAnswers = { ...answersRef.current }
+    const grading = gradeExam(finalAnswers, questionListRef.current)
+    const key = enqueueSubmission({
+      userId: user.id,
+      examId,
+      sessionId: sessionRef.current?.id || session?.id,
+      sessionEnd: sessionRef.current?.end_timestamp || session?.end_timestamp || null,
+      answers: finalAnswers,
+      violationCount: violationsRef.current,
+      currentQuestion: currentQRef.current || currentQ,
+      status: isAuto ? 'time_up' : 'submitted',
+      grading,
+    })
+    submissionKeyRef.current = key
 
-      const { autoScore, maxAutoScore, breakdown } = gradeExam(answersRef.current, questionList)
+    // 2. Send it. Retries automatically (2 s, 4 s, 8 s, 15 s, then every 30 s)
+    //    until both the session and the result are confirmed by the server.
+    setSubmitProgress({ stage: 'sending', attempt: 1 })
+    const outcome = await processSubmission(key, { onProgress: setSubmitProgress })
+    if (submissionKeyRef.current === key) submissionKeyRef.current = null
 
-      const existingRes = await results.get(user.id, examId)
-      let result = null
-      if (existingRes?.data) {
-        const { data } = await results.update(existingRes.data.id, {
-          session_id: currentSessionId,
-          auto_score: autoScore,
-          max_auto_score: maxAutoScore,
-          violation_count: violationsRef.current,
-          breakdown: JSON.stringify(breakdown),
-        })
-        result = data || existingRes.data
-      } else {
-        const { data } = await results.create({
-          student_id: user.id,
-          exam_id: examId,
-          session_id: currentSessionId,
-          auto_score: autoScore,
-          max_auto_score: maxAutoScore,
-          essay_score: 0,
-          violation_count: violationsRef.current,
-          breakdown: JSON.stringify(breakdown),
-        })
-        result = data
-      }
-
-      // Clear local atomic storage upon successful submission
-      if (engineRef.current) {
-        await engineRef.current.clear()
-      }
-
+    if (outcome.ok) {
+      try { if (engineRef.current) await engineRef.current.clear() } catch { /* already cleared by the outbox */ }
       // If privileged user submitted in try mode, trigger cleanup of any expired try entries
       if (isPrivileged) {
         sessions.cleanExpiredPrivilegedTryEntries(examId).catch(() => {})
       }
-
-      if (isAuto) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
-      }
-
-      if (result?.id) {
-        navigate(`/results/${result.id}`, { replace: true })
-      } else {
-        const { data: fallbackRes } = await results.get(user.id, examId)
-        if (fallbackRes?.id) {
-          navigate(`/results/${fallbackRes.id}`, { replace: true })
-        } else {
-          navigate('/home', { replace: true })
-        }
-      }
-    } catch (err) {
-      console.error('Submit error', err)
-      if (!isAuto) {
-        submitLock.current = false
-        setSubmitting(false)
-        alert('Gagal mengumpulkan ujian: ' + (err.message || 'Koneksi bermasalah. Silakan coba klik Kumpulkan lagi.'))
-      } else {
-        // Automatically lock students when time runs out: do NOT unlock the screen
-        setTimeUp(true)
-        setTimeout(() => {
-          submitLock.current = false
-          submitExam(true)
-        }, 2500)
-      }
+      await new Promise(resolve => setTimeout(resolve, isAuto ? 1500 : 600))
+      navigate(`/results/${outcome.resultId}`, { replace: true })
+      return
     }
+    if (outcome.abandoned) {
+      // The session was reopened with more time or reset by an admin
+      navigate(`/exam/${examId}/lobby`, { replace: true })
+      return
+    }
+    if (outcome.paused) {
+      // Logged out / different account: the submission stays on the device and
+      // is sent automatically after this student logs in again.
+      setSubmitProgress({ stage: 'paused' })
+    }
+    // outcome.gone: cancelled because the proctor granted extra time
   }
 
   async function handleTimerExpire() {
@@ -1265,7 +1341,7 @@ export default function ExamRoom() {
             </p>
             <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto 0.75rem', borderColor: '#e2e8f0', borderTopColor: '#dc2626' }} />
             <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>
-              Mengalihkan ke lembar hasil nilai...
+              {submitProgress ? submitStatusLine(submitProgress) : 'Mengalihkan ke lembar hasil nilai...'}
             </div>
           </div>
         </div>
@@ -1734,25 +1810,23 @@ export default function ExamRoom() {
         </div>
       )}
 
-      {/* Time's Up overlay */}
-      {timeUp && !forceSubmitted && (
+      {/* Submitting overlay (time's up or "Kumpulkan") with live progress */}
+      {(timeUp || submitting) && !forceSubmitted && (
         <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(10,22,40,0.95)' }}>
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', maxWidth: 460, padding: '1.5rem' }}>
             <div style={{
               width: 80, height: 80, borderRadius: '50%',
-              background: 'rgba(239,68,68,0.15)', border: '3px solid var(--danger)',
+              background: timeUp ? 'rgba(239,68,68,0.15)' : 'rgba(223,174,52,0.15)',
+              border: `3px solid ${timeUp ? 'var(--danger)' : 'var(--gold)'}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               margin: '0 auto 1.5rem'
             }}>
-              <AlertTriangle size={36} color="var(--danger)" />
+              {timeUp ? <AlertTriangle size={36} color="var(--danger)" /> : <Send size={34} color="var(--gold)" />}
             </div>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--danger)', fontFamily: "'Inter', sans-serif" }}>
-              Waktu Habis!
+            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: timeUp ? '#f87171' : '#fcd34d', fontFamily: "'Inter', sans-serif" }}>
+              {timeUp ? 'Waktu Habis!' : `Mengumpulkan ${isQuiz ? 'Kuis' : 'Ujian'}`}
             </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '1.5rem' }}>
-              {isQuiz ? 'Kuis' : 'Ujian'} Anda sedang dikumpulkan secara otomatis...
-            </p>
-            <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto', borderColor: 'rgba(239,68,68,0.2)', borderTopColor: 'var(--danger)' }} />
+            <SubmitProgressText progress={submitProgress} isQuiz={isQuiz} />
           </div>
         </div>
       )}
@@ -1777,14 +1851,14 @@ export default function ExamRoom() {
             </p>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}>
               <div className="spinner" style={{ width: 20, height: 20, borderColor: 'rgba(245,158,11,0.2)', borderTopColor: '#f59e0b' }} />
-              <span>Mengalihkan ke lembar hasil nilai...</span>
+              <span>{submitProgress ? submitStatusLine(submitProgress) : 'Mengalihkan ke lembar hasil nilai...'}</span>
             </div>
           </div>
         </div>
       )}
 
       {/* Submit confirm modal */}
-      {showSubmitConfirm && !timeUp && (
+      {showSubmitConfirm && !timeUp && !submitting && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 400, textAlign: 'center' }}>
             <div style={{ width: 56, height: 56, borderRadius: 14, background: 'rgba(79,142,247,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>

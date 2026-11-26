@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { exams } from '../../lib/db'
 import { Plus, Edit2, Activity, BarChart2, Trash2, Globe, Lock, Zap, Play, Sparkles, Search, X, Check } from 'lucide-react'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
+import { describeCloseProgress, describeCloseResult } from '../../lib/examCloser'
 
 export default function ExamOversight() {
   const navigate = useNavigate()
@@ -14,6 +15,7 @@ export default function ExamOversight() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'published' | 'draft' | 'closed'
   const [unpublishModal, setUnpublishModal] = useState({ isOpen: false, exam: null, isProcessing: false })
+  const [closeProgress, setCloseProgress] = useState('')
   const [notification, setNotification] = useState(null)
 
   async function load() {
@@ -38,13 +40,14 @@ export default function ExamOversight() {
     const targetExam = unpublishModal.exam
     setUnpublishModal(prev => ({ ...prev, isProcessing: true }))
     try {
-      const res = await exams.unpublishAndForceSubmit(targetExam.id, targetStatus)
+      setCloseProgress('')
+      const res = await exams.unpublishAndForceSubmit(targetExam.id, targetStatus, {
+        onProgress: (p) => setCloseProgress(describeCloseProgress(p))
+      })
       setUnpublishModal({ isOpen: false, exam: null, isProcessing: false })
       await load()
-      const submittedCount = res.countSubmitted || 0
-      const statusLabel = targetStatus === 'closed' ? 'ditutup & dikunci' : 'di-unpublish ke draft'
-      setNotification(`Ujian "${targetExam.title}" berhasil ${statusLabel}. ${submittedCount > 0 ? `${submittedCount} siswa aktif berhasil dikumpulkan & dinilai otomatis.` : `Ujian kini berstatus ${targetStatus === 'closed' ? 'Tutup' : 'Draft'}.`}`)
-      setTimeout(() => setNotification(null), 6000)
+      setNotification(describeCloseResult(res, targetStatus))
+      setTimeout(() => setNotification(null), 15000)
     } catch (err) {
       console.error('Error during unpublish/close:', err)
       alert('Terjadi kesalahan saat menutup/membatalkan publikasi ujian: ' + (err.message || err))
@@ -504,6 +507,7 @@ export default function ExamOversight() {
         exam={unpublishModal.exam}
         onConfirm={handleConfirmUnpublish}
         isProcessing={unpublishModal.isProcessing}
+        progressText={closeProgress}
       />
     </>
   )

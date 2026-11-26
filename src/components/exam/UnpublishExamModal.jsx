@@ -24,7 +24,8 @@ export default function UnpublishExamModal({
   onClose,
   exam,
   onConfirm,
-  isProcessing = false
+  isProcessing = false,
+  progressText = ''
 }) {
   if (!isOpen || !exam) return null
 
@@ -330,7 +331,7 @@ export default function UnpublishExamModal({
               {isProcessing ? (
                 <>
                   <RefreshCw size={16} className="spin" />
-                  <span>Memproses &amp; Menilai...</span>
+                  <span>{progressText || 'Memproses & Menilai...'}</span>
                 </>
               ) : (
                 <>

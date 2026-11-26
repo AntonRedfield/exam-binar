@@ -8,6 +8,7 @@ import ChangePasswordModal from '../components/ChangePasswordModal'
 import { formatScore, roundScore } from '../lib/format'
 import { loadOffline, saveOffline } from '../lib/offlineCache'
 import { isNetworkError, isOffline } from '../lib/network'
+import { subscribeSubmissions } from '../lib/submissionQueue'
 
 function getStatusBadge(status, returneeRequired = false) {
   if (returneeRequired) return <span className="badge badge-returnee">🔒 Returnee</span>
@@ -26,6 +27,8 @@ export default function StudentHome() {
   const [loading, setLoading] = useState(true)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [connectionNote, setConnectionNote] = useState('')
+  // Exam submissions still being sent from this device
+  const [pendingSubmissions, setPendingSubmissions] = useState([])
 
   useEffect(() => {
     let cancelled = false
@@ -153,9 +156,18 @@ export default function StudentHome() {
     // Refresh automatically when the connection comes back
     const onOnline = () => load({ background: true })
     window.addEventListener('online', onOnline)
+    // Refresh when a submission from this device has reached the server
+    let pendingBefore = 0
+    const unsubscribe = subscribeSubmissions((list) => {
+      const mine = list.filter(r => r.userId === user?.id)
+      setPendingSubmissions(mine)
+      if (mine.length < pendingBefore) load({ background: true })
+      pendingBefore = mine.length
+    })
     return () => {
       cancelled = true
       window.removeEventListener('online', onOnline)
+      unsubscribe()
     }
   }, [user?.id, user?.kelas, user?.level])
 
@@ -188,6 +200,12 @@ export default function StudentHome() {
   }
 
   function handleLogout() {
+    if (pendingSubmissions.length > 0 && !window.confirm(
+      'Jawaban ujian Anda masih dalam proses pengiriman ke server. Jika logout sekarang, pengiriman ' +
+      'baru dilanjutkan setelah Anda login lagi di perangkat ini. Tetap logout?'
+    )) {
+      return
+    }
     logout()
     navigate('/login')
   }
@@ -249,6 +267,22 @@ export default function StudentHome() {
         <p className="text-muted" style={{ marginBottom: connectionNote ? '0.75rem' : '2rem', fontSize: '0.9rem' }}>
           Kelas {user.kelas} &mdash; {examList.length} ujian ditemukan
         </p>
+        {pendingSubmissions.length > 0 && (
+          <div role="status" style={{
+            marginBottom: '1rem',
+            padding: '0.6rem 0.85rem',
+            borderRadius: 8,
+            background: '#eff6ff',
+            border: '1px solid #93c5fd',
+            color: '#1e3a8a',
+            fontSize: '0.82rem',
+            lineHeight: 1.45
+          }}>
+            {pendingSubmissions.length === 1 ? 'Jawaban 1 ujian' : `Jawaban ${pendingSubmissions.length} ujian`} sedang dikirim ke server
+            {pendingSubmissions[0].lastError ? ` (${pendingSubmissions[0].lastError}, dicoba ulang otomatis)` : ''}.
+            Jawaban sudah aman di perangkat ini — biarkan aplikasi terbuka dan jangan logout. Nilai muncul otomatis setelah terkirim.
+          </div>
+        )}
         {connectionNote && (
           <div role="status" style={{
             marginBottom: '1.5rem',

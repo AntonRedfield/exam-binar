@@ -4,6 +4,7 @@ import { getCurrentUser } from '../lib/auth'
 import { exams, questions, sessions, results } from '../lib/db'
 import { isNetworkError, isOffline } from '../lib/network'
 import { loadOffline, saveOffline, slimSession } from '../lib/offlineCache'
+import { subscribeSubmissions } from '../lib/submissionQueue'
 import {
   BookOpen,
   Clock,
@@ -55,6 +56,8 @@ export default function ExamLobby() {
   // exam info, keeps retrying, and blocks entering until the lock state can
   // be checked again.
   const [connectionIssue, setConnectionIssue] = useState('')
+  // A submission for this exam still being sent from this device
+  const [pendingSubmission, setPendingSubmission] = useState(null)
   const [reloadTick, setReloadTick] = useState(0)
   // One session id per lobby visit, so pressing "Mulai" again after a lost
   // response can never create a second session row.
@@ -158,6 +161,23 @@ export default function ExamLobby() {
     load()
     return () => { cancelled = true }
   }, [examId, user?.id, navigate, reloadTick])
+
+  // ─── Submission still on its way from this device ──────────────────────────
+  // Block re-entering until it is confirmed, then reload: the lobby will send
+  // the student to the result page.
+  useEffect(() => {
+    if (!user?.id || !examId) return
+    let hadPending = false
+    return subscribeSubmissions((list) => {
+      const mine = list.find(r => r.userId === user.id && r.examId === examId) || null
+      setPendingSubmission(mine)
+      if (mine) hadPending = true
+      else if (hadPending) {
+        hadPending = false
+        setReloadTick(t => t + 1)
+      }
+    })
+  }, [user?.id, examId])
 
   // ─── Reload automatically once the connection is back ──────────────────────
   useEffect(() => {
@@ -360,8 +380,14 @@ export default function ExamLobby() {
   }
 
   if (loading) return (
-    <div className="loading-screen">
+    <div className="loading-screen" style={{ padding: '1.5rem', textAlign: 'center' }}>
       <div className="spinner" style={{ width: 40, height: 40 }} />
+      {pendingSubmission && (
+        <p className="alert alert-warning" role="status" style={{ fontSize: '0.82rem', marginTop: '1rem', maxWidth: 420, textAlign: 'left' }}>
+          Jawaban ujian Anda sudah tersimpan aman di perangkat ini dan sedang dikirim ke server
+          (dicoba ulang otomatis). Jangan logout.
+        </p>
+      )}
     </div>
   )
 
@@ -374,6 +400,12 @@ export default function ExamLobby() {
           <p className="text-muted" style={{ fontSize: '0.85rem' }}>
             Data ujian belum bisa dimuat. Halaman akan terbuka otomatis saat koneksi kembali.
           </p>
+          {pendingSubmission && (
+            <p className="alert alert-warning" role="status" style={{ fontSize: '0.82rem', marginTop: '0.75rem', textAlign: 'left' }}>
+              Jawaban ujian Anda sudah tersimpan aman di perangkat ini dan akan dikirim otomatis begitu
+              koneksi kembali. Jangan logout.
+            </p>
+          )}
         </div>
       ) : (
         <p className="text-muted">Ujian tidak ditemukan.</p>
@@ -584,6 +616,13 @@ export default function ExamLobby() {
           </div>
         )}
 
+        {pendingSubmission && (
+          <div className="alert alert-warning" role="status" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+            Jawaban ujian ini sedang dikirim ke server dari perangkat ini
+            {pendingSubmission.lastError ? ` (${pendingSubmission.lastError}, dicoba ulang otomatis)` : ''}.
+            Jawaban sudah aman di perangkat — jangan logout. Halaman akan diperbarui otomatis setelah terkirim.
+          </div>
+        )}
         {connectionIssue && (
           <div className="alert alert-warning" role="status" style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
             {connectionIssue} Masuk ke ruang ujian membutuhkan koneksi untuk memeriksa status ujian Anda.
@@ -676,7 +715,7 @@ export default function ExamLobby() {
               <button
                 className="btn btn-gold btn-lg w-full"
                 onClick={handleVerifyReturneeToken}
-                disabled={verifyingToken || returneeTokenInput.length !== 6 || !canStart || Boolean(connectionIssue)}
+                disabled={verifyingToken || returneeTokenInput.length !== 6 || !canStart || Boolean(connectionIssue) || Boolean(pendingSubmission)}
                 style={(!canStart || returneeTokenInput.length !== 6) ? { opacity: 0.6 } : {}}
               >
                 {verifyingToken ? (
@@ -709,7 +748,7 @@ export default function ExamLobby() {
             <button
               className="btn btn-gold btn-lg w-full"
               onClick={handleStart}
-              disabled={starting || !canStart || Boolean(connectionIssue)}
+              disabled={starting || !canStart || Boolean(connectionIssue) || Boolean(pendingSubmission)}
               style={!canStart ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
               {starting

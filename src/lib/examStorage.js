@@ -304,6 +304,7 @@ export class ExamAtomicEngine {
     const { serverIsAuthoritative = true } = options || {}
     this.onSyncCallback = onSyncCallback
     await this.adapter.init()
+    rememberLocalAnswerExam(this.userId, this.examId)
 
     // 1. Check & Migrate legacy localStorage
     this._migrateLegacyLocalStorage()
@@ -673,5 +674,37 @@ export class ExamAtomicEngine {
     this.ramCache.clear()
     this.dirtyKeys.clear()
     await this.adapter.clearAll()
+    forgetLocalAnswerExam(this.userId, this.examId)
   }
+}
+
+// ─── Index of exams with answers stored on this device ────────────────────────
+// Lets the app find answers that never reached the server (e.g. the phone was
+// off when the teacher closed the exam) without opening that exam again.
+// indexedDB.databases() is not available in every browser, hence this list.
+
+const localExamsKey = (userId) => `binar_local_answer_exams:${userId || 'anon'}`
+
+export function getLocalAnswerExamIds(userId) {
+  try {
+    const list = JSON.parse(localStorage.getItem(localExamsKey(userId)) || '[]')
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+function rememberLocalAnswerExam(userId, examId) {
+  if (!userId || !examId) return
+  try {
+    const list = getLocalAnswerExamIds(userId)
+    if (!list.includes(examId)) localStorage.setItem(localExamsKey(userId), JSON.stringify([...list, examId].slice(-50)))
+  } catch { /* storage unavailable */ }
+}
+
+function forgetLocalAnswerExam(userId, examId) {
+  if (!userId || !examId) return
+  try {
+    localStorage.setItem(localExamsKey(userId), JSON.stringify(getLocalAnswerExamIds(userId).filter(id => id !== examId)))
+  } catch { /* storage unavailable */ }
 }

@@ -4,6 +4,7 @@ import { exams, sessions, users, results, isPrivilegedUser } from '../../lib/db'
 import { getCurrentUser } from '../../lib/auth'
 import { formatScore, roundScore } from '../../lib/format'
 import UnpublishExamModal from '../../components/exam/UnpublishExamModal'
+import { describeCloseProgress, describeCloseResult } from '../../lib/examCloser'
 import {
   Activity,
   Lock,
@@ -154,6 +155,7 @@ export default function Monitor() {
   // Unpublish & Force-Submit Exam Modal State
   const [unpublishModalOpen, setUnpublishModalOpen] = useState(false)
   const [isUnpublishing, setIsUnpublishing] = useState(false)
+  const [closeProgress, setCloseProgress] = useState('')
 
   // Bulk Extra Time Management State
   const [bulkExtraTimeOpen, setBulkExtraTimeOpen] = useState(false)
@@ -234,11 +236,13 @@ export default function Monitor() {
   async function handleConfirmUnpublish(targetStatus = 'closed') {
     setIsUnpublishing(true)
     try {
-      const res = await exams.unpublishAndForceSubmit(examId, targetStatus)
+      setCloseProgress('')
+      const res = await exams.unpublishAndForceSubmit(examId, targetStatus, {
+        onProgress: (p) => setCloseProgress(describeCloseProgress(p))
+      })
       setUnpublishModalOpen(false)
       await load()
-      const statusLabel = targetStatus === 'closed' ? 'ditutup' : 'di-unpublish ke draft'
-      alert(`Ujian berhasil ${statusLabel}. Sebanyak ${res.countSubmitted || 0} siswa aktif dikumpulkan & dinilai otomatis.`)
+      alert(describeCloseResult(res, targetStatus))
       navigate(isUnderAdmin ? `/admin/results/${examId}` : `/teacher/results/${examId}`)
     } catch (err) {
       console.error('Error during unpublish in Monitor:', err)
@@ -2741,6 +2745,7 @@ export default function Monitor() {
         exam={exam}
         onConfirm={handleConfirmUnpublish}
         isProcessing={isUnpublishing}
+        progressText={closeProgress}
       />
     </>
   )
